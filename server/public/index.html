@@ -42,10 +42,12 @@
   .rank .left{display:flex;gap:8px;align-items:center}
   .badge{width:24px;height:24px;border-radius:999px;background:#222;display:flex;align-items:center;justify-content:center;font-weight:800}
 
-  /* bottom sheet */
+  /* bottom sheets (общие стили) */
   .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:.2s}
+  .sheet-backdrop.show{opacity:1;pointer-events:auto}
   .sheet{position:fixed;left:0;right:0;bottom:-60%;background:#0b0b0b;border-top:1px solid var(--border);
-         border-radius:16px 16px 0 0;padding:14px;transition:.25s}
+         border-radius:16px 16px 0 0;padding:14px 14px 18px;transition:.25s}
+  .sheet.open{bottom:0}
   .sheet h3{margin:6px 0 10px;font-size:16px}
   .rowchips{display:flex;gap:8px;flex-wrap:wrap}
   .chipopt{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;
@@ -58,8 +60,7 @@
   .sheet .btnrow{display:flex;gap:10px;margin-top:10px}
   .sheet .btnrow .btnsm{flex:1;background:var(--green);border:none;border-radius:12px;color:#fff;padding:10px 0;font-weight:700}
   .sheet .btnrow .btnsm.cancel{background:#333}
-  .sheet-open .sheet{bottom:0}
-  .sheet-open .sheet-backdrop{opacity:1;pointer-events:auto}
+  .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
 </style>
 </head>
 <body>
@@ -79,9 +80,7 @@
     </div>
   </div>
 
-  <!-- фаза под таймером -->
   <div class="phase" id="phase">Ставки открыты</div>
-  <!-- только общий банк -->
   <div class="bank" id="bank">Банк: $0</div>
 
   <div class="row">
@@ -89,27 +88,25 @@
     <button class="btn sell" id="sell">↓ SELL</button>
   </div>
 
-  <!-- меню -->
   <div class="menu">
-    <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
     <button class="chipbtn" id="refBtn">Рефералы</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="starsBtn">Купить ⭐</button>
     <button class="chipbtn" id="verifyBtn">Проверить</button>
-    
+    <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
   </div>
 
-  <!-- краткая история исходов -->
   <div class="history" id="hist"></div>
 
-  <!-- топ лидеров за час -->
   <div class="head">Топ победителей за час</div>
   <div class="lb" id="lb"></div>
 </div>
 
-<!-- SETTINGS SHEET -->
+<!-- Backdrop -->
 <div class="sheet-backdrop" id="sheetBg"></div>
-<div class="sheet" id="sheet">
+
+<!-- SHEET: настройки ставки -->
+<div class="sheet" id="sheetStake">
   <h3>Сумма ставки</h3>
   <div class="rowchips" id="chips">
     <button class="chipopt" data-v="50">$50</button>
@@ -126,8 +123,40 @@
     <label><input type="checkbox" id="oneClick"></label>
   </div>
   <div class="btnrow">
-    <button class="btnsm cancel" id="cfgCancel">Отмена</button>
+    <button class="btnsm cancel" data-close>Отмена</button>
     <button class="btnsm" id="cfgSave">Сохранить</button>
+  </div>
+</div>
+
+<!-- SHEET: пополнение (подписка/проверка/ежедневка/реф) -->
+<div class="sheet" id="sheetTopup">
+  <h3>Пополнение баланса</h3>
+  <p>• +$5000 — за подписку на канал @erc20coin (один раз)</p>
+  <p>• +$1000 — за ежедневный вход</p>
+  <p>• +$500 — за каждого друга по реф-ссылке</p>
+  <div class="btnrow">
+    <button class="btnsm" id="openChannel">Открыть канал</button>
+    <button class="btnsm" id="checkBonus">Проверить</button>
+  </div>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Закрыть</button>
+  </div>
+</div>
+
+<!-- SHEET: покупка Stars -->
+<div class="sheet" id="sheetStars">
+  <h3>Купить звёзды ⭐</h3>
+  <p>Выбери пакет, оплати в Telegram Stars — баланс обновится автоматически.</p>
+  <div class="rowchips" id="starsPacks">
+    <button class="chipopt" data-pack="100">100⭐ → $3 000</button>
+    <button class="chipopt" data-pack="500">500⭐ → $16 000</button>
+    <button class="chipopt" data-pack="1000">1000⭐ → $35 000</button>
+    <button class="chipopt" data-pack="10000">10000⭐ → $400 000</button>
+    <button class="chipopt" data-pack="30000">30000⭐ → $1 500 000</button>
+  </div>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Отмена</button>
+    <button class="btnsm" id="buyStars">Оплатить</button>
   </div>
 </div>
 
@@ -143,8 +172,6 @@ const username = (window.Telegram?.WebApp?.initDataUnsafe?.user?.username)
 
 // === УКАЖИ ИМЯ СВОЕГО БОТА (без @) ===
 const BOT_USERNAME = 'realpricebtc_bot';
-
-// ссылки
 const CHANNEL_LINK = 'https://t.me/erc20coin';
 
 if (window.Telegram && Telegram.WebApp) { try { Telegram.WebApp.expand(); } catch(e){} }
@@ -161,20 +188,32 @@ const buyBtn  = document.getElementById('buy');
 const sellBtn = document.getElementById('sell');
 const histEl  = document.getElementById('hist');
 const lbEl    = document.getElementById('lb');
+
 const refBtn  = document.getElementById('refBtn');
 const topupBtn= document.getElementById('topupBtn');
 const verifyBtn= document.getElementById('verifyBtn');
-const starsBtn = document.getElementById('starsBtn');
+const starsBtn= document.getElementById('starsBtn');
+const cfgBtn  = document.getElementById('cfgBtn');
 
-// settings sheet elements
-const cfgBtn    = document.getElementById('cfgBtn');
-const sheetBg   = document.getElementById('sheetBg');
-const sheet     = document.getElementById('sheet');
+// sheets
+const sheetBg     = document.getElementById('sheetBg');
+const sheetStake  = document.getElementById('sheetStake');
+const sheetTopup  = document.getElementById('sheetTopup');
+const sheetStars  = document.getElementById('sheetStars');
+
+// stake controls
 const chipsBox  = document.getElementById('chips');
 const customAmt = document.getElementById('customAmt');
 const oneClick  = document.getElementById('oneClick');
 const cfgSave   = document.getElementById('cfgSave');
-const cfgCancel = document.getElementById('cfgCancel');
+
+// topup controls
+const openChannel = document.getElementById('openChannel');
+const checkBonus  = document.getElementById('checkBonus');
+
+// stars controls
+const starsPacks = document.getElementById('starsPacks');
+const buyStars   = document.getElementById('buyStars');
 
 const CIRC = 2*Math.PI*140;
 ring.setAttribute('stroke-dasharray', CIRC);
@@ -194,6 +233,15 @@ function chip(h){
   return `<div class="chip"><span class="${cls}">${dir}</span><span class="${cls}">${pct}</span><span>${fmt(h.win)}</span></div>`;
 }
 
+// sheet helpers
+function openSheet(el){ el.classList.add('open'); sheetBg.classList.add('show'); }
+function closeAllSheets(){
+  [sheetStake, sheetTopup, sheetStars].forEach(s=>s.classList.remove('open'));
+  sheetBg.classList.remove('show');
+}
+sheetBg.addEventListener('click', closeAllSheets);
+document.querySelectorAll('[data-close]').forEach(btn=>btn.addEventListener('click', closeAllSheets));
+
 // settings storage
 function getSettings(){
   return {
@@ -206,18 +254,10 @@ function setSettings(s){
   localStorage.setItem('bet_oneclick', s.oneClick ? '1' : '0');
 }
 function highlightChips(val){
-  document.querySelectorAll('.chipopt').forEach(b=>{
+  document.querySelectorAll('#chips .chipopt').forEach(b=>{
     b.classList.toggle('active', Number(b.dataset.v)===Number(val));
   });
 }
-function openSheet(){
-  const s = getSettings();
-  highlightChips(s.amount);
-  customAmt.value = '';
-  oneClick.checked = s.oneClick;
-  document.body.classList.add('sheet-open');
-}
-function closeSheet(){ document.body.classList.remove('sheet-open'); }
 
 // api
 async function auth(){
@@ -261,32 +301,23 @@ async function poll(){
     }
   }
 
-  // таймер
   tleft.textContent = '00:' + String(Math.max(r.secsLeft||0,0)).padStart(2,'0');
   const len = r.roundLen||60;
   const progress = Math.max(0, Math.min(1, (len - (r.secsLeft||0))/len));
   ring.style.transition='stroke-dashoffset .5s linear';
   ring.setAttribute('stroke-dashoffset', CIRC*progress);
 
-  // фаза и банк
   phaseEl.textContent = phaseText(r.phase);
-  bankEl.textContent = 'Банк: ' + fmt(r.bank);
+  bankEl.textContent  = 'Банк: ' + fmt(r.bank);
 
-  // кнопки
-  const open = r.phase==='betting';
-  buyBtn.disabled = !open;
-  sellBtn.disabled = !open;
-
-  // история (краткая)
   const h = await fetch('/api/history').then(r=>r.json()).catch(()=>({history:[]}));
   histEl.innerHTML = (h.history||[]).map(chip).join('');
 
-  // баланс и топ
   await refreshBalance();
   await leaderboard();
 }
 
-// действия
+// действия ставок
 async function place(side){
   const s = getSettings();
   let amount = s.amount;
@@ -297,11 +328,7 @@ async function place(side){
     amount = parseInt(val,10);
     if (!amount || amount<=0) return alert('Введи положительную сумму');
   }
-
-  if (amount < 50){
-    alert('Минимальная ставка $50');
-    return;
-  }
+  if (amount < 50){ alert('Минимальная ставка $50'); return; }
 
   const r = await fetch('/api/bet',{
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -312,6 +339,7 @@ async function place(side){
     const msg =
       r.error==='BETTING_CLOSED' ? 'Окно ставок закрыто' :
       r.error==='INSUFFICIENT_BALANCE' ? 'Недостаточно средств' :
+      r.error?.startsWith?.('MIN_BET_') ? `Минимальная ставка: $${r.error.split('_').pop()}` :
       'Ошибка: '+(r.error||'UNKNOWN');
     alert(msg);
     return;
@@ -322,27 +350,47 @@ async function place(side){
 buyBtn.onclick = ()=> place('BUY');
 sellBtn.onclick = ()=> place('SELL');
 
-// sheet handlers
-cfgBtn.onclick = openSheet;
-sheetBg.onclick = closeSheet;
-cfgCancel.onclick = closeSheet;
+// открыть листы
+cfgBtn.onclick   = ()=>{ highlightChips(getSettings().amount); customAmt.value=''; oneClick.checked=getSettings().oneClick; openSheet(sheetStake); };
+topupBtn.onclick = ()=> openSheet(sheetTopup);
+starsBtn.onclick = ()=> openSheet(sheetStars);
+
+// stake sheet handlers
 chipsBox.addEventListener('click', (e)=>{
   const b = e.target.closest('.chipopt'); if (!b) return;
-  highlightChips(Number(b.dataset.v)); customAmt.value='';
+  document.querySelectorAll('#chips .chipopt').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active'); customAmt.value='';
 });
 cfgSave.onclick = ()=>{
   let val = Number(customAmt.value || 0);
   if (!val){
-    const active = document.querySelector('.chipopt.active');
-    val = active ? Number(active.dataset.v) : 100;
+    const active = document.querySelector('#chips .chipopt.active');
+    val = active ? Number(active.dataset.v) : getSettings().amount;
   }
   if (val < 50) { alert('Минимальная ставка $50'); return; }
   setSettings({ amount: Math.floor(val), oneClick: oneClick.checked });
-  closeSheet();
+  closeAllSheets();
   alert('Сохранено: $' + Math.floor(val) + (oneClick.checked ? ' • 1-клик' : ''));
 };
 
-// меню
+// topup sheet handlers
+openChannel.onclick = ()=>{
+  try{
+    if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK);
+    else window.location.href = CHANNEL_LINK;
+  }catch(e){ window.location.href = CHANNEL_LINK; }
+};
+checkBonus.onclick = async ()=>{
+  const botLink = `https://t.me/${BOT_USERNAME}?start=check`;
+  try{
+    if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(botLink);
+    else window.location.href = botLink;
+  }catch(e){ window.location.href = botLink; }
+  // после возврата — обновим баланс
+  setTimeout(refreshBalance, 1500);
+};
+
+// рефералы (кнопка в меню)
 refBtn.onclick = ()=>{
   const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
   if (navigator.share){
@@ -351,19 +399,7 @@ refBtn.onclick = ()=>{
     alert('Твоя реф-ссылка:\n' + link + '\nЗа каждого друга +$500 после его первого входа.');
   }
 };
-topupBtn.onclick = ()=>{
-  alert(
-    '5000$ за подписку на канал\n' +
-    '1) Подпишись на канал @erc20coin\n' +
-    '2) Нажми OK — откроется канал\n' +
-    'Ежедневно 1000$ за вход\n' +
-    'По 500$ за каждого друга'
-  );
-  try{
-    if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK);
-    else window.location.href = CHANNEL_LINK;
-  }catch(e){ window.location.href = CHANNEL_LINK; }
-};
+// verify (кнопка в меню — дублирует проверку)
 verifyBtn.onclick = ()=>{
   const botLink = `https://t.me/${BOT_USERNAME}?start=check`;
   try{
@@ -372,17 +408,21 @@ verifyBtn.onclick = ()=>{
   }catch(e){ window.location.href = botLink; }
 };
 
-// Stars: покупка пакетов
-starsBtn.onclick = async () => {
-  const pack = prompt('Выбери пакет (100, 500, 1000, 10000, 30000):', '100');
-  if (!pack) return;
-
+// Stars: выбор пакета и оплата
+let selectedPack = null;
+starsPacks.addEventListener('click', (e)=>{
+  const b = e.target.closest('.chipopt'); if (!b) return;
+  document.querySelectorAll('#starsPacks .chipopt').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  selectedPack = b.dataset.pack;
+});
+buyStars.onclick = async ()=>{
+  const pack = selectedPack || '100';
   const resp = await fetch('/api/stars/create', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify({ uid, pack })
   }).then(r=>r.json()).catch(()=>({ ok:false }));
-
   if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
 
   const open = Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
@@ -395,8 +435,8 @@ starsBtn.onclick = async () => {
       alert('Платёж не прошёл');
     }
   });
-
   try { await open; await refreshBalance(); } catch {}
+  closeAllSheets();
 };
 
 // init
