@@ -27,6 +27,16 @@ const pool = new pg.Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+// Пакеты Stars (точно совпадают с сервером)
+const STARS_PACKS = {
+  '100':   { credit: 3_000 },
+  '500':   { credit: 16_000 },
+  '1000':  { credit: 35_000 },
+  '10000': { credit: 400_000 },
+  '30000': { credit: 1_500_000 },
+};
+
+
 // --- мягкие миграции (безопасно добавляют недостающее)
 await pool.query(`
   CREATE TABLE IF NOT EXISTS users(
