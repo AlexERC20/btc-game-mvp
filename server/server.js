@@ -294,4 +294,26 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const q = `
+      SELECT
+        COALESCE(NULLIF(u.username,''), '@' || u.telegram_id::text) AS name,
+        SUM(p.amount)::bigint AS won
+      FROM payouts p
+      JOIN users u ON u.id = p.user_id
+      WHERE p.created_at >= now() - interval '1 hour'   -- окно 60 минут
+        AND p.amount > 0                                 -- только выигрыши
+      GROUP BY u.id, u.username, u.telegram_id
+      ORDER BY won DESC
+      LIMIT 20;
+    `;
+    const r = await pool.query(q);
+    res.json({ ok: true, top: r.rows });
+  } catch (e) {
+    console.error('leaderboard hourly', e);
+    res.json({ ok: false, error: 'SERVER' });
+  }
+});
+
 app.listen(PORT, () => console.log('Server listening on', PORT));
