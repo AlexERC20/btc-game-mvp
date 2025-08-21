@@ -91,15 +91,49 @@ await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus DATE`);
 
-/* ========= Telegram Stars пакеты ========= */
-/* 1⭐ = 1000 милизвёзд (millis) */
+// ✅ Пакеты Stars: amount = число звёзд
 const STARS_PACKS = {
-  '100':   { millis: 100_000,   credit: 3_000 },
-  '500':   { millis: 500_000,   credit: 16_000 },
-  '1000':  { millis: 1_000_000, credit: 35_000 },
-  '10000': { millis: 10_000_000, credit: 400_000 },
-  '30000': { millis: 30_000_000, credit: 1_500_000 },
+  '100':   { stars: 100,    credit: 3_000 },
+  '500':   { stars: 500,    credit: 16_000 },
+  '1000':  { stars: 1000,   credit: 35_000 },
+  '10000': { stars: 10000,  credit: 400_000 },
+  '30000': { stars: 30000,  credit: 1_500_000 },
 };
+
+// Создание инвойса Stars (XTR)
+app.post('/api/stars/create', async (req, res) => {
+  try {
+    const { uid, pack } = req.body || {};
+    const key = String(pack || '').trim();
+    const p = STARS_PACKS[key];
+    if (!uid || !p) return res.status(400).json({ ok:false, error:'BAD_REQUEST' });
+
+    const payload = `${uid}:pack_${key}`;
+
+    const tgResp = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: `Stars pack ${key}`,
+        description: `Telegram Stars pack ${key}`,
+        payload,
+        provider_token: '',        // для Stars пусто
+        currency: 'XTR',
+        prices: [{ label: `Pack ${key}`, amount: p.stars }], // ← число звёзд, НЕ *1000
+      })
+    }).then(r => r.json());
+
+    if (!tgResp?.ok) {
+      console.error('TG createInvoiceLink error:', tgResp);
+      return res.status(400).json({ ok:false, error:'TG_API', details: tgResp });
+    }
+    res.json({ ok:true, link: tgResp.result });
+  } catch (e) {
+    console.error('stars/create exception:', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
 
 /* ========= Состояние раунда ========= */
 let state = {
