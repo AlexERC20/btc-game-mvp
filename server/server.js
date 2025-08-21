@@ -15,6 +15,8 @@ const BINANCE_WS =
   process.env.BINANCE_WS ||
   'wss://stream.binance.com:9443/ws/btcusdt@miniTicker';
 
+const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
+
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
@@ -192,6 +194,15 @@ async function settle() {
 
   const pct = ((state.price - state.startPrice) / state.startPrice) * 100;
 
+// Пакеты Stars (точно совпадают с сервером)
+const STARS_PACKS = {
+  '100':   { credit: 3_000 },
+  '500':   { credit: 16_000 },
+  '1000':  { credit: 35_000 },
+  '10000': { credit: 400_000 },
+  '30000': { credit: 1_500_000 },
+};
+
   await pool.query(
     `UPDATE rounds SET end_price=$1, winner_side=$2, fee=$3, distributable=$4 WHERE id=$5`,
     [state.price, side, fee, distributable, state.currentRoundId]
@@ -291,6 +302,79 @@ app.get('/api/leaderboard', async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok:false });
+  }
+});
+
+// === Telegram Stars: пакеты и создание инвойса ===
+// 1⭐ = 1000 "миллизвёзд" (millis)
+const STARS_PACKS = {
+  '100':   { millis: 100_000,    credit: 3_000 },
+  '500':   { millis: 500_000,    credit: 16_000 },
+  '1000':  { millis: 1_000_000,  credit: 35_000 },
+  '10000': { millis: 10_000_000, credit: 400_000 },
+  '30000': { millis: 30_000_000, credit: 1_500_000 },
+};
+
+app.post('/api/stars/create', express.json(), async (req, res) => {
+  try {
+    const { uid, pack } = req.body || {};
+    const p = STARS_PACKS[pack];
+    if (!uid || !p) return res.json({ ok:false, error:'BAD_REQUEST' });
+
+    const payload = `${uid}:pack_${pack}`; // вернётся в successful_payment
+
+    // createInvoiceLink (валюта XTR, без provider_token)
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        title:       `${pack}⭐`,
+        description: `Пакет на ${pack} звёзд`,
+        payload,
+        provider_token: '',
+        currency: 'XTR',
+        prices: [{ label: `${pack}⭐`, amount: p.millis }],
+      })
+    }).then(r=>r.json());
+
+    if (!r.ok) return res.json({ ok:false, error:'TG_API', details:r });
+
+    res.json({ ok:true, link: r.result });
+  } catch (e) {
+    console.error('stars/create', e);
+    res.json({ ok:false, error:'SERVER' });
+  }
+});
+
+// Обязателен для Telegram платежей
+bot.on('pre_checkout_query', (ctx) => ctx.answerPreCheckoutQuery(true));
+
+// Успешная оплата Stars -> зачисляем внутр. валюту
+bot.on('message', async (ctx) => {
+  const sp = ctx.message?.successful_payment;
+  if (!sp) return;
+
+  try {
+    // payload формата "<uid>:pack_<N>"
+    const payload = sp.invoice_payload || '';
+    const [uidStr, packStr] = payload.split(':pack_');
+    const uid = Number(uidStr);
+    const pack = packStr?.trim();
+
+    if (uid && STARS_PACKS[pack]) {
+      const credit = STARS_PACKS[pack].credit;
+      await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credit, uid]);
+      await ctx.reply(`💫 Платёж принят: пакет ${pack}⭐ → +$${credit.toLocaleString()} на баланс.`);
+      return;
+    }
+
+    // fallback: если payload неожиданно другой — конвертнём по факту
+    const stars = sp.total_amount / 1000; // 1⭐ = 1000
+    const credited = stars * 1000;
+    await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credited, ctx.from.id]);
+    await ctx.reply(`💫 Платёж принят: ${stars}⭐ → +$${credited.toLocaleString()}`);
+  } catch (e) {
+    console.error('successful_payment handler:', e);
   }
 });
 
