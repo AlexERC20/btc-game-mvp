@@ -4,22 +4,31 @@ import express from 'express';
 import cors from 'cors';
 import { WebSocket } from 'ws';
 import pg from 'pg';
+import crypto from 'crypto';
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(express.static('public'));
-
+/* ================== ENV ================== */
 const PORT = process.env.PORT || 8080;
 const BINANCE_WS =
   process.env.BINANCE_WS ||
   'wss://stream.binance.com:9443/ws/btcusdt@miniTicker';
 
-const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
+const BOT_TOKEN = process.env.BOT_TOKEN; // для проверки initData и createInvoiceLink
+if (!BOT_TOKEN) {
+  console.error('BOT_TOKEN is required');
+  process.exit(1);
+}
+const TG_WEBHOOK_SECRET = process.env.TG_WEBHOOK_SECRET || ''; // для проверки заголовка вебхука
 
+/* ================== APP ================== */
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.static('public'));
+
+/* ================== DB ================== */
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
 });
 
 /* ========= DB bootstrap / миграции ========= */
@@ -28,7 +37,7 @@ await pool.query(`
     id SERIAL PRIMARY KEY,
     telegram_id BIGINT UNIQUE NOT NULL,
     username TEXT,
-    balance BIGINT NOT NULL DEFAULT 1000,                 -- старт теперь 1000
+    balance BIGINT NOT NULL DEFAULT 1000,                 -- старт 1000
     channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT now()
   );
@@ -66,9 +75,20 @@ await pool.query(`
     referred_telegram_id BIGINT UNIQUE,
     created_at TIMESTAMPTZ DEFAULT now()
   );
+
+  -- платежи Stars/XTR: храним charge_id, чтобы не задвоить
+  CREATE TABLE IF NOT EXISTS payments(
+    id SERIAL PRIMARY KEY,
+    telegram_charge_id TEXT UNIQUE,          -- update.message.successful_payment.telegram_payment_charge_id
+    payload TEXT,
+    uid BIGINT,
+    pack TEXT,
+    millis BIGINT,
+    credit BIGINT,
+    created_at TIMESTAMPTZ DEFAULT now()
+  );
 `);
 
-/* добиваем безопасные ALTER-ы (если раньше были старые схемы) */
 await pool.query(`ALTER TABLE bets ADD COLUMN IF NOT EXISTS round_id INT`);
 await pool.query(`
   DO $$
@@ -82,8 +102,8 @@ await pool.query(`
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE`);
 
-/* ========= Telegram Stars пакеты (глобально) ========= */
-/* 1⭐ = 1000 милизвёзд (millis) */
+/* ========= Telegram Stars пакеты ========= */
+/* 1⭐ = 1000 миллизвёзд (millis) */
 const STARS_PACKS = {
   '100':   { millis: 100_000,    credit: 3_000 },
   '500':   { millis: 500_000,    credit: 16_000 },
@@ -135,8 +155,7 @@ connectPrice();
 async function ensureUser(telegramId, username) {
   await pool.query(
     `INSERT INTO users(telegram_id, username, balance)
-     VALUES ($1, $2, 1000)                             -- старт теперь 1000
-     ON CONFLICT (telegram_id) DO NOTHING`,
+     VALUES ($1, $2, 1000) ON CONFLICT (telegram_id) DO NOTHING`,
     [telegramId, username || null]
   );
   if (username) {
@@ -153,6 +172,61 @@ async function ensureUser(telegramId, username) {
   return r.rows[0];
 }
 
+async function linkReferralIfAny(uid, startParam) {
+  // ожидаем форматы: ref_<telegram_id> или просто число
+  if (!startParam) return;
+  let refTgId = null;
+  if (/^ref_\d+$/.test(startParam)) refTgId = startParam.replace('ref_', '');
+  else if (/^\d+$/.test(startParam)) refTgId = startParam;
+  if (!refTgId || String(refTgId) === String(uid)) return;
+
+  // найдём пользователя-реферера
+  const ru = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [refTgId]);
+  if (!ru.rowCount) return;
+
+  // создаём запись, если её ещё нет
+  await pool.query(
+    `INSERT INTO referrals(referrer_user_id, referred_telegram_id)
+     VALUES ($1,$2) ON CONFLICT (referred_telegram_id) DO NOTHING`,
+    [ru.rows[0].id, uid]
+  );
+}
+
+function verifyWebAppInitData(initData) {
+  // https://core.telegram.org/bots/webapps#validating-data-received-via-the-web-app
+  if (!initData || typeof initData !== 'string') return null;
+  const urlParams = new URLSearchParams(initData);
+  const hash = urlParams.get('hash');
+  if (!hash) return null;
+
+  // собрать data-check-string
+  const data = [];
+  for (const [key, value] of urlParams.entries()) {
+    if (key === 'hash') continue;
+    data.push(`${key}=${value}`);
+  }
+  data.sort();
+  const dataCheckString = data.join('\n');
+
+  const secretKey = crypto.createHmac('sha256', 'WebAppData')
+    .update(BOT_TOKEN)
+    .digest();
+  const calcHash = crypto.createHmac('sha256', secretKey)
+    .update(dataCheckString)
+    .digest('hex');
+
+  if (calcHash !== hash) return null;
+
+  const userStr = urlParams.get('user');
+  const startParam = urlParams.get('start_param') || '';
+  let user;
+  try { user = JSON.parse(userStr); } catch { return null; }
+  if (!user?.id) return null;
+
+  return { user, startParam };
+}
+
+/* ========= Раундовый цикл ========= */
 async function startRound() {
   if (!state.price) return;
   state.phase = 'betting';
@@ -167,7 +241,6 @@ async function startRound() {
   state.currentRoundId = r.rows[0].id;
 }
 
-/* ========= Цикл раунда ========= */
 function tick() {
   (async () => {
     if (state.phase === 'idle') {
@@ -246,22 +319,45 @@ async function settle() {
   state.secsLeft = state.pauseLen;
 }
 
-/* ========= API ========= */
+/* ================== API ================== */
 
-// Регистрация/пинг (сохранение username)
+/* --- WebApp аутентификация по initData (валидируем hash) --- */
+app.post('/api/auth/webapp', async (req, res) => {
+  try {
+    const { initData } = req.body || {};
+    const parsed = verifyWebAppInitData(initData);
+    if (!parsed) return res.status(401).json({ ok:false, error:'BAD_INITDATA' });
+
+    const { user, startParam } = parsed;
+    const u = await ensureUser(user.id, user.username || null);
+
+    // реферал-линк из start_param
+    await linkReferralIfAny(user.id, startParam);
+
+    res.json({
+      ok: true,
+      user: { id: u.id, telegram_id: Number(user.id), username: u.username || user.username || null, balance: Number(u.balance) },
+    });
+  } catch (e) {
+    console.error('auth/webapp', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+/* --- Фолбек авторизации без initData (например, тесты) --- */
 app.post('/api/auth', async (req, res) => {
   try {
     const { uid, username } = req.body || {};
     if (!uid) return res.status(400).json({ ok: false, error: 'NO_UID' });
     const u = await ensureUser(uid, username);
-    res.json({ ok: true, user: { id: u.id, telegram_id: uid, username: u.username, balance: Number(u.balance) } });
+    res.json({ ok: true, user: { id: u.id, telegram_id: Number(uid), username: u.username, balance: Number(u.balance) } });
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false, error: 'SERVER' });
   }
 });
 
-// Ставка
+/* --- Ставка --- */
 app.post('/api/bet', async (req, res) => {
   try {
     if (state.phase !== 'betting') return res.status(400).json({ ok:false, error:'BETTING_CLOSED' });
@@ -287,7 +383,7 @@ app.post('/api/bet', async (req, res) => {
   }
 });
 
-// Состояние
+/* --- Состояние/история/лидерборд --- */
 app.get('/api/round', (req, res) => {
   res.json({
     price: state.price, startPrice: state.startPrice,
@@ -299,7 +395,6 @@ app.get('/api/round', (req, res) => {
 });
 app.get('/api/history', (req, res) => res.json({ history: state.history }));
 
-// Лидерборд ЗА ЧАС
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const q = `
@@ -322,14 +417,15 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
-// Создание инвойса Stars
-app.post('/api/stars/create', express.json(), async (req, res) => {
+/* --- Создание инвойса Stars --- */
+app.post('/api/stars/create', async (req, res) => {
   try {
     const { uid, pack } = req.body || {};
     const p = STARS_PACKS[pack];
     if (!uid || !p) return res.json({ ok:false, error:'BAD_REQUEST' });
 
-    const payload = `${uid}:pack_${pack}`; // вернётся в successful_payment
+    // полезная нагрузка: uid + pack (используем в вебхуке)
+    const payload = `${uid}:pack_${pack}`;
 
     const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
       method: 'POST',
@@ -353,4 +449,57 @@ app.post('/api/stars/create', express.json(), async (req, res) => {
   }
 });
 
+/* --- Telegram webhook: successful_payment -> кредитуем баланс --- */
+app.post('/tg/webhook', async (req, res) => {
+  try {
+    // необязательная защита: сверим секрет
+    if (TG_WEBHOOK_SECRET) {
+      const header = req.get('X-Telegram-Bot-Api-Secret-Token');
+      if (header !== TG_WEBHOOK_SECRET) {
+        return res.status(401).end();
+      }
+    }
+
+    const update = req.body;
+    const msg = update?.message;
+    const sp = msg?.successful_payment;
+    if (!sp) return res.json({ ok: true }); // не интересует
+
+    const chargeId = sp.telegram_payment_charge_id;
+    const payload = sp.invoice_payload || '';
+
+    // payload ожидаем вида "UID:pack_XXXX"
+    const [uidStr, packTag] = String(payload).split(':');
+    const uid = Number(uidStr);
+    const pack = (packTag || '').replace('pack_', '');
+    const packInfo = STARS_PACKS[pack];
+
+    if (!uid || !packInfo) return res.json({ ok: true });
+
+    // идемпотентность
+    const exists = await pool.query('SELECT 1 FROM payments WHERE telegram_charge_id=$1', [chargeId]);
+    if (exists.rowCount) return res.json({ ok: true });
+
+    // записываем платеж и начисляем баланс
+    await pool.query('BEGIN');
+    await pool.query(
+      `INSERT INTO payments(telegram_charge_id, payload, uid, pack, millis, credit)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [chargeId, payload, uid, pack, packInfo.millis, packInfo.credit]
+    );
+
+    const user = await ensureUser(uid);
+    await pool.query('UPDATE users SET balance=balance+$1 WHERE id=$2', [packInfo.credit, user.id]);
+    await pool.query('COMMIT');
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('tg/webhook', e);
+    try { await pool.query('ROLLBACK'); } catch {}
+    return res.json({ ok: true });
+  }
+});
+
+/* ================== START ================== */
 app.listen(PORT, () => console.log('Server listening on', PORT));
+
