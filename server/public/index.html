@@ -29,7 +29,7 @@
   .btn[disabled]{opacity:.5;cursor:not-allowed}
   .buy{background:var(--green)} .sell{background:var(--red)}
 
-  .menu{display:flex;gap:10px;justify-content:center;margin:8px 0 10px}
+  .menu{display:flex;gap:10px;justify-content:center;margin:8px 0 10px;flex-wrap:wrap}
   .chipbtn{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-size:13px;color:#fff;cursor:pointer}
 
   .history{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:4px 0 10px}
@@ -70,7 +70,7 @@
     <button class="btn sell" id="sell">↓ SELL</button>
   </div>
 
-  <!-- меню с тремя кнопками -->
+  <!-- меню -->
   <div class="menu">
     <button class="chipbtn" id="refBtn">Рефералы</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
@@ -81,7 +81,7 @@
   <!-- краткая история исходов -->
   <div class="history" id="hist"></div>
 
-  <!-- топ победителей вместо старых списков -->
+  <!-- топ лидеров за час -->
   <div class="head">Топ победителей за час</div>
   <div class="lb" id="lb"></div>
 </div>
@@ -104,33 +104,6 @@ const CHANNEL_LINK = 'https://t.me/erc20coin';
 
 if (window.Telegram && Telegram.WebApp) { try { Telegram.WebApp.expand(); } catch(e){} }
 
-const starsBtn = document.getElementById('starsBtn');
-
-starsBtn.onclick = async () => {
-  const pack = prompt('Выбери пакет (100, 500, 1000, 10000, 30000):', '100');
-  if (!pack) return;
-
-  const resp = await fetch('/api/stars/create', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ uid, pack })
-  }).then(r=>r.json()).catch(()=>({ ok:false }));
-
-  if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
-
-  Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
-    if (status === 'paid') {
-      await refreshBalance();
-      alert('Оплата успешна! Баланс обновлён.');
-    } else if (status === 'cancelled') {
-      alert('Платёж отменён');
-    } else if (status === 'failed') {
-      alert('Платёж не прошёл');
-    }
-  });
-};
-
-
 // elements
 const priceEl = document.getElementById('price');
 const subEl   = document.getElementById('sub');
@@ -146,6 +119,7 @@ const lbEl    = document.getElementById('lb');
 const refBtn  = document.getElementById('refBtn');
 const topupBtn= document.getElementById('topupBtn');
 const verifyBtn= document.getElementById('verifyBtn');
+const starsBtn = document.getElementById('starsBtn');
 
 const CIRC = 2*Math.PI*140;
 ring.setAttribute('stroke-dasharray', CIRC);
@@ -252,16 +226,16 @@ refBtn.onclick = ()=>{
   if (navigator.share){
     navigator.share({ title:'BTC Game', text:'Залетай в игру!', url:link }).catch(()=>{});
   } else {
-    alert('Твоя реф-ссылка:\n'+link+'\nЗа каждого друга +$100 после первого входа.');
+    alert('Твоя реф-ссылка:\n' + link + '\nЗа каждого друга +$500 после его первого входа.');
   }
 };
 topupBtn.onclick = ()=>{
   alert(
-  '5000$ за подписку на канал\n' +
+    '5000$ за подписку на канал\n' +
     '1) Подпишись на канал @erc20coin\n' +
     '2) Нажми OK — откроется канал\n' +
     'Ежедневно 1000$ за вход\n' +
-    'По 500$ за каждого друга'  
+    'По 500$ за каждого друга'
   );
   try{
     if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK);
@@ -274,6 +248,34 @@ verifyBtn.onclick = ()=>{
     if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(botLink);
     else window.location.href = botLink;
   }catch(e){ window.location.href = botLink; }
+};
+
+// Stars: покупка пакетов
+starsBtn.onclick = async () => {
+  const pack = prompt('Выбери пакет (100, 500, 1000, 10000, 30000):', '100');
+  if (!pack) return;
+
+  const resp = await fetch('/api/stars/create', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ uid, pack })
+  }).then(r=>r.json()).catch(()=>({ ok:false }));
+
+  if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
+
+  const open = Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
+    if (status === 'paid') {
+      await refreshBalance();
+      alert('Оплата успешна! Баланс обновлён.');
+    } else if (status === 'cancelled') {
+      alert('Платёж отменён');
+    } else if (status === 'failed') {
+      alert('Платёж не прошёл');
+    }
+  });
+
+  // если клиент вернул Promise — подстрахуемся
+  try { await open; await refreshBalance(); } catch {}
 };
 
 // init
