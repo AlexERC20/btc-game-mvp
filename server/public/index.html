@@ -41,6 +41,25 @@
   .rank{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
   .rank .left{display:flex;gap:8px;align-items:center}
   .badge{width:24px;height:24px;border-radius:999px;background:#222;display:flex;align-items:center;justify-content:center;font-weight:800}
+
+  /* bottom sheet */
+  .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:.2s}
+  .sheet{position:fixed;left:0;right:0;bottom:-60%;background:#0b0b0b;border-top:1px solid var(--border);
+         border-radius:16px 16px 0 0;padding:14px;transition:.25s}
+  .sheet h3{margin:6px 0 10px;font-size:16px}
+  .rowchips{display:flex;gap:8px;flex-wrap:wrap}
+  .chipopt{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;
+           font-size:13px;cursor:pointer}
+  .chipopt.active{outline:2px solid var(--ring)}
+  .inputline{display:flex;gap:8px;margin:10px 0}
+  .inputline input{flex:1;background:#121212;border:1px solid var(--border);border-radius:10px;
+                   padding:10px;color:#fff;font-size:14px}
+  .switchline{display:flex;justify-content:space-between;align-items:center;margin:8px 0;color:#ddd}
+  .sheet .btnrow{display:flex;gap:10px;margin-top:10px}
+  .sheet .btnrow .btnsm{flex:1;background:var(--green);border:none;border-radius:12px;color:#fff;padding:10px 0;font-weight:700}
+  .sheet .btnrow .btnsm.cancel{background:#333}
+  .sheet-open .sheet{bottom:0}
+  .sheet-open .sheet-backdrop{opacity:1;pointer-events:auto}
 </style>
 </head>
 <body>
@@ -76,6 +95,7 @@
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="starsBtn">Купить ⭐</button>
     <button class="chipbtn" id="verifyBtn">Проверить</button>
+    <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
   </div>
 
   <!-- краткая история исходов -->
@@ -84,6 +104,30 @@
   <!-- топ лидеров за час -->
   <div class="head">Топ победителей за час</div>
   <div class="lb" id="lb"></div>
+</div>
+
+<!-- SETTINGS SHEET -->
+<div class="sheet-backdrop" id="sheetBg"></div>
+<div class="sheet" id="sheet">
+  <h3>Сумма ставки</h3>
+  <div class="rowchips" id="chips">
+    <button class="chipopt" data-v="50">$50</button>
+    <button class="chipopt" data-v="100">$100</button>
+    <button class="chipopt" data-v="250">$250</button>
+    <button class="chipopt" data-v="500">$500</button>
+    <button class="chipopt" data-v="1000">$1000</button>
+  </div>
+  <div class="inputline">
+    <input id="customAmt" type="number" min="50" step="1" placeholder="Другая сумма, $ (≥50)">
+  </div>
+  <div class="switchline">
+    <span>Ставить в 1 клик (без подтверждения)</span>
+    <label><input type="checkbox" id="oneClick"></label>
+  </div>
+  <div class="btnrow">
+    <button class="btnsm cancel" id="cfgCancel">Отмена</button>
+    <button class="btnsm" id="cfgSave">Сохранить</button>
+  </div>
 </div>
 
 <script>
@@ -121,6 +165,16 @@ const topupBtn= document.getElementById('topupBtn');
 const verifyBtn= document.getElementById('verifyBtn');
 const starsBtn = document.getElementById('starsBtn');
 
+// settings sheet elements
+const cfgBtn    = document.getElementById('cfgBtn');
+const sheetBg   = document.getElementById('sheetBg');
+const sheet     = document.getElementById('sheet');
+const chipsBox  = document.getElementById('chips');
+const customAmt = document.getElementById('customAmt');
+const oneClick  = document.getElementById('oneClick');
+const cfgSave   = document.getElementById('cfgSave');
+const cfgCancel = document.getElementById('cfgCancel');
+
 const CIRC = 2*Math.PI*140;
 ring.setAttribute('stroke-dasharray', CIRC);
 
@@ -138,6 +192,31 @@ function chip(h){
   const pct = (h.pct>0?'+':'') + h.pct.toFixed(2) + '%';
   return `<div class="chip"><span class="${cls}">${dir}</span><span class="${cls}">${pct}</span><span>${fmt(h.win)}</span></div>`;
 }
+
+// settings storage
+function getSettings(){
+  return {
+    amount: Math.max(50, Number(localStorage.getItem('bet_amount')||100) || 100),
+    oneClick: localStorage.getItem('bet_oneclick') === '1'
+  };
+}
+function setSettings(s){
+  localStorage.setItem('bet_amount', String(Math.max(50, s.amount||100)));
+  localStorage.setItem('bet_oneclick', s.oneClick ? '1' : '0');
+}
+function highlightChips(val){
+  document.querySelectorAll('.chipopt').forEach(b=>{
+    b.classList.toggle('active', Number(b.dataset.v)===Number(val));
+  });
+}
+function openSheet(){
+  const s = getSettings();
+  highlightChips(s.amount);
+  customAmt.value = '';
+  oneClick.checked = s.oneClick;
+  document.body.classList.add('sheet-open');
+}
+function closeSheet(){ document.body.classList.remove('sheet-open'); }
 
 // api
 async function auth(){
@@ -208,17 +287,59 @@ async function poll(){
 
 // действия
 async function place(side){
-  const amount = parseInt(prompt('Сумма ставки ($):','25'),10);
-  if (!amount) return;
+  const s = getSettings();
+  let amount = s.amount;
+
+  if (!s.oneClick){
+    const val = prompt('Сумма ставки ($):', String(amount));
+    if (val === null) return;
+    amount = parseInt(val,10);
+    if (!amount || amount<=0) return alert('Введи положительную сумму');
+  }
+
+  if (amount < 50){
+    alert('Минимальная ставка $50');
+    return;
+  }
+
   const r = await fetch('/api/bet',{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({uid, side, amount})
   }).then(r=>r.json()).catch(()=>({ok:false,error:'SERVER'}));
-  if (!r.ok) alert('Ошибка: '+r.error);
+
+  if (!r.ok) {
+    const msg =
+      r.error==='BETTING_CLOSED' ? 'Окно ставок закрыто' :
+      r.error==='INSUFFICIENT_BALANCE' ? 'Недостаточно средств' :
+      'Ошибка: '+(r.error||'UNKNOWN');
+    alert(msg);
+    return;
+  }
+  if (r.placed) setSettings({ amount: r.placed, oneClick: s.oneClick });
   await poll();
 }
 buyBtn.onclick = ()=> place('BUY');
 sellBtn.onclick = ()=> place('SELL');
+
+// sheet handlers
+cfgBtn.onclick = openSheet;
+sheetBg.onclick = closeSheet;
+cfgCancel.onclick = closeSheet;
+chipsBox.addEventListener('click', (e)=>{
+  const b = e.target.closest('.chipopt'); if (!b) return;
+  highlightChips(Number(b.dataset.v)); customAmt.value='';
+});
+cfgSave.onclick = ()=>{
+  let val = Number(customAmt.value || 0);
+  if (!val){
+    const active = document.querySelector('.chipopt.active');
+    val = active ? Number(active.dataset.v) : 100;
+  }
+  if (val < 50) { alert('Минимальная ставка $50'); return; }
+  setSettings({ amount: Math.floor(val), oneClick: oneClick.checked });
+  closeSheet();
+  alert('Сохранено: $' + Math.floor(val) + (oneClick.checked ? ' • 1-клик' : ''));
+};
 
 // меню
 refBtn.onclick = ()=>{
@@ -274,7 +395,6 @@ starsBtn.onclick = async () => {
     }
   });
 
-  // если клиент вернул Promise — подстрахуемся
   try { await open; await refreshBalance(); } catch {}
 };
 
