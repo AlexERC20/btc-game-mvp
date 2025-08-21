@@ -104,6 +104,33 @@ const CHANNEL_LINK = 'https://t.me/erc20coin';
 
 if (window.Telegram && Telegram.WebApp) { try { Telegram.WebApp.expand(); } catch(e){} }
 
+const starsBtn = document.getElementById('starsBtn');
+
+starsBtn.onclick = async () => {
+  const pack = prompt('Выбери пакет (100, 500, 1000, 10000, 30000):', '100');
+  if (!pack) return;
+
+  const resp = await fetch('/api/stars/create', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ uid, pack })
+  }).then(r=>r.json()).catch(()=>({ ok:false }));
+
+  if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
+
+  Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
+    if (status === 'paid') {
+      await refreshBalance();
+      alert('Оплата успешна! Баланс обновлён.');
+    } else if (status === 'cancelled') {
+      alert('Платёж отменён');
+    } else if (status === 'failed') {
+      alert('Платёж не прошёл');
+    }
+  });
+};
+
+
 // elements
 const priceEl = document.getElementById('price');
 const subEl   = document.getElementById('sub');
