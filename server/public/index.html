@@ -64,7 +64,6 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="price" id="price">$—</div>
   <div class="sub"   id="sub">Старт: —</div>
   <div class="balance" id="bal">Баланс: $—</div>
 
@@ -75,6 +74,7 @@
         <circle id="ring" cx="160" cy="160" r="140" stroke="var(--ring)" stroke-width="14" fill="none"
                 stroke-linecap="round" stroke-dasharray="879.645" stroke-dashoffset="0"/>
       </svg>
+<div class="price" id="price">$—</div>
       <div class="t" id="tleft">00:60</div>
     </div>
   </div>
@@ -89,10 +89,11 @@
 
   <!-- меню: БЕЗ кнопки "Проверить" -->
   <div class="menu">
+    <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
     <button class="chipbtn" id="refBtn">Рефералы</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="starsBtn">Купить ⭐</button>
-    <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
+
   </div>
 
   <div class="history" id="hist"></div>
