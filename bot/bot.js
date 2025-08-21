@@ -1,4 +1,4 @@
-// bot/bot.js — чистая финальная версия (без лишних текстов)
+// bot/bot.js — финал
 // Регистрация: $1000, Реферал: +$500, Подписка: +$5000 (разово), Ежедневный вход: +$1000/день
 
 import 'dotenv/config';
@@ -27,7 +27,7 @@ const pool = new pg.Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// Пакеты Stars (точно совпадают с сервером)
+// Пакеты Stars (мэппинг «звёздный пакет → долларовый кредит»)
 const STARS_PACKS = {
   '100':   { credit: 3_000 },
   '500':   { credit: 16_000 },
@@ -36,8 +36,6 @@ const STARS_PACKS = {
   '30000': { credit: 1_500_000 },
 };
 
-
-// --- мягкие миграции (безопасно добавляют недостающее)
 await pool.query(`
   CREATE TABLE IF NOT EXISTS users(
     id SERIAL PRIMARY KEY,
@@ -189,15 +187,13 @@ async function checkAndGrantChannelBonus(ctx) {
 }
 
 function mainMenu(urlWithUid) {
-  // без «Пополнение» — его ведём на фронте
   return Markup.keyboard([
     [Markup.button.webApp('Открыть BTC Game', urlWithUid)],
     [{ text: 'Рефералы' }, { text: 'Проверить' }],
   ]).resize();
 }
 
-// ===== /start
-// Поддерживает: /start <refId>, /start check
+// ===== /start (поддерживает: /start <refId>, /start check)
 bot.start(async (ctx) => {
   const uid = ctx.from.id;
   const uname = ctx.from.username ? '@' + ctx.from.username : null;
@@ -207,7 +203,6 @@ bot.start(async (ctx) => {
   if (payload && /^\d+$/.test(payload)) {
     await grantReferral(payload, uid);
   } else if (payload && payload === 'check') {
-    // deep-link из мини-аппа «Проверить»
     await checkAndGrantChannelBonus(ctx);
     return;
   }
@@ -251,7 +246,7 @@ app.listen(PORT, () => console.log('Bot HTTP on', PORT));
 // Обязателен для Telegram платежей
 bot.on('pre_checkout_query', (ctx) => ctx.answerPreCheckoutQuery(true));
 
-// Успешная оплата Stars -> зачисляем внутр. валюту
+// ===== Успешная оплата Stars -> зачисляем внутр. валюту
 bot.on('message', async (ctx) => {
   const sp = ctx.message?.successful_payment;
   if (!sp) return;
@@ -263,6 +258,7 @@ bot.on('message', async (ctx) => {
     const uid = Number(uidStr);
     const pack = packStr?.trim();
 
+    // Основной сценарий: пришёл payload с ключом пакета
     if (uid && STARS_PACKS[pack]) {
       const credit = STARS_PACKS[pack].credit;
       await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credit, uid]);
@@ -270,15 +266,16 @@ bot.on('message', async (ctx) => {
       return;
     }
 
-    // fallback: если payload неожиданно другой — конвертнём по факту
-    const stars = sp.total_amount / 1000; // 1⭐ = 1000
-    const credited = stars * 1000;
+    // Фоллбек: total_amount в XTR = точное число звёзд
+    const stars = Number(sp.total_amount) || 0;     // НИКАКОГО /1000!
+    const creditPerStar = 30;                       // линейная оценка (подстраховка)
+    const credited = Math.round(stars * creditPerStar);
+
     await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credited, ctx.from.id]);
     await ctx.reply(`💫 Платёж принят: ${stars}⭐ → +$${credited.toLocaleString()}`);
   } catch (e) {
     console.error('successful_payment handler:', e);
   }
 });
-
 
 bot.launch().then(() => console.log('Bot started ✅'));
