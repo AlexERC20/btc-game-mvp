@@ -42,7 +42,7 @@
   .rank .left{display:flex;gap:8px;align-items:center}
   .badge{width:24px;height:24px;border-radius:999px;background:#222;display:flex;align-items:center;justify-content:center;font-weight:800}
 
-  /* bottom sheets (общие стили) */
+  /* bottom sheets */
   .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:.2s}
   .sheet-backdrop.show{opacity:1;pointer-events:auto}
   .sheet{position:fixed;left:0;right:0;bottom:-60%;background:#0b0b0b;border-top:1px solid var(--border);
@@ -50,8 +50,7 @@
   .sheet.open{bottom:0}
   .sheet h3{margin:6px 0 10px;font-size:16px}
   .rowchips{display:flex;gap:8px;flex-wrap:wrap}
-  .chipopt{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;
-           font-size:13px;cursor:pointer}
+  .chipopt{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-size:13px;cursor:pointer}
   .chipopt.active{outline:2px solid var(--ring)}
   .inputline{display:flex;gap:8px;margin:10px 0}
   .inputline input{flex:1;background:#121212;border:1px solid var(--border);border-radius:10px;
@@ -88,11 +87,11 @@
     <button class="btn sell" id="sell">↓ SELL</button>
   </div>
 
+  <!-- меню: БЕЗ кнопки "Проверить" -->
   <div class="menu">
     <button class="chipbtn" id="refBtn">Рефералы</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="starsBtn">Купить ⭐</button>
-    <button class="chipbtn" id="verifyBtn">Проверить</button>
     <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
   </div>
 
@@ -191,7 +190,6 @@ const lbEl    = document.getElementById('lb');
 
 const refBtn  = document.getElementById('refBtn');
 const topupBtn= document.getElementById('topupBtn');
-const verifyBtn= document.getElementById('verifyBtn');
 const starsBtn= document.getElementById('starsBtn');
 const cfgBtn  = document.getElementById('cfgBtn');
 
@@ -380,17 +378,27 @@ openChannel.onclick = ()=>{
     else window.location.href = CHANNEL_LINK;
   }catch(e){ window.location.href = CHANNEL_LINK; }
 };
+// ✅ новая проверка БЕЗ редиректа — дергаем ваш API
 checkBonus.onclick = async ()=>{
-  const botLink = `https://t.me/${BOT_USERNAME}?start=check`;
-  try{
-    if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(botLink);
-    else window.location.href = botLink;
-  }catch(e){ window.location.href = botLink; }
-  // после возврата — обновим баланс
-  setTimeout(refreshBalance, 1500);
+  const r = await fetch('/api/bonus/check', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ uid })
+  }).then(r=>r.json()).catch(()=>({ ok:false }));
+
+  if (!r.ok) { alert('Не удалось проверить бонус.'); return; }
+
+  // r.added может быть суммой всех начислений (подписка/ежедневка)
+  if (r.added > 0) {
+    await refreshBalance();
+    alert('Начислено: $' + Number(r.added).toLocaleString());
+  } else {
+    alert(r.msg || 'Пока ничего не начислено.');
+  }
+  closeAllSheets();
 };
 
-// рефералы (кнопка в меню)
+// рефералы
 refBtn.onclick = ()=>{
   const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
   if (navigator.share){
@@ -398,14 +406,6 @@ refBtn.onclick = ()=>{
   } else {
     alert('Твоя реф-ссылка:\n' + link + '\nЗа каждого друга +$500 после его первого входа.');
   }
-};
-// verify (кнопка в меню — дублирует проверку)
-verifyBtn.onclick = ()=>{
-  const botLink = `https://t.me/${BOT_USERNAME}?start=check`;
-  try{
-    if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(botLink);
-    else window.location.href = botLink;
-  }catch(e){ window.location.href = botLink; }
 };
 
 // Stars: выбор пакета и оплата
