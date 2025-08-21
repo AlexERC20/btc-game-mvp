@@ -305,15 +305,6 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
-// === Telegram Stars: пакеты и создание инвойса ===
-// 1⭐ = 1000 "миллизвёзд" (millis)
-const STARS_PACKS = {
-  '100':   { millis: 100_000,    credit: 3_000 },
-  '500':   { millis: 500_000,    credit: 16_000 },
-  '1000':  { millis: 1_000_000,  credit: 35_000 },
-  '10000': { millis: 10_000_000, credit: 400_000 },
-  '30000': { millis: 30_000_000, credit: 1_500_000 },
-};
 
 app.post('/api/stars/create', express.json(), async (req, res) => {
   try {
