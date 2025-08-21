@@ -53,7 +53,7 @@ await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;`);
 const bot = new Telegraf(BOT_TOKEN);
 
 // получим username бота для реф-ссылок
-let BOT_USERNAME = 'YOUR_BOT_USERNAME';
+let BOT_USERNAME = 'realpricebtc_bot';
 try { BOT_USERNAME = (await bot.telegram.getMe()).username; } catch { /* no-op */ }
 
 // ===== Утилиты
