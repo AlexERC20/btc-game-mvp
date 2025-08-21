@@ -96,7 +96,7 @@ const username = (window.Telegram?.WebApp?.initDataUnsafe?.user?.username)
   : null;
 
 // === УКАЖИ ИМЯ СВОЕГО БОТА (без @) ===
-const BOT_USERNAME = 'YourBotNameHere';
+const BOT_USERNAME = 'realpricebtc_bot';
 
 // ссылки
 const CHANNEL_LINK = 'https://t.me/erc20coin';
@@ -229,12 +229,11 @@ refBtn.onclick = ()=>{
 };
 topupBtn.onclick = ()=>{
   alert(
-  'Что бы пополнить 5000$ за подписку на канал @erc20coin\n' +
+  '5000$ за подписку на канал\n' +
     '1) Подпишись на канал @erc20coin\n' +
-    '2) Нажми OK — откроется канал, нажми подписаться\n' +
-    '3) Вернись в игру и нажми «Проверить» для начисления\n' +
-    ' Каждый день входи в игру и получай еще 1000$\n' +
-    'За каждого друга вы еще можете получить по 500$'  
+    '2) Нажми OK — откроется канал\n' +
+    'Ежедневно 1000$ за вход\n' +
+    'По 500$ за каждого друга'  
   );
   try{
     if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK);
