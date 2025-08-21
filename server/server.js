@@ -18,6 +18,11 @@ const BINANCE_WS =
 const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
 const MIN_BET = 50; // ✅ минимальная ставка ($)
 
+// бонусы и канал для проверки подписки
+const CHANNEL = process.env.CHANNEL || '@erc20coin';
+const SUBSCRIBE_BONUS = 5000; // разовый за подписку
+const DAILY_BONUS = 1000;     // ежедневный бонус
+
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
@@ -31,6 +36,7 @@ await pool.query(`
     username TEXT,
     balance BIGINT NOT NULL DEFAULT 1000,  -- старт теперь 1000
     channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE,
+    last_daily_bonus DATE,
     created_at TIMESTAMPTZ DEFAULT now()
   );
 
@@ -83,6 +89,7 @@ await pool.query(`
 `);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE`);
+await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus DATE`);
 
 /* ========= Telegram Stars пакеты ========= */
 /* 1⭐ = 1000 милизвёзд (millis) */
@@ -155,6 +162,32 @@ async function ensureUser(telegramId, username) {
   return r.rows[0];
 }
 
+function todayUTC() {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+async function grantDailyIfNeeded(telegramId) {
+  const r = await pool.query('SELECT last_daily_bonus FROM users WHERE telegram_id=$1', [telegramId]);
+  const last = r.rows[0]?.last_daily_bonus ? new Date(r.rows[0].last_daily_bonus) : null;
+  const today = todayUTC();
+  const isSameDay =
+    last &&
+    last.getUTCFullYear() === today.getUTCFullYear() &&
+    last.getUTCMonth() === today.getUTCMonth() &&
+    last.getUTCDate() === today.getUTCDate();
+
+  if (!isSameDay) {
+    await pool.query(
+      'UPDATE users SET balance=balance+$1, last_daily_bonus=$2 WHERE telegram_id=$3',
+      [DAILY_BONUS, today.toISOString().slice(0, 10), telegramId]
+    );
+    return DAILY_BONUS;
+  }
+  return 0;
+}
+
+/* ========= Цикл раунда ========= */
 async function startRound() {
   if (!state.price) return;
   state.phase = 'betting';
@@ -169,7 +202,6 @@ async function startRound() {
   state.currentRoundId = r.rows[0].id;
 }
 
-/* ========= Цикл раунда ========= */
 function tick() {
   (async () => {
     if (state.phase === 'idle') {
@@ -381,6 +413,59 @@ app.post('/api/stars/create', async (req, res) => {
   } catch (e) {
     console.error('stars/create', e);
     res.json({ ok:false, error:'SERVER' });
+  }
+});
+
+/* ========= Проверка бонусов (подписка + ежедневка) ========= */
+// Вызывается фронтом из шита «Пополнение» — без редиректа в бота
+app.post('/api/bonus/check', async (req, res) => {
+  try {
+    const { uid } = req.body || {};
+    if (!uid) return res.json({ ok:false, msg:'NO_UID' });
+
+    // убедимся, что пользователь есть
+    await ensureUser(uid, null);
+
+    // проверка подписки на канал (бот должен видеть участников канала)
+    let isMember = false;
+    try {
+      const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getChatMember`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ chat_id: CHANNEL, user_id: uid })
+      }).then(r=>r.json());
+      const status = r?.result?.status;
+      isMember = !!status && status !== 'left';
+    } catch (e) {
+      console.error('getChatMember error', e);
+    }
+
+    let added = 0;
+
+    // разовый бонус за подписку
+    if (isMember) {
+      const q = await pool.query('SELECT channel_bonus_claimed FROM users WHERE telegram_id=$1', [uid]);
+      const claimed = q.rows[0]?.channel_bonus_claimed;
+      if (!claimed) {
+        await pool.query(
+          'UPDATE users SET balance=balance+$1, channel_bonus_claimed=TRUE WHERE telegram_id=$2',
+          [SUBSCRIBE_BONUS, uid]
+        );
+        added += SUBSCRIBE_BONUS;
+      }
+    }
+
+    // ежедневный бонус
+    added += await grantDailyIfNeeded(uid);
+
+    // баланс после начислений
+    const r2 = await pool.query('SELECT balance FROM users WHERE telegram_id=$1', [uid]);
+    const balance = Number(r2.rows[0]?.balance || 0);
+
+    res.json({ ok:true, added, balance, isMember, msg: added>0 ? 'BONUS_APPLIED' : 'NO_CHANGE' });
+  } catch (e) {
+    console.error('/api/bonus/check', e);
+    res.json({ ok:false, msg:'SERVER' });
   }
 });
 
