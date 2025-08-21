@@ -28,7 +28,7 @@ await pool.query(`
     id SERIAL PRIMARY KEY,
     telegram_id BIGINT UNIQUE NOT NULL,
     username TEXT,
-    balance BIGINT NOT NULL DEFAULT 10000,
+    balance BIGINT NOT NULL DEFAULT 1000,                 -- старт теперь 1000
     channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT now()
   );
@@ -82,6 +82,16 @@ await pool.query(`
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE`);
 
+/* ========= Telegram Stars пакеты (глобально) ========= */
+/* 1⭐ = 1000 милизвёзд (millis) */
+const STARS_PACKS = {
+  '100':   { millis: 100_000,    credit: 3_000 },
+  '500':   { millis: 500_000,    credit: 16_000 },
+  '1000':  { millis: 1_000_000,  credit: 35_000 },
+  '10000': { millis: 10_000_000, credit: 400_000 },
+  '30000': { millis: 30_000_000, credit: 1_500_000 },
+};
+
 /* ========= Состояние раунда ========= */
 let state = {
   price: null,
@@ -125,15 +135,21 @@ connectPrice();
 async function ensureUser(telegramId, username) {
   await pool.query(
     `INSERT INTO users(telegram_id, username, balance)
-     VALUES ($1, $2, 10000)
+     VALUES ($1, $2, 1000)                             -- старт теперь 1000
      ON CONFLICT (telegram_id) DO NOTHING`,
     [telegramId, username || null]
   );
   if (username) {
-    await pool.query(`UPDATE users SET username=$2 WHERE telegram_id=$1 AND (username IS NULL OR username='')`,
-      [telegramId, username]);
+    await pool.query(
+      `UPDATE users SET username=$2
+       WHERE telegram_id=$1 AND (username IS NULL OR username='')`,
+      [telegramId, username]
+    );
   }
-  const r = await pool.query('SELECT id, balance, username FROM users WHERE telegram_id=$1', [telegramId]);
+  const r = await pool.query(
+    'SELECT id, balance, username FROM users WHERE telegram_id=$1',
+    [telegramId]
+  );
   return r.rows[0];
 }
 
@@ -144,11 +160,14 @@ async function startRound() {
   state.startPrice = state.price;
   state.bankBuy = 0; state.bankSell = 0;
   state.betsBuy = []; state.betsSell = [];
-  const r = await pool.query('INSERT INTO rounds(start_price) VALUES ($1) RETURNING id', [state.startPrice]);
+  const r = await pool.query(
+    'INSERT INTO rounds(start_price) VALUES ($1) RETURNING id',
+    [state.startPrice]
+  );
   state.currentRoundId = r.rows[0].id;
 }
 
-/* ========= Цикл раунда (фикс) ========= */
+/* ========= Цикл раунда ========= */
 function tick() {
   (async () => {
     if (state.phase === 'idle') {
@@ -194,15 +213,6 @@ async function settle() {
 
   const pct = ((state.price - state.startPrice) / state.startPrice) * 100;
 
-// Пакеты Stars (точно совпадают с сервером)
-const STARS_PACKS = {
-  '100':   { credit: 3_000 },
-  '500':   { credit: 16_000 },
-  '1000':  { credit: 35_000 },
-  '10000': { credit: 400_000 },
-  '30000': { credit: 1_500_000 },
-};
-
   await pool.query(
     `UPDATE rounds SET end_price=$1, winner_side=$2, fee=$3, distributable=$4 WHERE id=$5`,
     [state.price, side, fee, distributable, state.currentRoundId]
@@ -212,8 +222,10 @@ const STARS_PACKS = {
     for (const w of winners) {
       const share = Math.round((w.amount / totalWin) * distributable);
       if (share > 0) {
-        await pool.query('INSERT INTO payouts(user_id, round_id, amount) VALUES ($1,$2,$3)',
-          [w.user_id, state.currentRoundId, share]);
+        await pool.query(
+          'INSERT INTO payouts(user_id, round_id, amount) VALUES ($1,$2,$3)',
+          [w.user_id, state.currentRoundId, share]
+        );
         await pool.query('UPDATE users SET balance=balance+$1 WHERE id=$2', [share, w.user_id]);
       }
     }
@@ -275,7 +287,7 @@ app.post('/api/bet', async (req, res) => {
   }
 });
 
-// Состояние/история/топ
+// Состояние
 app.get('/api/round', (req, res) => {
   res.json({
     price: state.price, startPrice: state.startPrice,
@@ -286,58 +298,8 @@ app.get('/api/round', (req, res) => {
   });
 });
 app.get('/api/history', (req, res) => res.json({ history: state.history }));
-app.get('/api/leaderboard', async (req, res) => {
-  try {
-    const q = await pool.query(`
-      SELECT COALESCE(NULLIF(u.username,''), CONCAT('@', u.telegram_id::text)) AS name,
-             COALESCE(SUM(p.amount),0)::BIGINT AS won
-      FROM payouts p
-      JOIN users u ON u.id = p.user_id
-      WHERE p.created_at::date = CURRENT_DATE
-      GROUP BY name
-      ORDER BY won DESC
-      LIMIT 10
-    `);
-    res.json({ ok: true, top: q.rows });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ ok:false });
-  }
-});
 
-
-app.post('/api/stars/create', express.json(), async (req, res) => {
-  try {
-    const { uid, pack } = req.body || {};
-    const p = STARS_PACKS[pack];
-    if (!uid || !p) return res.json({ ok:false, error:'BAD_REQUEST' });
-
-    const payload = `${uid}:pack_${pack}`; // вернётся в successful_payment
-
-    // createInvoiceLink (валюта XTR, без provider_token)
-    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        title:       `${pack}⭐`,
-        description: `Пакет на ${pack} звёзд`,
-        payload,
-        provider_token: '',
-        currency: 'XTR',
-        prices: [{ label: `${pack}⭐`, amount: p.millis }],
-      })
-    }).then(r=>r.json());
-
-    if (!r.ok) return res.json({ ok:false, error:'TG_API', details:r });
-
-    res.json({ ok:true, link: r.result });
-  } catch (e) {
-    console.error('stars/create', e);
-    res.json({ ok:false, error:'SERVER' });
-  }
-});
-
-
+// Лидерборд ЗА ЧАС
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const q = `
@@ -346,8 +308,8 @@ app.get('/api/leaderboard', async (req, res) => {
         SUM(p.amount)::bigint AS won
       FROM payouts p
       JOIN users u ON u.id = p.user_id
-      WHERE p.created_at >= now() - interval '1 hour'   -- окно 60 минут
-        AND p.amount > 0                                 -- только выигрыши
+      WHERE p.created_at >= now() - interval '1 hour'
+        AND p.amount > 0
       GROUP BY u.id, u.username, u.telegram_id
       ORDER BY won DESC
       LIMIT 20;
@@ -357,6 +319,37 @@ app.get('/api/leaderboard', async (req, res) => {
   } catch (e) {
     console.error('leaderboard hourly', e);
     res.json({ ok: false, error: 'SERVER' });
+  }
+});
+
+// Создание инвойса Stars
+app.post('/api/stars/create', express.json(), async (req, res) => {
+  try {
+    const { uid, pack } = req.body || {};
+    const p = STARS_PACKS[pack];
+    if (!uid || !p) return res.json({ ok:false, error:'BAD_REQUEST' });
+
+    const payload = `${uid}:pack_${pack}`; // вернётся в successful_payment
+
+    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        title:       `${pack}⭐`,
+        description: `Пакет на ${pack} звёзд`,
+        payload,
+        provider_token: '',          // для Stars пусто
+        currency: 'XTR',             // ОБЯЗАТЕЛЬНО
+        prices: [{ label: `${pack}⭐`, amount: p.millis }], // 1⭐ = 1000 millis
+      })
+    }).then(r=>r.json());
+
+    if (!r.ok) return res.json({ ok:false, error:'TG_API', details:r });
+
+    res.json({ ok:true, link: r.result });
+  } catch (e) {
+    console.error('stars/create', e);
+    res.json({ ok:false, error:'SERVER' });
   }
 });
 
