@@ -248,4 +248,37 @@ const app = express();
 app.get('/', (_, res) => res.send('BTC Game Bot is running'));
 app.listen(PORT, () => console.log('Bot HTTP on', PORT));
 
+// Обязателен для Telegram платежей
+bot.on('pre_checkout_query', (ctx) => ctx.answerPreCheckoutQuery(true));
+
+// Успешная оплата Stars -> зачисляем внутр. валюту
+bot.on('message', async (ctx) => {
+  const sp = ctx.message?.successful_payment;
+  if (!sp) return;
+
+  try {
+    // payload формата "<uid>:pack_<N>"
+    const payload = sp.invoice_payload || '';
+    const [uidStr, packStr] = payload.split(':pack_');
+    const uid = Number(uidStr);
+    const pack = packStr?.trim();
+
+    if (uid && STARS_PACKS[pack]) {
+      const credit = STARS_PACKS[pack].credit;
+      await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credit, uid]);
+      await ctx.reply(`💫 Платёж принят: пакет ${pack}⭐ → +$${credit.toLocaleString()} на баланс.`);
+      return;
+    }
+
+    // fallback: если payload неожиданно другой — конвертнём по факту
+    const stars = sp.total_amount / 1000; // 1⭐ = 1000
+    const credited = stars * 1000;
+    await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credited, ctx.from.id]);
+    await ctx.reply(`💫 Платёж принят: ${stars}⭐ → +$${credited.toLocaleString()}`);
+  } catch (e) {
+    console.error('successful_payment handler:', e);
+  }
+});
+
+
 bot.launch().then(() => console.log('Bot started ✅'));
