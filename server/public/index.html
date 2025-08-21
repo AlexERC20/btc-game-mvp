@@ -78,7 +78,7 @@ const uid = qs.get('uid') || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id)
 const username = (window.Telegram?.WebApp?.initDataUnsafe?.user?.username) ? '@' + window.Telegram.WebApp.initDataUnsafe.user.username : null;
 
 // УКАЖИ имя своего бота (для реф-ссылки):
-const BOT_USERNAME = 'YOUR_BOT_USERNAME'; // <-- поменяй на своего бота
+const BOT_USERNAME = 'realpricebtc_bot'; // <-- поменяй на своего бота
 
 if (window.Telegram && Telegram.WebApp) { try { Telegram.WebApp.expand(); } catch(e){} }
 
