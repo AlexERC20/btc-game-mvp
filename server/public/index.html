@@ -1,46 +1,232 @@
-<!-- ... верх без изменений ... -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Real Price BTC Game</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg:#000; --text:#fff; --muted:#b9b9b9; --ring:#ff8c00;
+    --green:#1fa36a; --red:#c6423a; --card:#0b0b0b; --border:#1e1e1e; --chip:#121212;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial}
+  .wrap{max-width:520px;margin:0 auto;padding:16px 14px 28px}
+  .price{font-size:22px;font-weight:800;text-align:center;margin-top:2px}
+  .sub{font-size:12px;color:var(--muted);text-align:center;margin:2px 0 8px}
+  .balance{text-align:center;font-size:16px;margin:4px 0 8px}
+  .center{display:flex;justify-content:center;align-items:center;margin:8px 0}
+  .timer{position:relative;width:300px;height:300px}
+  .timer svg{width:100%;height:100%;display:block;transform:rotate(-90deg)}
+  .t{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:800}
+  .phase{text-align:center;color:var(--muted);margin-top:10px}
+  .bank{text-align:center;color:#fff;font-size:18px;margin-top:6px}
+  .row{display:flex;gap:14px;justify-content:center;margin:12px 0}
+  .btn{flex:1;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer}
+  .btn:active{transform:translateY(1px) scale(.99)}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .buy{background:var(--green)} .sell{background:var(--red)}
+
+  .menu{display:flex;gap:10px;justify-content:center;margin:8px 0 10px}
+  .chipbtn{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-size:13px;color:#fff;cursor:pointer}
+
+  .history{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:4px 0 10px}
+  .chip{background:var(--chip);border:1px solid var(--border);border-radius:999px;padding:6px 10px;font-size:12px;display:flex;gap:6px;align-items:center}
+  .up{color:#5ad19c}.down{color:#ff6b6b}
+
+  .head{color:var(--muted);font-size:13px;margin:10px 0 6px;text-align:center}
+  .lb{display:grid;grid-template-columns:1fr;gap:8px}
+  .rank{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+  .rank .left{display:flex;gap:8px;align-items:center}
+  .badge{width:24px;height:24px;border-radius:999px;background:#222;display:flex;align-items:center;justify-content:center;font-weight:800}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="price" id="price">$—</div>
+  <div class="sub"   id="sub">Старт: —</div>
+  <div class="balance" id="bal">Баланс: $—</div>
+
+  <div class="center">
+    <div class="timer">
+      <svg viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet">
+        <circle cx="160" cy="160" r="140" stroke="#1f1f1f" stroke-width="14" fill="none"/>
+        <circle id="ring" cx="160" cy="160" r="140" stroke="var(--ring)" stroke-width="14" fill="none"
+                stroke-linecap="round" stroke-dasharray="879.645" stroke-dashoffset="0"/>
+      </svg>
+      <div class="t" id="tleft">00:60</div>
+    </div>
+  </div>
+
+  <!-- фаза под таймером -->
+  <div class="phase" id="phase">Ставки открыты</div>
+  <!-- только общий банк -->
+  <div class="bank" id="bank">Банк: $0</div>
+
   <div class="row">
     <button class="btn buy" id="buy">↑ BUY</button>
     <button class="btn sell" id="sell">↓ SELL</button>
   </div>
 
-  <!-- МЕНЮ: добавили кнопку "Проверить" -->
+  <!-- меню с тремя кнопками -->
   <div class="menu">
     <button class="chipbtn" id="refBtn">Рефералы</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="verifyBtn">Проверить</button>
   </div>
 
+  <!-- краткая история исходов -->
   <div class="history" id="hist"></div>
 
+  <!-- топ победителей вместо старых списков -->
   <div class="head">Топ победителей за сегодня</div>
   <div class="lb" id="lb"></div>
-<!-- ... низ без изменений ... -->
+</div>
 
 <script>
-/* ... существующий код выше ... */
+const qs = new URLSearchParams(location.search);
+const uid = qs.get('uid')
+  || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id)
+  || prompt('Введите ваш Telegram ID для теста:');
 
-// УКАЖИ имя своего бота (без @)
-const BOT_USERNAME = 'realpricebtc_bot'; // <= поменяй
+const username = (window.Telegram?.WebApp?.initDataUnsafe?.user?.username)
+  ? '@' + window.Telegram.WebApp.initDataUnsafe.user.username
+  : null;
 
-// ссылки на каналы/ботов
+// === УКАЖИ ИМЯ СВОЕГО БОТА (без @) ===
+const BOT_USERNAME = 'realpricebtc_bot';
+
+// ссылки
 const CHANNEL_LINK = 'https://t.me/erc20coin';
 
-const refBtn   = document.getElementById('refBtn');
-const topupBtn = document.getElementById('topupBtn');
+if (window.Telegram && Telegram.WebApp) { try { Telegram.WebApp.expand(); } catch(e){} }
+
+// elements
+const priceEl = document.getElementById('price');
+const subEl   = document.getElementById('sub');
+const balEl   = document.getElementById('bal');
+const ring    = document.getElementById('ring');
+const tleft   = document.getElementById('tleft');
+const phaseEl = document.getElementById('phase');
+const bankEl  = document.getElementById('bank');
+const buyBtn  = document.getElementById('buy');
+const sellBtn = document.getElementById('sell');
+const histEl  = document.getElementById('hist');
+const lbEl    = document.getElementById('lb');
+const refBtn  = document.getElementById('refBtn');
+const topupBtn= document.getElementById('topupBtn');
 const verifyBtn= document.getElementById('verifyBtn');
 
-/* ===== Рефералы ===== */
+const CIRC = 2*Math.PI*140;
+ring.setAttribute('stroke-dasharray', CIRC);
+
+// helpers
+function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
+function phaseText(p){
+  if (p==='betting') return 'Ставки открыты';
+  if (p==='locked')  return 'Ставки закрыты';
+  if (p==='pause')   return 'Пауза';
+  return 'Ожидание';
+}
+function chip(h){
+  const dir = h.side==='BUY'?'↑ BUY':'↓ SELL';
+  const cls = h.side==='BUY'?'up':'down';
+  const pct = (h.pct>0?'+':'') + h.pct.toFixed(2) + '%';
+  return `<div class="chip"><span class="${cls}">${dir}</span><span class="${cls}">${pct}</span><span>${fmt(h.win)}</span></div>`;
+}
+
+// api
+async function auth(){
+  const r = await fetch('/api/auth',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({uid, username})
+  }).then(r=>r.json()).catch(()=>({ok:false}));
+  if (r.ok) balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
+}
+async function refreshBalance(){
+  const r = await fetch('/api/auth',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({uid, username})
+  }).then(r=>r.json()).catch(()=>({ok:false}));
+  if (r.ok) balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
+}
+async function leaderboard(){
+  const r = await fetch('/api/leaderboard').then(r=>r.json()).catch(()=>({ok:false}));
+  if (!r.ok) return;
+  lbEl.innerHTML = (r.top||[]).map((x,i)=>`
+    <div class="rank">
+      <div class="left">
+        <div class="badge">${i+1}</div>
+        <div class="name">${x.name}</div>
+      </div>
+      <div class="val">${fmt(x.won)}</div>
+    </div>
+  `).join('') || '<div class="rank"><div class="left"><div class="badge">—</div><div class="name">ещё пусто</div></div><div class="val">$0</div></div>';
+}
+
+// polling
+async function poll(){
+  const r = await fetch('/api/round').then(r=>r.json()).catch(()=>null);
+  if (!r) return;
+
+  if (r.price){
+    priceEl.textContent = fmt(r.price);
+    if (r.startPrice){
+      priceEl.style.color = r.price>r.startPrice?'#1fa36a':(r.price<r.startPrice?'#c6423a':'#fff');
+      subEl.textContent = 'Старт: ' + Math.round(r.startPrice);
+    }
+  }
+
+  // таймер
+  tleft.textContent = '00:' + String(Math.max(r.secsLeft||0,0)).padStart(2,'0');
+  const len = r.roundLen||60;
+  const progress = Math.max(0, Math.min(1, (len - (r.secsLeft||0))/len));
+  ring.style.transition='stroke-dashoffset .5s linear';
+  ring.setAttribute('stroke-dashoffset', CIRC*progress);
+
+  // фаза и банк
+  phaseEl.textContent = phaseText(r.phase);
+  bankEl.textContent = 'Банк: ' + fmt(r.bank);
+
+  // кнопки
+  const open = r.phase==='betting';
+  buyBtn.disabled = !open;
+  sellBtn.disabled = !open;
+
+  // история (краткая)
+  const h = await fetch('/api/history').then(r=>r.json()).catch(()=>({history:[]}));
+  histEl.innerHTML = (h.history||[]).map(chip).join('');
+
+  // баланс и топ
+  await refreshBalance();
+  await leaderboard();
+}
+
+// действия
+async function place(side){
+  const amount = parseInt(prompt('Сумма ставки ($):','25'),10);
+  if (!amount) return;
+  const r = await fetch('/api/bet',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({uid, side, amount})
+  }).then(r=>r.json()).catch(()=>({ok:false,error:'SERVER'}));
+  if (!r.ok) alert('Ошибка: '+r.error);
+  await poll();
+}
+buyBtn.onclick = ()=> place('BUY');
+sellBtn.onclick = ()=> place('SELL');
+
+// меню
 refBtn.onclick = ()=>{
   const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
   if (navigator.share){
     navigator.share({ title:'BTC Game', text:'Залетай в игру!', url:link }).catch(()=>{});
   } else {
-    alert('Твоя реф-ссылка:\n'+link+'\nСкинь другу — получишь $100 после его первого входа.');
+    alert('Твоя реф-ссылка:\n'+link+'\nЗа каждого друга +$100 после первого входа.');
   }
 };
-
-/* ===== Пополнение (инструкции + открыть КАНАЛ) ===== */
 topupBtn.onclick = ()=>{
   alert(
     '1000$ за подписку на канал @erc20coin\n' +
@@ -48,31 +234,23 @@ topupBtn.onclick = ()=>{
     '2) Нажми OK — откроется канал\n' +
     '3) Вернись в бота и нажми «Проверить» для начисления'
   );
-  // открываем канал (в мини-аппе корректнее через openTelegramLink)
-  try {
-    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openTelegramLink) {
-      Telegram.WebApp.openTelegramLink(CHANNEL_LINK);
-    } else {
-      window.location.href = CHANNEL_LINK;
-    }
-  } catch(e) {
-    window.location.href = CHANNEL_LINK;
-  }
+  try{
+    if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK);
+    else window.location.href = CHANNEL_LINK;
+  }catch(e){ window.location.href = CHANNEL_LINK; }
 };
-
-/* ===== Проверить (открыть бота с payload=check) ===== */
 verifyBtn.onclick = ()=>{
   const botLink = `https://t.me/${BOT_USERNAME}?start=check`;
-  try {
-    if (window.Telegram && Telegram.WebApp && Telegram.WebApp.openTelegramLink) {
-      Telegram.WebApp.openTelegramLink(botLink);
-    } else {
-      window.location.href = botLink;
-    }
-  } catch(e) {
-    window.location.href = botLink;
-  }
+  try{
+    if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(botLink);
+    else window.location.href = botLink;
+  }catch(e){ window.location.href = botLink; }
 };
 
-/* остальной твой код (poll/auth/place и т.д.) без изменений */
+// init
+auth();
+poll();
+setInterval(poll, 1000);
 </script>
+</body>
+</html>
