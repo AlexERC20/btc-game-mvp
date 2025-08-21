@@ -20,12 +20,14 @@ const pool = new pg.Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-/* ========= DB: bootstrap схемы ========= */
+/* ========= DB bootstrap / миграции ========= */
 await pool.query(`
   CREATE TABLE IF NOT EXISTS users(
     id SERIAL PRIMARY KEY,
     telegram_id BIGINT UNIQUE NOT NULL,
+    username TEXT,
     balance BIGINT NOT NULL DEFAULT 10000,
+    channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT now()
   );
 
@@ -42,7 +44,7 @@ await pool.query(`
   CREATE TABLE IF NOT EXISTS bets(
     id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id),
-    round_id INT REFERENCES rounds(id),
+    round_id INT,
     side TEXT NOT NULL,
     amount BIGINT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
@@ -55,9 +57,30 @@ await pool.query(`
     amount BIGINT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
   );
+
+  CREATE TABLE IF NOT EXISTS referrals(
+    id SERIAL PRIMARY KEY,
+    referrer_user_id INT REFERENCES users(id),
+    referred_telegram_id BIGINT UNIQUE,
+    created_at TIMESTAMPTZ DEFAULT now()
+  );
 `);
 
-/* ========= Состояние раунда (в памяти) ========= */
+/* добиваем безопасные ALTER-ы (если раньше были старые схемы) */
+await pool.query(`ALTER TABLE bets ADD COLUMN IF NOT EXISTS round_id INT`);
+await pool.query(`
+  DO $$
+  BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='bets_round_fk') THEN
+      ALTER TABLE bets ADD CONSTRAINT bets_round_fk
+      FOREIGN KEY (round_id) REFERENCES rounds(id);
+    END IF;
+  END$$;
+`);
+await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT`);
+await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE`);
+
+/* ========= Состояние раунда ========= */
 let state = {
   price: null,
   startPrice: null,
@@ -65,14 +88,13 @@ let state = {
   phase: 'idle',            // idle | betting | locked | pause
   secsLeft: 0,
 
-  // Тайминги раунда (можно подправить при желании)
   roundLen: 60,
-  betWindow: 20,
+  betWindow: 10,
   pauseLen: 10,
 
   bankBuy: 0,
   bankSell: 0,
-  betsBuy: [],              // { user_id, user, amount, ts }
+  betsBuy: [],
   betsSell: [],
 
   history: [],              // [{ side, start, end, pct, win }]
@@ -81,39 +103,35 @@ let state = {
 };
 const MAX_HIST = 10;
 
-/* ========= Поток цены (Binance WS) ========= */
+/* ========= Цена (Binance WS) ========= */
 let ws = null;
 function connectPrice() {
   ws = new WebSocket(BINANCE_WS);
-
   ws.on('message', (raw) => {
     try {
       const d = JSON.parse(raw);
-      // miniTicker: c = close
-      state.price = Number(d.c);
-      if (!state.startPrice && state.phase !== 'idle') {
-        state.startPrice = state.price;
-      }
-    } catch (_) {}
+      state.price = Number(d.c ?? d.lastPrice ?? d.p ?? d.k?.c);
+      if (!state.startPrice && state.phase !== 'idle') state.startPrice = state.price;
+    } catch {}
   });
-
   ws.on('close', () => setTimeout(connectPrice, 1000));
   ws.on('error', () => ws.close());
 }
 connectPrice();
 
-/* ========= Вспомогательное ========= */
-async function ensureUser(telegramId) {
+/* ========= Утилиты ========= */
+async function ensureUser(telegramId, username) {
   await pool.query(
-    `INSERT INTO users(telegram_id, balance)
-     VALUES ($1, 10000)
+    `INSERT INTO users(telegram_id, username, balance)
+     VALUES ($1, $2, 10000)
      ON CONFLICT (telegram_id) DO NOTHING`,
-    [telegramId]
+    [telegramId, username || null]
   );
-  const r = await pool.query(
-    'SELECT id, balance FROM users WHERE telegram_id=$1',
-    [telegramId]
-  );
+  if (username) {
+    await pool.query(`UPDATE users SET username=$2 WHERE telegram_id=$1 AND (username IS NULL OR username='')`,
+      [telegramId, username]);
+  }
+  const r = await pool.query('SELECT id, balance, username FROM users WHERE telegram_id=$1', [telegramId]);
   return r.rows[0];
 }
 
@@ -122,23 +140,15 @@ async function startRound() {
   state.phase = 'betting';
   state.secsLeft = state.roundLen;
   state.startPrice = state.price;
-
-  state.bankBuy = 0;
-  state.bankSell = 0;
-  state.betsBuy = [];
-  state.betsSell = [];
-
-  const r = await pool.query(
-    'INSERT INTO rounds(start_price) VALUES ($1) RETURNING id',
-    [state.startPrice]
-  );
+  state.bankBuy = 0; state.bankSell = 0;
+  state.betsBuy = []; state.betsSell = [];
+  const r = await pool.query('INSERT INTO rounds(start_price) VALUES ($1) RETURNING id', [state.startPrice]);
   state.currentRoundId = r.rows[0].id;
 }
 
-/* ========= Правильный цикл (tick) ========= */
+/* ========= Цикл раунда (фикс) ========= */
 function tick() {
   (async () => {
-    // Старт из idle, когда есть первая цена
     if (state.phase === 'idle') {
       if (!state.price) return;
       await startRound();
@@ -147,21 +157,16 @@ function tick() {
 
     state.secsLeft--;
 
-    // Переход из betting в locked после закрытия окна ставок
-    if (
-      state.phase === 'betting' &&
-      state.secsLeft === state.roundLen - state.betWindow
-    ) {
+    if (state.phase === 'betting' &&
+        state.secsLeft === state.roundLen - state.betWindow) {
       state.phase = 'locked';
     }
 
-    // Расчёт ТОЛЬКО из locked, когда время вышло
     if (state.phase === 'locked' && state.secsLeft <= 0) {
       await settle();
       return;
     }
 
-    // Выход из pause обратно в idle — следующий тик стартует новый раунд
     if (state.phase === 'pause' && state.secsLeft <= 0) {
       state.phase = 'idle';
       state.currentRoundId = null;
@@ -170,191 +175,122 @@ function tick() {
 }
 setInterval(tick, 1000);
 
-/* ========= Расчёт раунда ========= */
+/* ========= Расчёт ========= */
 async function settle() {
   const up = state.price > state.startPrice;
   const side = up ? 'BUY' : 'SELL';
 
   const winners = up ? state.betsBuy : state.betsSell;
-  const losers = up ? state.betsSell : state.betsBuy;
+  const losers  = up ? state.betsSell : state.betsBuy;
 
-  const totalWinStake = winners.reduce((s, x) => s + x.amount, 0);
-  const totalLoseStake = losers.reduce((s, x) => s + x.amount, 0);
-  const totalBank = totalWinStake + totalLoseStake;
+  const totalWin  = winners.reduce((s, x) => s + x.amount, 0);
+  const totalLose = losers.reduce((s, x) => s + x.amount, 0);
+  const bank = totalWin + totalLose;
 
-  // Комиссия 10% ТОЛЬКО с проигравших
-  const fee = Math.floor(totalLoseStake * 0.1);
-  const distributable = totalBank - fee;
+  const fee = Math.floor(totalLose * 0.10);          // 10% только с проигравших
+  const distributable = bank - fee;
 
-  const pct =
-    ((state.price - state.startPrice) / state.startPrice) * 100;
+  const pct = ((state.price - state.startPrice) / state.startPrice) * 100;
 
-  // Обновляем round
   await pool.query(
-    `UPDATE rounds
-     SET end_price=$1, winner_side=$2, fee=$3, distributable=$4
-     WHERE id=$5`,
+    `UPDATE rounds SET end_price=$1, winner_side=$2, fee=$3, distributable=$4 WHERE id=$5`,
     [state.price, side, fee, distributable, state.currentRoundId]
   );
 
-  // Выплаты победителям + зачисление на баланс
-  if (totalWinStake > 0 && winners.length > 0) {
+  if (totalWin > 0 && winners.length) {
     for (const w of winners) {
-      const share = Math.round(
-        (w.amount / totalWinStake) * distributable
-      );
+      const share = Math.round((w.amount / totalWin) * distributable);
       if (share > 0) {
-        await pool.query(
-          'INSERT INTO payouts(user_id, round_id, amount) VALUES ($1,$2,$3)',
-          [w.user_id, state.currentRoundId, share]
-        );
-        await pool.query(
-          'UPDATE users SET balance=balance+$1 WHERE id=$2',
-          [share, w.user_id]
-        );
+        await pool.query('INSERT INTO payouts(user_id, round_id, amount) VALUES ($1,$2,$3)',
+          [w.user_id, state.currentRoundId, share]);
+        await pool.query('UPDATE users SET balance=balance+$1 WHERE id=$2', [share, w.user_id]);
       }
     }
   }
 
-  // История (в памяти) для быстрого UI
-  state.history.unshift({
-    side,
-    start: state.startPrice,
-    end: state.price,
-    pct,
-    win: distributable,
-  });
+  state.history.unshift({ side, start: state.startPrice, end: state.price, pct, win: distributable });
   while (state.history.length > MAX_HIST) state.history.pop();
 
-  // Для отображения последнего расчёта на фронте
   state.lastSettlement = {
-    side,
-    totalBank,
-    fee,
-    distributable,
-    payouts: winners.map((w) => ({
+    side, totalBank: bank, fee, distributable,
+    payouts: winners.map(w => ({
       user: w.user,
-      amount:
-        totalWinStake > 0
-          ? Math.round((w.amount / totalWinStake) * distributable)
-          : 0,
+      amount: totalWin ? Math.round((w.amount / totalWin) * distributable) : 0,
     })),
   };
 
-  // Теперь просто переходим в паузу. Выход из паузы сделает tick()
   state.phase = 'pause';
   state.secsLeft = state.pauseLen;
 }
 
 /* ========= API ========= */
 
-// Регистрация/проверка пользователя (возвращает баланс)
+// Регистрация/пинг (сохранение username)
 app.post('/api/auth', async (req, res) => {
   try {
-    const { uid } = req.body || {};
+    const { uid, username } = req.body || {};
     if (!uid) return res.status(400).json({ ok: false, error: 'NO_UID' });
-
-    const u = await ensureUser(uid);
-    res.json({
-      ok: true,
-      user: { id: u.id, telegram_id: uid, balance: Number(u.balance) },
-    });
+    const u = await ensureUser(uid, username);
+    res.json({ ok: true, user: { id: u.id, telegram_id: uid, username: u.username, balance: Number(u.balance) } });
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false, error: 'SERVER' });
   }
 });
 
-// Состояние раунда
-app.get('/api/round', (req, res) => {
-  res.json({
-    price: state.price,
-    startPrice: state.startPrice,
-    phase: state.phase,
-    secsLeft: state.secsLeft,
-    roundLen: state.roundLen,
-    betWindow: state.betWindow,
-    pauseLen: state.pauseLen,
-
-    bank: state.bankBuy + state.bankSell,
-    bankBuy: state.bankBuy,
-    bankSell: state.bankSell,
-    betsBuy: state.betsBuy,
-    betsSell: state.betsSell,
-
-    lastSettlement: state.lastSettlement,
-  });
-});
-
-// Ставка (списывает баланс сразу)
+// Ставка
 app.post('/api/bet', async (req, res) => {
   try {
-    if (state.phase !== 'betting') {
-      return res.status(400).json({ ok: false, error: 'BETTING_CLOSED' });
-    }
+    if (state.phase !== 'betting') return res.status(400).json({ ok:false, error:'BETTING_CLOSED' });
     const { uid, side, amount } = req.body || {};
-    if (!uid || !side) {
-      return res.status(400).json({ ok: false, error: 'BAD_REQUEST' });
-    }
-
-    const amt = Math.max(1, Math.floor(Number(amount) || 0));
+    if (!uid || !side) return res.status(400).json({ ok:false, error:'BAD_REQUEST' });
+    const amt = Math.max(1, Math.floor(Number(amount)||0));
     const u = await ensureUser(uid);
-    if (Number(u.balance) < amt) {
-      return res
-        .status(400)
-        .json({ ok: false, error: 'INSUFFICIENT_BALANCE' });
-    }
+    if (Number(u.balance) < amt) return res.status(400).json({ ok:false, error:'INSUFFICIENT_BALANCE' });
 
-    // списываем деньги
-    await pool.query('UPDATE users SET balance=balance-$1 WHERE id=$2', [
-      amt,
-      u.id,
-    ]);
+    await pool.query('UPDATE users SET balance=balance-$1 WHERE id=$2', [amt, u.id]);
+    await pool.query('INSERT INTO bets(user_id, round_id, side, amount) VALUES ($1,$2,$3,$4)',
+      [u.id, state.currentRoundId, side, amt]);
 
-    // записываем ставку в БД
-    await pool.query(
-      'INSERT INTO bets(user_id, round_id, side, amount) VALUES ($1,$2,$3,$4)',
-      [u.id, state.currentRoundId, side, amt]
-    );
-
-    // и в память (для мгновенного UI)
     const bet = { user_id: u.id, user: String(uid), amount: amt, ts: Date.now() };
-    if (side === 'BUY') {
-      state.betsBuy.push(bet);
-      state.bankBuy += amt;
-    } else if (side === 'SELL') {
-      state.betsSell.push(bet);
-      state.bankSell += amt;
-    } else {
-      return res.status(400).json({ ok: false, error: 'BAD_SIDE' });
-    }
+    if (side === 'BUY') { state.betsBuy.push(bet); state.bankBuy += amt; }
+    else if (side === 'SELL') { state.betsSell.push(bet); state.bankSell += amt; }
+    else return res.status(400).json({ ok:false, error:'BAD_SIDE' });
 
-    res.json({ ok: true });
+    res.json({ ok:true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ ok: false, error: 'SERVER' });
+    res.status(500).json({ ok:false, error:'SERVER' });
   }
 });
 
-// История последних исходов (память)
+// Состояние/история/топ
+app.get('/api/round', (req, res) => {
+  res.json({
+    price: state.price, startPrice: state.startPrice,
+    phase: state.phase, secsLeft: state.secsLeft,
+    roundLen: state.roundLen, betWindow: state.betWindow, pauseLen: state.pauseLen,
+    bank: state.bankBuy + state.bankSell, bankBuy: state.bankBuy, bankSell: state.bankSell,
+    betsBuy: state.betsBuy, betsSell: state.betsSell, lastSettlement: state.lastSettlement
+  });
+});
 app.get('/api/history', (req, res) => res.json({ history: state.history }));
-
-// Топ победителей за сегодня
 app.get('/api/leaderboard', async (req, res) => {
   try {
     const q = await pool.query(`
-      SELECT u.telegram_id, COALESCE(SUM(p.amount),0)::BIGINT AS won
+      SELECT COALESCE(NULLIF(u.username,''), CONCAT('@', u.telegram_id::text)) AS name,
+             COALESCE(SUM(p.amount),0)::BIGINT AS won
       FROM payouts p
       JOIN users u ON u.id = p.user_id
       WHERE p.created_at::date = CURRENT_DATE
-      GROUP BY u.telegram_id
+      GROUP BY name
       ORDER BY won DESC
-      LIMIT 5
+      LIMIT 10
     `);
     res.json({ ok: true, top: q.rows });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ ok: false });
+    res.status(500).json({ ok:false });
   }
 });
 
