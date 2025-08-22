@@ -103,30 +103,30 @@
     background: var(--card);
     border:1px solid var(--border);
     border-radius:16px;
-    padding:12px 12px 10px;
+    padding:12px;
     margin:8px 0 12px;
+    display:flex;
+    gap:12px;
   }
-  .ad-main{
-    display:flex; align-items:center; gap:8px; margin-bottom:6px;
-  }
+  .ad-left{ flex:1; }
+  .ad-top{ display:flex; align-items:center; gap:8px; margin-bottom:4px; }
   .crown{ font-size:20px; line-height:1 }
-  .ad-user{
-    max-width:28%;
-    font-weight:700;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
+  .ad-user{ font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .ad-text{
-    flex:1;
     color:#ddd;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    font-size:14px;
+    line-height:1.3;
+    overflow:hidden;
+    display:-webkit-box;
+    -webkit-line-clamp:3;
+    -webkit-box-orient:vertical;
   }
-  .ad-actions{
-    display:flex; align-items:center; justify-content:space-between; gap:8px;
-    margin-top:6px;
-  }
-  .ad-price{ color:var(--muted); font-size:13px }
+  .ad-actions{ display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
+  .ad-price{ color:var(--muted); font-size:13px; text-align:right }
   .ad-write{ padding:10px 14px }
-  .ad-count{ color:var(--muted); font-size:13px; text-align:right }
+  .ad-info{ display:flex; justify-content:space-between; align-items:center; margin:6px 0 0; }
+  .ad-count{ color:var(--muted); font-size:13px }
+  .ad-enter{ color:var(--muted); font-size:13px }
   .ad-text-change{ animation: adTextChange .3s ease-out }
   @keyframes adTextChange{
     from{ opacity:0; transform:translateY(4px); }
@@ -249,14 +249,15 @@
   </div>
 
   <div class="adline ad-shimmer" id="adLine">
-    <div class="ad-main">
-      <span class="crown">👑</span>
-      <span class="ad-user" id="adUser">@user</span>
-      <span class="ad-text" id="adText">Здесь будет сообщение победителя…</span>
+    <div class="ad-left">
+      <div class="ad-top">
+        <span class="crown">👑</span>
+        <span class="ad-user" id="adUser">@user</span>
+      </div>
+      <div class="ad-text" id="adText">Сообщение победителя…</div>
     </div>
-
     <div class="ad-actions">
-      <div class="ad-price" id="adPrice">Текущая ставка: $100 (шаг $100)</div>
+      <div class="ad-price" id="adPrice">Текущая цена: $100 (шаг $100)</div>
       <button class="chipbtn ad-write" id="adWrite">✍️ Написать</button>
     </div>
   </div>
@@ -354,7 +355,10 @@
   <div class="inputline">
     <input id="adInput" type="text" maxlength="80" placeholder="Сообщение (до 80 символов)">
   </div>
-  <div class="ad-count" id="adCount">0/80</div>
+  <div class="ad-info">
+    <div class="ad-count" id="adCount">0/80</div>
+    <div class="ad-enter" id="adEnter">Войти сейчас: $100</div>
+  </div>
   <div class="btnrow">
     <button class="btnsm cancel" data-close>Отмена</button>
     <button class="btnsm" id="adSend" disabled>Отправить</button>
@@ -384,9 +388,10 @@ let lastShownSettlementKey = null;
 const BID_STEP = 100;
 
 let adState = {
-  user: '@user',
-  text: 'Сообщение победителя…',
-  price: 100
+  user: '',
+  text: '',
+  price: 100,
+  step: BID_STEP
 };
 
 let prevAd = null;
@@ -444,11 +449,12 @@ const buyIns     = document.getElementById('buyIns');
 const adInput    = document.getElementById('adInput');
 const adSend     = document.getElementById('adSend');
 const adCount    = document.getElementById('adCount');
+const adEnter    = document.getElementById('adEnter');
 
 // нормализуем ник: гарантируем один '@'
 function normUser(u){
-  if (!u) return '@anon';
-  return u.startsWith('@') ? u : '@' + u;
+  const name = String(u||'').replace(/^@+/, '');
+  return '@' + (name || 'anon');
 }
 
 // лёгкий haptic (если доступен в Telegram WebApp)
@@ -475,6 +481,12 @@ function playOnce(el, cls){
   el.addEventListener('animationend', off);
 }
 
+function updateAdEnter(){
+  const step = Number(adState.step || BID_STEP);
+  const enter = Number(adState.price || 0) + step;
+  if (adEnter) adEnter.textContent = 'Войти сейчас: $' + enter.toLocaleString();
+}
+
 // отрисовка строки
 function renderAdLine() {
   const line  = adLine;
@@ -485,10 +497,16 @@ function renderAdLine() {
   const newUser  = normUser(adState.user);
   const newText  = (adState.text || '').replace(/\n/g, ' ').slice(0, 80);
   const newPrice = Number(adState.price || 0);
+  const step     = Number(adState.step || BID_STEP);
 
   user.textContent  = newUser;
-  text.textContent  = newText || '—';
-  price.textContent = 'Текущая ставка: $' + newPrice.toLocaleString() + ' (шаг $' + BID_STEP + ')';
+  text.textContent  = newText || 'Пока пусто.';
+  if (newText) {
+    price.textContent = 'Текущая цена: $' + newPrice.toLocaleString() + ' (шаг $' + step.toLocaleString() + ')';
+  } else {
+    price.textContent = 'Войти: $' + newPrice.toLocaleString() + ' (шаг $' + step.toLocaleString() + ')';
+  }
+  updateAdEnter();
 
   line.classList.add('ad-shimmer');
 
@@ -518,6 +536,7 @@ adWriteBtn.onclick = async ()=>{
   adInput.value = '';
   adCount.textContent = '0/80';
   adSend.disabled = true;
+  updateAdEnter();
   openSheet(sheetAd);
   adInput.focus();
 };
@@ -529,12 +548,12 @@ adInput.addEventListener('input', () => {
 });
 
 adSend.onclick = async ()=>{
-  const text = adInput.value.trim().slice(0,80);
+  const text = adInput.value.trim().replace(/\n/g,' ').slice(0,80);
   if (!text) return;
-  const r = await fetch('/api/banner/bid', {
+  const r = await fetch('/api/shout/post', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid, text })
+    body: JSON.stringify({ uid, msg:text })
   }).then(r=>r.json()).catch(()=>({ ok:false }));
 
   if (!r.ok) {
@@ -544,7 +563,7 @@ adSend.onclick = async ()=>{
 
   closeAllSheets();
   playOnce(adLine, 'flash-win');
-  hapticImpact('success');
+  hapticImpact('medium');
 
   await adPoll();
   await refreshBalance();
@@ -673,12 +692,15 @@ async function loadStats(){
 }
 
 async function adPoll(){
-  const r = await fetch('/api/banner/status').then(r=>r.json()).catch(()=>null);
+  const r = await fetch('/api/shout/state').then(r=>r.json()).catch(()=>null);
   if (!r || !r.ok) return;
+  const st = r.state || {};
   adState = {
-    user: r.leader?.name || '@user',
-    text: r.leader?.text || 'Сообщение победителя…',
-    price: r.price
+    user: st.name || '',
+    text: st.msg || '',
+    price: Number(st.price || 0),
+    step: Number(st.step || BID_STEP),
+    expiresIn: Number(st.expiresIn || 0)
   };
   renderAdLine();
 }
