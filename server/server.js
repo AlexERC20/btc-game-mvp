@@ -144,7 +144,7 @@ let state = {
   secsLeft: 0,
 
   roundLen: 60,
-  betWindow: 10,
+  betWindow: 20,
   pauseLen: 10,
 
   bankBuy: 0,
