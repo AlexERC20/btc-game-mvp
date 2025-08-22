@@ -119,6 +119,7 @@
 
   <div class="phase" id="phase">Ставки открыты</div>
   <div class="bank" id="bank">Банк: $0</div>
+  <div class="bank" id="myBet"></div>
 
   <div class="row">
     <button class="btn buy" id="buy">↑ BUY</button>
@@ -238,6 +239,7 @@ const ring    = document.getElementById('ring');
 const tleft   = document.getElementById('tleft');
 const phaseEl = document.getElementById('phase');
 const bankEl  = document.getElementById('bank');
+const myBetEl = document.getElementById('myBet');
 const buyBtn  = document.getElementById('buy');
 const sellBtn = document.getElementById('sell');
 const histEl  = document.getElementById('hist');
@@ -408,6 +410,11 @@ async function poll(){
   CURRENT_PHASE = r.phase || 'idle';         // фиксируем текущую фазу
   phaseEl.textContent = phaseText(CURRENT_PHASE);
   bankEl.textContent  = 'Банк: ' + fmt(r.bank);
+
+  const myId   = String(uid);
+  const myBuy  = (r.betsBuy  || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
+  const mySell = (r.betsSell || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
+  myBetEl.textContent = 'Твоя ставка: ' + fmt(myBuy + mySell);
 
   const open = CURRENT_PHASE === 'betting';  // только в betting — активны кнопки
   buyBtn.disabled  = !open;
