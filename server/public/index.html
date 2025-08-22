@@ -64,7 +64,7 @@
   .row{display:flex;gap:14px;justify-content:center;margin:12px 0}
   .btn{flex:1;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer}
   .btn:active{transform:translateY(1px) scale(.99)}
-  .btn[disabled]{opacity:.5;cursor:not-allowed;pointer-events:none} /* блок кликов, когда disabled */
+  .btn[disabled]{opacity:.5;cursor:not-allowed} /* блок кликов, когда disabled */
   .buy{background:var(--green)} .sell{background:var(--red)}
 
   .menu{display:flex;gap:10px;justify-content:center;margin:8px 0 10px;flex-wrap:wrap}
@@ -213,15 +213,14 @@
 </style>
 </head>
 <body>
-<div id="tgOnly" style="display:none;position:fixed;inset:0;background:#000;color:#fff;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;z-index:9999;text-align:center;padding:24px">
-  <div style="font-size:18px;font-weight:700">Открой игру в Telegram</div>
-  <div style="opacity:.8">Мини-приложение доступно только внутри Telegram</div>
-  <a href="https://t.me/realpricebtc_bot" style="margin-top:6px;background:#2ea44f;color:#fff;padding:10px 14px;border-radius:10px;text-decoration:none">Открыть бота</a>
-</div>
 <div class="wrap">
   <div class="price" id="price">$—</div>
   <div class="sub"   id="sub">Старт: —</div>
   <div class="balance flash-target" id="bal">Баланс: $—</div>
+  <div id="viewerBanner" style="display:none;text-align:center;margin:6px 0 10px;">
+    <div style="margin-bottom:6px">Открой в Telegram, чтобы играть</div>
+    <a id="viewerOpen" href="https://t.me/realpricebtc_bot?startapp=go" style="background:#1fa36a;color:#fff;padding:6px 12px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">Открыть бота</a>
+  </div>
 
   <div class="center">
     <div class="timer">
@@ -252,6 +251,7 @@
     <button class="chipbtn" id="statsBtn">Статистика</button>
     <button class="chipbtn" id="starsBtn">Купить ⭐</button>
   </div>
+  <div id="viewerHint" style="display:none;text-align:center;color:var(--muted);font-size:13px;margin:6px 0 10px;">Зайдите через Telegram WebApp, чтобы играть.</div>
 
   <div class="adline ad-shimmer" id="adLine">
     <div class="ad-left">
@@ -375,41 +375,6 @@ const BOT_USERNAME = 'realpricebtc_bot';
 const CHANNEL_LINK = 'https://t.me/erc20coin';
 
 const tg = window.Telegram?.WebApp;
-
-// ЖДЁМ initData (до 1500ms), иначе считаем, что это не Telegram WebApp
-async function waitForTgUser(timeout=1500) {
-  try { tg?.ready?.(); } catch{}
-  const start = Date.now();
-  return await new Promise(resolve=>{
-    const tick = () => {
-      const has = !!(tg && (tg.initData?.length || tg.initDataUnsafe?.user?.id));
-      if (has) return resolve(true);
-      if (Date.now()-start > timeout) return resolve(false);
-      setTimeout(tick, 60);
-    };
-    tick();
-  });
-}
-
-// Простой гейт-экран
-function showGate() {
-  document.body.innerHTML = `
-    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#fff">
-      <div style="max-width:520px;padding:24px;text-align:center">
-        <h2 style="margin:0 0 12px">Открой игру в Telegram</h2>
-        <p style="opacity:.8;margin:0 0 16px">Мини-приложение доступно только внутри Telegram</p>
-        <button id="openBot" style="background:#1fa36a;border:none;border-radius:12px;padding:12px 18px;color:#fff;font-weight:700;font-size:16px;cursor:pointer">Открыть бота</button>
-      </div>
-    </div>`;
-  document.getElementById('openBot').onclick = ()=>{
-    const link = `https://t.me/${BOT_USERNAME}?startapp=go`;
-    try {
-      if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(link);
-      else location.href = link;
-    } catch { location.href = link; }
-  };
-}
-
 // Единая обёртка для POST — ВСЕГДА шлём initData
 async function api(path, payload={}) {
   const initData = tg?.initData || '';
@@ -423,13 +388,11 @@ async function api(path, payload={}) {
 
 // ====== Точка входа фронта ======
 (async () => {
-  const ok = await waitForTgUser(1500);
-  if (!ok) { showGate(); return; }
-
-  // у нас ТЕЛЕГРАМ: можно получить user/username
-  const uid = tg.initDataUnsafe?.user?.id;
-  const username = tg.initDataUnsafe?.user?.username ? '@'+tg.initDataUnsafe.user.username : null;
-  const initData = tg.initData || '';
+  try { tg?.ready?.(); } catch {}
+  const uid = tg?.initDataUnsafe?.user?.id || null;
+  const username = tg?.initDataUnsafe?.user?.username ? '@'+tg.initDataUnsafe.user.username : null;
+  const initData = tg?.initData || '';
+  const IS_VIEWER = !uid;
 
   let CURRENT_PHASE = 'idle'; // <-- глобально храним текущую фазу
 let INS_COUNT = 0;
@@ -498,6 +461,21 @@ const adInput    = document.getElementById('adInput');
 const adSend     = document.getElementById('adSend');
 const adCount    = document.getElementById('adCount');
 const adEnter    = document.getElementById('adEnter');
+
+const viewerBanner = document.getElementById('viewerBanner');
+const viewerHint   = document.getElementById('viewerHint');
+const viewerOpen   = document.getElementById('viewerOpen');
+
+if (IS_VIEWER) {
+  [buyBtn, sellBtn, cfgBtn, refBtn, topupBtn, insBtn, statsBtn, starsBtn, adWriteBtn, buyStars, buyIns, adSend, checkBonus].forEach(b => b && (b.disabled = true));
+  viewerBanner.style.display = 'block';
+  viewerHint.style.display   = 'block';
+  viewerOpen.onclick = (e)=>{ e.preventDefault(); const link = `https://t.me/${BOT_USERNAME}?startapp=go`; try{ if(window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(link); else window.location.href = link; } catch{ window.location.href = link; } };
+  document.addEventListener('pointerdown', e => {
+    const b = e.target.closest('button');
+    if (b && b.disabled) alert('Доступно только в Telegram');
+  });
+}
 
 // нормализуем ник: гарантируем один '@'
 function normUser(u){
@@ -763,24 +741,28 @@ async function poll(){
   phaseEl.textContent = phaseText(CURRENT_PHASE);
   bankEl.textContent  = 'Банк: ' + fmt(r.bank);
 
-  const myId   = String(uid);
-  const myBuy  = (r.betsBuy  || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
-  const mySell = (r.betsSell || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
-  myBetEl.textContent = 'Твоя ставка: ' + fmt(myBuy + mySell);
+  if (!IS_VIEWER) {
+    const myId   = String(uid);
+    const myBuy  = (r.betsBuy  || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
+    const mySell = (r.betsSell || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
+    myBetEl.textContent = 'Твоя ставка: ' + fmt(myBuy + mySell);
+  } else {
+    myBetEl.textContent = '';
+  }
 
-  const open = CURRENT_PHASE === 'betting';  // только в betting — активны кнопки
-  buyBtn.disabled  = !open;
-  sellBtn.disabled = !open;
+  const open = CURRENT_PHASE === 'betting';
+  buyBtn.disabled  = IS_VIEWER || !open;
+  sellBtn.disabled = IS_VIEWER || !open;
 
   const h = await fetch(`/api/history?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>({history:[]}));
   histEl.innerHTML = (h.history||[]).map(chip).join('');
 
-  await refreshBalance();
+  if (!IS_VIEWER) await refreshBalance();
   await leaderboard();
   await adPoll();
 
   // --- Result animation during pause
-  if (r.phase === 'pause' && r.lastSettlement) {
+  if (!IS_VIEWER && r.phase === 'pause' && r.lastSettlement) {
     const key = JSON.stringify(r.lastSettlement);
     if (key !== lastShownSettlementKey) {
       lastShownSettlementKey = key;
@@ -968,7 +950,7 @@ buyIns.onclick = async ()=>{
 };
 
 // init
-auth();
+if (!IS_VIEWER) await auth();
 poll();
 setInterval(poll, 1000);
 })();
