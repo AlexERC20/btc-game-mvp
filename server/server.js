@@ -63,15 +63,16 @@ const BINANCE_WS =
 const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
 const MIN_BET = 50; // ✅ минимальная ставка ($)
 
-// bot settings
-const BOTS_ENABLED = process.env.BOTS_ENABLED === 'true';
+// ===== BOTS CONFIG =====
+const BOTS_ENABLED = String(process.env.BOTS_ENABLED || 'false') === 'true';
 const BOTS_COUNT = Number(process.env.BOTS_COUNT || 3);
 const BOTS_START_BALANCE = Number(process.env.BOTS_START_BALANCE || 100000);
 const BOTS_MAX_STAKE_PCT = Number(process.env.BOTS_MAX_STAKE_PCT || 0.20);
 const BOTS_MAX_BETS_PER_ROUND = Number(process.env.BOTS_MAX_BETS_PER_ROUND || 3);
-const BOTS_IMBALANCE_BIAS = Number(process.env.BOTS_IMBALANCE_BIAS || 0.70);
+const BOTS_IMBALANCE_BIAS = Number(process.env.BOTS_IMBALANCE_BIAS || 0.70); // вероятность играть за “слабую” сторону
 const BOTS_FEE_SHARE = Number(process.env.BOTS_FEE_SHARE || 1.0);
 const BOTS_TOPUP_PER_ROUND = Number(process.env.BOTS_TOPUP_PER_ROUND || 20000);
+const DEBUG_BOTS = String(process.env.DEBUG_BOTS || 'false') === 'true';
 
 // shout auction defaults
 const SHOUT_STEP = 100;        // шаг изменения цены
@@ -193,19 +194,21 @@ await pool.query(`
 `);
 
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT FALSE`);
-await pool.query(`ALTER TABLE bets ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT FALSE`);
+await pool.query(`ALTER TABLE bets  ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT FALSE`);
+
 await pool.query(`
   CREATE TABLE IF NOT EXISTS bot_fund (
     id SMALLINT PRIMARY KEY DEFAULT 1,
     amount BIGINT NOT NULL DEFAULT 0
-  );
+  )
 `);
-await pool.query(`INSERT INTO bot_fund(id, amount) VALUES(1, 0) ON CONFLICT (id) DO NOTHING`);
+await pool.query(`INSERT INTO bot_fund(id, amount) VALUES (1,0) ON CONFLICT (id) DO NOTHING`);
+
 await pool.query(`
   CREATE TABLE IF NOT EXISTS bot_round_spend (
     round_id INT PRIMARY KEY,
-    spent_by_user JSONB NOT NULL DEFAULT '{}'::jsonb
-  );
+    spent_by_user JSONB NOT NULL DEFAULT '{}'
+  )
 `);
 
 // ✅ Пакеты Stars: amount = число звёзд
@@ -309,8 +312,8 @@ let state = {
 };
 const MAX_HIST = 10;
 
-const botSchedule = new Map();
-let botList = [];
+let botList = [];              // [{id, telegram_id, username}]
+const botSchedule = new Map(); // roundId -> { [botUserId]: [sec,sec,...] }
 
 /* ========= Цена (Binance WS) ========= */
 let ws = null;
@@ -376,105 +379,119 @@ async function grantDailyIfNeeded(telegramId) {
 }
 
 /* ========= Bot helpers ========= */
-function clamp(v, min, max) {
-  return Math.min(Math.max(v, min), max);
-}
+function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
 
 function chooseSideWithBias(bankBuy, bankSell) {
   const weaker = bankBuy <= bankSell ? 'BUY' : 'SELL';
-  const stronger = weaker === 'BUY' ? 'SELL' : 'BUY';
   if (Math.random() < BOTS_IMBALANCE_BIAS) return weaker;
-  return Math.random() < 0.5 ? weaker : stronger;
+  return Math.random() < 0.5 ? weaker : (weaker === 'BUY' ? 'SELL' : 'BUY');
 }
 
-function pickAmountWithSkew(balance, allowed, bankBuy, bankSell) {
+function pickAmount(balance, allowed, bankBuy, bankSell) {
   const total = bankBuy + bankSell;
-  const skew = total > 0 ? Math.min(0.5, Math.abs(bankBuy - bankSell) / total) : 0;
-  const mult = 1 + skew;
-  const raw = Math.floor(MIN_BET * mult + Math.random() * (allowed * mult - MIN_BET));
+  const skew = total > 0 ? Math.min(0.5, Math.abs(bankBuy - bankSell) / total) : 0; // 0..0.5
+  const mult = 1 + skew; // 1..1.5
+  const max = Math.max(MIN_BET, Math.floor(allowed * mult));
+  const raw = MIN_BET + Math.floor(Math.random() * Math.max(1, (max - MIN_BET)));
   return clamp(raw, MIN_BET, allowed);
 }
 
-function planBotsForRound(roundId, betWindow) {
-  const scheduleForRound = {};
-  for (const bot of botList) {
-    const count = 1 + Math.floor(Math.random() * BOTS_MAX_BETS_PER_ROUND);
-    const times = new Set();
-    while (times.size < count) times.add(Math.floor(Math.random() * Math.max(1, betWindow - 1)));
-    scheduleForRound[bot.id] = Array.from(times).sort((a, b) => a - b);
+async function ensureBots() {
+  for (let i = 1; i <= BOTS_COUNT; i++) {
+    const tgId = 100000000000 + i; // безопасный “синтетический” диапазон
+    await pool.query(`
+      INSERT INTO users(telegram_id, username, balance, is_bot)
+      VALUES ($1,$2,$3,TRUE)
+      ON CONFLICT (telegram_id) DO UPDATE SET is_bot = TRUE
+    `, [tgId, `@dealer${i}`, BOTS_START_BALANCE]);
   }
-  botSchedule.set(roundId, scheduleForRound);
+  const r = await pool.query(`SELECT id, telegram_id, username FROM users WHERE is_bot=TRUE ORDER BY id`);
+  botList = r.rows;
+  if (DEBUG_BOTS) console.log('[bots] ready:', botList.map(b=>b.username || b.telegram_id).join(', '));
+}
+
+function planBotsForRound(roundId, betWindow) {
+  const sched = {};
+  for (const b of botList) {
+    const count = Math.max(1, Math.min(BOTS_MAX_BETS_PER_ROUND, 3));
+    const set = new Set();
+    while (set.size < count) set.add(Math.floor(Math.random() * Math.max(1, betWindow - 1)));
+    sched[b.id] = Array.from(set).sort((a,b)=>a-b);
+  }
+  botSchedule.set(roundId, sched);
+  pool.query(`
+    INSERT INTO bot_round_spend(round_id, spent_by_user)
+    VALUES ($1, '{}'::jsonb)
+    ON CONFLICT (round_id) DO UPDATE SET spent_by_user='{}'::jsonb
+  `, [roundId]).catch(console.error);
+
+  if (DEBUG_BOTS) console.log('[bots] planned for round', roundId, sched);
 }
 
 async function tryBotBet(botUserId) {
-  if (state.phase !== 'betting') return;
+  if (state.phase !== 'betting' || !state.currentRoundId) return;
 
-  const { rows: [u] } = await pool.query('SELECT id, balance FROM users WHERE id=$1 AND is_bot=TRUE', [botUserId]);
+  const { rows:[u] } = await pool.query(`SELECT id, balance FROM users WHERE id=$1 AND is_bot=TRUE`, [botUserId]);
   if (!u || u.balance < MIN_BET) return;
 
   const maxRoundStake = Math.floor(u.balance * BOTS_MAX_STAKE_PCT);
-  const { rows: [sp] } = await pool.query('SELECT spent_by_user FROM bot_round_spend WHERE round_id=$1', [state.currentRoundId]);
+  const { rows:[sp] } = await pool.query(`SELECT spent_by_user FROM bot_round_spend WHERE round_id=$1`, [state.currentRoundId]);
   const spentMap = sp?.spent_by_user || {};
-  const spent = spentMap[botUserId] || 0;
-  const allowed = Math.max(MIN_BET, Math.min(maxRoundStake - spent, Math.floor(u.balance * 0.2)));
+  const already = Number(spentMap[botUserId] || 0);
+  const allowed = Math.max(0, maxRoundStake - already);
   if (allowed < MIN_BET) return;
 
   const side = chooseSideWithBias(state.bankBuy, state.bankSell);
-  const amount = clamp(pickAmountWithSkew(u.balance, allowed, state.bankBuy, state.bankSell), MIN_BET, allowed);
+  const amount = pickAmount(u.balance, allowed, state.bankBuy, state.bankSell);
 
-  const upd = await pool.query('UPDATE users SET balance=balance-$1 WHERE id=$2 AND balance >= $1', [amount, u.id]);
-  if (upd.rowCount === 0) return;
+  // атомарно списываем
+  const up = await pool.query(
+    `UPDATE users SET balance=balance-$1 WHERE id=$2 AND balance >= $1 RETURNING id`,
+    [amount, u.id]
+  );
+  if (up.rowCount === 0) return;
+
   await pool.query(
-    'INSERT INTO bets(user_id, round_id, side, amount, is_bot) VALUES ($1,$2,$3,$4,TRUE)',
+    `INSERT INTO bets(user_id, round_id, side, amount, is_bot) VALUES ($1,$2,$3,$4,TRUE)`,
     [u.id, state.currentRoundId, side, amount]
   );
 
-  const bet = { user_id: u.id, user: `bot:${u.id}`, amount, ts: Date.now(), is_bot:true };
-  if (side === 'BUY') { state.betsBuy.push(bet); state.bankBuy += amount; }
+  const bet = { user_id: u.id, user: `bot:${u.id}`, amount, ts: Date.now(), is_bot: true };
+  if (side === 'BUY') { state.betsBuy.push(bet);  state.bankBuy  += amount; }
   else               { state.betsSell.push(bet); state.bankSell += amount; }
 
-  spentMap[botUserId] = (spentMap[botUserId] || 0) + amount;
-  await pool.query(
-    `INSERT INTO bot_round_spend(round_id, spent_by_user)
-     VALUES($1, $2::jsonb)
-     ON CONFLICT (round_id) DO UPDATE SET spent_by_user = EXCLUDED.spent_by_user`,
-    [state.currentRoundId, JSON.stringify(spentMap)]
-  );
-}
+  spentMap[botUserId] = already + amount;
+  await pool.query(`
+    INSERT INTO bot_round_spend(round_id, spent_by_user)
+    VALUES($1, $2::jsonb)
+    ON CONFLICT (round_id) DO UPDATE SET spent_by_user=EXCLUDED.spent_by_user
+  `, [state.currentRoundId, JSON.stringify(spentMap)]);
 
-async function ensureBots() {
-  const bots = [];
-  for (let i = 1; i <= BOTS_COUNT; i++) {
-    const tgId = 10_000_000_000 + i;
-    const r = await pool.query(
-      `INSERT INTO users(telegram_id, username, balance, is_bot)
-       VALUES ($1, $2, $3, TRUE)
-       ON CONFLICT (telegram_id) DO UPDATE SET is_bot=TRUE
-       RETURNING id, telegram_id`,
-      [tgId, `@dealer${i}`, BOTS_START_BALANCE]
-    );
-    bots.push({ id: r.rows[0].id, telegram_id: r.rows[0].telegram_id });
-  }
-  return bots;
+  if (DEBUG_BOTS) console.log('[bots] bet', { botUserId, side, amount });
 }
 
 async function refillBotsFromFund() {
-  const { rows: [{ amount: fundAmt = 0 } = {}] } = await pool.query('SELECT amount FROM bot_fund WHERE id=1');
+  const { rows:[f] } = await pool.query(`SELECT amount FROM bot_fund WHERE id=1`);
+  let fundAmt = Number(f?.amount || 0);
   if (fundAmt <= 0) return;
+
   const cap = Math.min(fundAmt, BOTS_TOPUP_PER_ROUND);
-  const { rows: bots } = await pool.query('SELECT id, balance FROM users WHERE is_bot=TRUE ORDER BY balance ASC');
+  const { rows: bots } = await pool.query(`SELECT id FROM users WHERE is_bot=TRUE ORDER BY balance ASC`);
   if (!bots.length) return;
+
   const perBot = Math.floor(cap / bots.length);
   if (perBot < 1) return;
+
   const ids = bots.map(b => b.id);
-  await pool.query('UPDATE users SET balance = balance + $1 WHERE id = ANY($2::int[])', [perBot, ids]);
-  await pool.query('UPDATE bot_fund SET amount = amount - $1 WHERE id=1', [perBot * bots.length]);
+  await pool.query(`UPDATE users SET balance = balance + $1 WHERE id = ANY($2::int[])`, [perBot, ids]);
+  await pool.query(`UPDATE bot_fund SET amount = amount - $1 WHERE id=1`, [perBot * bots.length]);
+
+  if (DEBUG_BOTS) console.log('[bots] refill', { perBot, total: perBot * bots.length });
 }
 
 /* ========= Цикл раунда ========= */
 async function startRound() {
   if (!state.price) return;
-  if (BOTS_ENABLED) await refillBotsFromFund();
   state.phase = 'betting';
   state.secsLeft = state.roundLen;
   state.startPrice = state.price;
@@ -485,15 +502,7 @@ async function startRound() {
     [state.startPrice]
   );
   state.currentRoundId = r.rows[0].id;
-  if (BOTS_ENABLED) {
-    planBotsForRound(state.currentRoundId, state.betWindow);
-    await pool.query(
-      `INSERT INTO bot_round_spend(round_id, spent_by_user)
-       VALUES($1, '{}'::jsonb)
-       ON CONFLICT (round_id) DO UPDATE SET spent_by_user='{}'::jsonb`,
-      [state.currentRoundId]
-    );
-  }
+  if (BOTS_ENABLED) planBotsForRound(state.currentRoundId, state.betWindow);
 }
 
 function tick() {
@@ -520,13 +529,14 @@ function tick() {
     }
 
     if (BOTS_ENABLED && state.phase === 'betting') {
-      const elapsed = state.roundLen - state.secsLeft;
-      const sched = botSchedule.get(state.currentRoundId) || {};
-      for (const botId in sched) {
-        const slots = sched[botId];
-        if (slots.length && slots[0] === elapsed) {
-          slots.shift();
-          tryBotBet(Number(botId)).catch(console.error);
+      const elapsed = state.roundLen - state.secsLeft; // 0..59
+      const sched = botSchedule.get(state.currentRoundId);
+      if (sched) {
+        for (const [botId, slots] of Object.entries(sched)) {
+          if (slots.length && slots[0] === elapsed) {
+            slots.shift();
+            tryBotBet(Number(botId)).catch(console.error);
+          }
         }
       }
     }
@@ -547,9 +557,7 @@ function tick() {
     }
   })().catch(console.error);
 }
-if (BOTS_ENABLED) {
-  botList = await ensureBots();
-}
+if (BOTS_ENABLED) await ensureBots();
 setInterval(tick, 1000);
 
 /* ========= Расчёт ========= */
@@ -620,6 +628,8 @@ async function settle() {
       amount: totalWin ? Math.round((w.amount / totalWin) * distributable) : 0,
     })),
   };
+
+  if (BOTS_ENABLED) await refillBotsFromFund();
 
   state.phase = 'pause';
   state.secsLeft = state.pauseLen;
