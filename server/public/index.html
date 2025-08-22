@@ -92,6 +92,7 @@
     <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
     <button class="chipbtn" id="refBtn">Рефералы</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
+    <button class="chipbtn" id="insBtn">Страховки</button>
     <button class="chipbtn" id="starsBtn">Купить ⭐</button>
   </div>
 
@@ -159,6 +160,17 @@
   </div>
 </div>
 
+<!-- SHEET: страховки -->
+<div class="sheet" id="sheetIns">
+  <h3>Страховки</h3>
+  <p>100 страховок → 1000⭐</p>
+  <p id="insCount">Доступно: 0</p>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Закрыть</button>
+    <button class="btnsm" id="buyIns">Купить за ⭐</button>
+  </div>
+</div>
+
 <script>
 const qs = new URLSearchParams(location.search);
 const uid = qs.get('uid')
@@ -176,6 +188,7 @@ const CHANNEL_LINK = 'https://t.me/erc20coin';
 if (window.Telegram && Telegram.WebApp) { try { Telegram.WebApp.expand(); } catch(e){} }
 
 let CURRENT_PHASE = 'idle'; // <-- глобально храним текущую фазу
+let INS_COUNT = 0;
 
 // elements
 const priceEl = document.getElementById('price');
@@ -193,6 +206,7 @@ const lbEl    = document.getElementById('lb');
 const refBtn  = document.getElementById('refBtn');
 const topupBtn= document.getElementById('topupBtn');
 const starsBtn= document.getElementById('starsBtn');
+const insBtn  = document.getElementById('insBtn');
 const cfgBtn  = document.getElementById('cfgBtn');
 
 // sheets
@@ -200,6 +214,7 @@ const sheetBg     = document.getElementById('sheetBg');
 const sheetStake  = document.getElementById('sheetStake');
 const sheetTopup  = document.getElementById('sheetTopup');
 const sheetStars  = document.getElementById('sheetStars');
+const sheetIns    = document.getElementById('sheetIns');
 
 // stake controls
 const chipsBox  = document.getElementById('chips');
@@ -214,6 +229,8 @@ const checkBonus  = document.getElementById('checkBonus');
 // stars controls
 const starsPacks = document.getElementById('starsPacks');
 const buyStars   = document.getElementById('buyStars');
+const insCountEl = document.getElementById('insCount');
+const buyIns     = document.getElementById('buyIns');
 
 const CIRC = 2*Math.PI*140;
 ring.setAttribute('stroke-dasharray', CIRC);
@@ -236,7 +253,7 @@ function chip(h){
 // sheet helpers
 function openSheet(el){ el.classList.add('open'); sheetBg.classList.add('show'); }
 function closeAllSheets(){
-  [sheetStake, sheetTopup, sheetStars].forEach(s=>s.classList.remove('open'));
+  [sheetStake, sheetTopup, sheetStars, sheetIns].forEach(s=>s.classList.remove('open'));
   sheetBg.classList.remove('show');
 }
 sheetBg.addEventListener('click', closeAllSheets);
@@ -265,14 +282,22 @@ async function auth(){
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({uid, username})
   }).then(r=>r.json()).catch(()=>({ok:false}));
-  if (r.ok) balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
+  if (r.ok) {
+    balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
+    INS_COUNT = Number(r.user.insurance || 0);
+    if (insCountEl) insCountEl.textContent = 'Доступно: ' + INS_COUNT;
+  }
 }
 async function refreshBalance(){
   const r = await fetch('/api/auth',{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({uid, username})
   }).then(r=>r.json()).catch(()=>({ok:false}));
-  if (r.ok) balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
+  if (r.ok) {
+    balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
+    INS_COUNT = Number(r.user.insurance || 0);
+    if (insCountEl) insCountEl.textContent = 'Доступно: ' + INS_COUNT;
+  }
 }
 async function leaderboard(){
   const r = await fetch('/api/leaderboard').then(r=>r.json()).catch(()=>({ok:false}));
@@ -364,6 +389,7 @@ sellBtn.onclick = ()=> place('SELL');
 // открыть листы
 cfgBtn.onclick   = ()=>{ highlightChips(getSettings().amount); customAmt.value=''; oneClick.checked=getSettings().oneClick; openSheet(sheetStake); };
 topupBtn.onclick = ()=> openSheet(sheetTopup);
+insBtn.onclick  = ()=>{ insCountEl.textContent = 'Доступно: ' + INS_COUNT; openSheet(sheetIns); };
 starsBtn.onclick = ()=> openSheet(sheetStars);
 
 // stake sheet handlers
@@ -441,6 +467,28 @@ buyStars.onclick = async ()=>{
     if (status === 'paid') {
       await refreshBalance();
       alert('Оплата успешна! Баланс обновлён.');
+    } else if (status === 'cancelled') {
+      alert('Платёж отменён');
+    } else if (status === 'failed') {
+      alert('Платёж не прошёл');
+    }
+  });
+  try { await open; await refreshBalance(); } catch {}
+  closeAllSheets();
+};
+
+buyIns.onclick = async ()=>{
+  const resp = await fetch('/api/insurance/create', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ uid })
+  }).then(r=>r.json()).catch(()=>({ ok:false }));
+  if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
+
+  const open = Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
+    if (status === 'paid') {
+      await refreshBalance();
+      alert('Покупка успешна!');
     } else if (status === 'cancelled') {
       alert('Платёж отменён');
     } else if (status === 'failed') {
