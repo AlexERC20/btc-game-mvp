@@ -127,6 +127,84 @@
   .ad-write{ padding:10px 14px }
   .ad-foot{ margin-top:8px; color:var(--muted); font-size:13px }
   .ad-foot .muted{ color:var(--muted) }
+
+  /* ===== accessibility ===== */
+  @media (prefers-reduced-motion: reduce) {
+    .flash-win, .shake-outbid, .crown-bounce, .ad-shimmer::before {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+
+  /* ===== базовая карточка ===== */
+  #adLine {
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* лёгкий постоянный шимер рамки */
+  .ad-shimmer::before {
+    content:"";
+    position:absolute; inset:-1px;
+    border-radius:inherit;
+    pointer-events:none;
+    background:
+      radial-gradient(60% 60% at 10% 10%, #ffffff18, transparent 60%) ,
+      radial-gradient(60% 60% at 90% 90%, #ffffff10, transparent 60%);
+    filter: blur(6px);
+    opacity:.0;
+    animation: shimmer 4s ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    0%,60%,100% { opacity:.0; }
+    20% { opacity:.35; }
+  }
+
+  /* вспышка победы */
+  .flash-win {
+    animation: flashWin 520ms ease-out;
+    box-shadow: 0 0 0 0 rgba(46, 204, 113, .55);
+  }
+  @keyframes flashWin {
+    0%   { box-shadow: 0 0 0 0 rgba(46, 204, 113, .8); border-color:#27ae60; }
+    50%  { box-shadow: 0 0 16px 6px rgba(46, 204, 113, .35); }
+    100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+  }
+
+  /* встряска при перебитии */
+  .shake-outbid {
+    animation: shakeOutbid 420ms cubic-bezier(.36,.07,.19,.97);
+  }
+  @keyframes shakeOutbid {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+  }
+
+  /* подпрыгивание короны при смене лидера */
+  .crown-bounce {
+    display:inline-block;
+    animation: crownBounce 600ms ease-out;
+    transform-origin: 50% 100%;
+  }
+  @keyframes crownBounce {
+    0%   { transform: translateY(0) scale(1) rotate(0); }
+    35%  { transform: translateY(-6px) scale(1.05) rotate(-6deg); }
+    60%  { transform: translateY(0)  scale(1) rotate(0); }
+    80%  { transform: translateY(-2px) scale(1.02);}
+    100% { transform: translateY(0)  scale(1); }
+  }
+
+  /* плавная подсветка цены при её изменении */
+  .ad-price-changed {
+    animation: pricePulse 600ms ease-out;
+  }
+  @keyframes pricePulse {
+    0%   { color:#fff; text-shadow: 0 0 0 rgba(255,255,255,0); }
+    50%  { color:#9be7a1; text-shadow: 0 0 6px rgba(155,231,161,.6); }
+    100% { color:#fff; text-shadow: 0 0 0 rgba(255,255,255,0); }
+  }
 </style>
 </head>
 <body>
@@ -165,7 +243,7 @@
     <button class="chipbtn" id="starsBtn">Купить ⭐</button>
   </div>
 
-  <div class="adline" id="adLine">
+  <div class="adline ad-shimmer" id="adLine">
     <div class="ad-main">
       <span class="crown">👑</span>
       <span class="ad-user" id="adUser">@user</span>
@@ -296,6 +374,8 @@ let adState = {
   price: 100
 };
 
+let prevAd = null;
+
 // elements
 const priceEl = document.getElementById('price');
 const subEl   = document.getElementById('sub');
@@ -359,17 +439,70 @@ function nextBid(){
   return Math.max(MIN_BID, base + BID_STEP);
 }
 
+// лёгкий haptic (если доступен в Telegram WebApp)
+function hapticImpact(style = 'light') {
+  const H = window.Telegram?.WebApp?.HapticFeedback;
+  try {
+    if (!H) return;
+    if (style === 'success') return H.notificationOccurred('success');
+    if (style === 'warning') return H.notificationOccurred('warning');
+    if (style === 'error')   return H.notificationOccurred('error');
+    H.impactOccurred(style); // 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'
+  } catch {}
+}
+
+// навешивает/снимает класс с автосбросом по окончании анимации
+function playOnce(el, cls){
+  if (!el) return;
+  el.classList.remove(cls);
+  // форс-reflow, чтобы перезапустить анимацию
+  // eslint-disable-next-line no-unused-expressions
+  el.offsetHeight;
+  el.classList.add(cls);
+  const off = () => { el.classList.remove(cls); el.removeEventListener('animationend', off); };
+  el.addEventListener('animationend', off);
+}
+
 // отрисовка строки
-function renderAdLine(){
-  adUserEl.textContent = normUser(adState.user);
-  adTextEl.textContent = adState.text || '—';
-  adPriceEl.textContent = '$' + Number(adState.price||0).toLocaleString();
-  adEnterEl.textContent = '$' + nextBid().toLocaleString();
+function renderAdLine() {
+  const line  = adLine;
+  const user  = adUserEl;
+  const text  = adTextEl;
+  const price = adPriceEl;
+  const enter = adEnterEl;
+
+  const newUser  = normUser(adState.user);
+  const newText  = (adState.text || '').replace(/\n/g, ' ').slice(0, 80);
+  const newPrice = Number(adState.price || 0);
+  const newEnter = nextBid();
+
+  user.textContent  = newUser;
+  text.textContent  = newText || '—';
+  price.textContent = '$' + newPrice.toLocaleString();
+  enter.textContent = '$' + newEnter.toLocaleString();
+
+  line.classList.add('ad-shimmer');
+
+  if (prevAd) {
+    if (prevAd.user !== newUser) {
+      playOnce(line, 'shake-outbid');
+      const crown = line.querySelector('.crown');
+      if (crown) playOnce(crown, 'crown-bounce');
+      hapticImpact('medium');
+    }
+
+    if (prevAd.price !== newPrice) {
+      playOnce(price, 'ad-price-changed');
+    }
+  }
+
+  prevAd = { user: newUser, price: newPrice };
 }
 renderAdLine();
 
 // модалка «написать»
 adWriteBtn.onclick = async ()=>{
+  hapticImpact('light');
   const msg = prompt('Ваше сообщение (до 80 символов):','');
   if (msg === null) return;
   const text = String(msg).slice(0,80).replace(/\n/g, ' ');
@@ -385,6 +518,10 @@ adWriteBtn.onclick = async ()=>{
     alert(r.error==='INSUFFICIENT_BALANCE' ? 'Недостаточно средств' : 'Не удалось разместить сообщение');
     return;
   }
+
+  const line = document.getElementById('adLine');
+  playOnce(line, 'flash-win');
+  hapticImpact('success');
 
   adState = r.state || adState;
   renderAdLine();
