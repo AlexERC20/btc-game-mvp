@@ -1,4 +1,6 @@
-// bot/bot.js
+// bot/bot.js — финал
+// Регистрация: $1000, Реферал: +$500, Подписка: +$5000 (разово), Ежедневный вход: +$1000/день
+
 import 'dotenv/config';
 import express from 'express';
 import { Telegraf, Markup } from 'telegraf';
@@ -9,13 +11,15 @@ if (!BOT_TOKEN) throw new Error('BOT_TOKEN missing');
 if (!WEBAPP_URL) throw new Error('WEBAPP_URL missing');
 if (!DATABASE_URL) throw new Error('DATABASE_URL missing');
 
+// Боту нужен доступ к участникам канала (лучше — админ)
 const CHANNEL = '@erc20coin';
 
+// суммы (единая точка настройки)
 const AMOUNTS = {
   REGISTER: 1000,
-  REFERRAL: 500,
-  SUBSCRIBE: 5000,
-  DAILY: 1000,
+  REFERRAL: 500,    // рефереру
+  SUBSCRIBE: 5000,  // разовый бонус за подписку
+  DAILY: 1000,      // ежедневный вход
 };
 
 const pool = new pg.Pool({
@@ -23,8 +27,8 @@ const pool = new pg.Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-// Внутриигровой кредит за баланс-пакеты
-const STARS_PACKS_BALANCE = {
+// Пакеты Stars (мэппинг «звёздный пакет → долларовый кредит»)
+const STARS_PACKS = {
   '100':   { credit: 3_000 },
   '500':   { credit: 16_000 },
   '1000':  { credit: 35_000 },
@@ -32,19 +36,12 @@ const STARS_PACKS_BALANCE = {
   '30000': { credit: 1_500_000 },
 };
 
-// Страховки: 100 шт за 1000⭐
-const STARS_PACKS_INS = {
-  '100': { ins: 100 },
-};
-
-// миграции
 await pool.query(`
   CREATE TABLE IF NOT EXISTS users(
     id SERIAL PRIMARY KEY,
     telegram_id BIGINT UNIQUE NOT NULL,
     username TEXT,
     balance BIGINT NOT NULL DEFAULT ${AMOUNTS.REGISTER},
-    insurance_count BIGINT NOT NULL DEFAULT 0,
     channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE,
     last_daily_bonus DATE,
     created_at TIMESTAMPTZ DEFAULT now()
@@ -60,13 +57,14 @@ await pool.query(`
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE;`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus DATE;`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;`);
-await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS insurance_count BIGINT NOT NULL DEFAULT 0;`);
 
 const bot = new Telegraf(BOT_TOKEN);
 
+// получим username бота для реф-ссылок
 let BOT_USERNAME = 'realpricebtc_bot';
-try { BOT_USERNAME = (await bot.telegram.getMe()).username; } catch {}
+try { BOT_USERNAME = (await bot.telegram.getMe()).username; } catch { /* no-op */ }
 
+// ===== Утилиты
 async function ensureUser(telegramId, username) {
   await pool.query(
     `INSERT INTO users(telegram_id, username, balance)
@@ -91,6 +89,7 @@ async function ensureUser(telegramId, username) {
 async function grantReferral(referrerTgId, referredTgId) {
   if (String(referrerTgId) === String(referredTgId)) return;
 
+  // найдём/создадим реферера
   let refUserId;
   const r1 = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [referrerTgId]);
   if (r1.rowCount === 0) {
@@ -103,6 +102,7 @@ async function grantReferral(referrerTgId, referredTgId) {
     refUserId = r1.rows[0].id;
   }
 
+  // зачесть приглашение только один раз на приглашённого
   const exists = await pool.query('SELECT 1 FROM referrals WHERE referred_telegram_id=$1', [referredTgId]);
   if (exists.rowCount === 0) {
     await pool.query(
@@ -149,6 +149,7 @@ async function checkAndGrantChannelBonus(ctx) {
   const uname = ctx.from.username ? '@' + ctx.from.username : null;
   const user = await ensureUser(uid, uname);
 
+  // проверка подписки
   let isMember = false;
   try {
     const m = await ctx.telegram.getChatMember(CHANNEL, uid);
@@ -164,6 +165,7 @@ async function checkAndGrantChannelBonus(ctx) {
     return;
   }
 
+  // разовый бонус за канал
   if (!user.channel_bonus_claimed) {
     await pool.query(
       'UPDATE users SET balance=balance+$1, channel_bonus_claimed=TRUE WHERE telegram_id=$2',
@@ -174,13 +176,14 @@ async function checkAndGrantChannelBonus(ctx) {
     await ctx.reply('Бонус за подписку уже начислялся ранее ✅');
   }
 
+  // ежедневный бонус (чтобы «Проверить» обновляла всё сразу)
   const dailyGiven = await grantDailyIfNeeded(uid);
   if (dailyGiven) await ctx.reply(`🎁 Ежедневный бонус +$${AMOUNTS.DAILY} начислён.`);
 
-  const r2 = await pool.query('SELECT balance, insurance_count FROM users WHERE telegram_id=$1', [uid]);
+  // баланс
+  const r2 = await pool.query('SELECT balance FROM users WHERE telegram_id=$1', [uid]);
   const bal = r2.rows[0]?.balance ?? 0;
-  const ins = r2.rows[0]?.insurance_count ?? 0;
-  await ctx.reply(`Твой баланс: $${Number(bal).toLocaleString()}\nСтраховки: ${ins}`);
+  await ctx.reply(`Твой баланс: $${Number(bal).toLocaleString()}`);
 }
 
 function mainMenu(urlWithUid) {
@@ -190,6 +193,7 @@ function mainMenu(urlWithUid) {
   ]).resize();
 }
 
+// ===== /start (поддерживает: /start <refId>, /start check)
 bot.start(async (ctx) => {
   const uid = ctx.from.id;
   const uname = ctx.from.username ? '@' + ctx.from.username : null;
@@ -203,6 +207,7 @@ bot.start(async (ctx) => {
     return;
   }
 
+  // ежедневный бонус при входе
   const dailyGiven = await grantDailyIfNeeded(uid);
 
   const url = WEBAPP_URL + `?uid=${uid}`;
@@ -215,10 +220,12 @@ bot.start(async (ctx) => {
   );
 });
 
+// ===== /check и /bonus — одинаково: подписка + ежедневный
 bot.command(['check', 'bonus'], async (ctx) => {
   await checkAndGrantChannelBonus(ctx);
 });
 
+// ===== Кнопки меню
 bot.hears('Рефералы', async (ctx) => {
   const uid = ctx.from.id;
   const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
@@ -227,48 +234,43 @@ bot.hears('Рефералы', async (ctx) => {
   );
 });
 
-// мини-HTTP (если бот как Web Service)
+bot.hears('Проверить', async (ctx) => {
+  await checkAndGrantChannelBonus(ctx);
+});
+
+// ===== мини-HTTP (если бот как Web Service)
 const app = express();
 app.get('/', (_, res) => res.send('BTC Game Bot is running'));
 app.listen(PORT, () => console.log('Bot HTTP on', PORT));
 
+// Обязателен для Telegram платежей
 bot.on('pre_checkout_query', (ctx) => ctx.answerPreCheckoutQuery(true));
 
-// Успешная оплата Stars
+// ===== Успешная оплата Stars -> зачисляем внутр. валюту
 bot.on('message', async (ctx) => {
   const sp = ctx.message?.successful_payment;
   if (!sp) return;
 
   try {
+    // payload формата "<uid>:pack_<N>"
     const payload = sp.invoice_payload || '';
-    // варианты: "<uid>:pack_100"  или  "<uid>:ins_100"
-    const [uidStr, tail] = payload.split(':');
+    const [uidStr, packStr] = payload.split(':pack_');
     const uid = Number(uidStr);
-    if (!uid || !tail) return;
+    const pack = packStr?.trim();
 
-    if (tail.startsWith('pack_')) {
-      const pack = tail.replace('pack_', '').trim();
-      if (STARS_PACKS_BALANCE[pack]) {
-        const credit = STARS_PACKS_BALANCE[pack].credit;
-        await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credit, uid]);
-        await ctx.reply(`💫 Пакет ${pack}⭐ → +$${credit.toLocaleString()} на баланс.`);
-        return;
-      }
+    // Основной сценарий: пришёл payload с ключом пакета
+    if (uid && STARS_PACKS[pack]) {
+      const credit = STARS_PACKS[pack].credit;
+      await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credit, uid]);
+      await ctx.reply(`💫 Платёж принят: пакет ${pack}⭐ → +$${credit.toLocaleString()} на баланс.`);
+      return;
     }
 
-    if (tail.startsWith('ins_')) {
-      const pack = tail.replace('ins_', '').trim();
-      if (STARS_PACKS_INS[pack]) {
-        const ins = STARS_PACKS_INS[pack].ins;
-        await pool.query('UPDATE users SET insurance_count = insurance_count + $1 WHERE telegram_id=$2', [ins, uid]);
-        await ctx.reply(`🛡️ Куплено страховок: ${ins} шт. Они применятся автоматически к проигранным ставкам (50% возврат).`);
-        return;
-      }
-    }
+    // Фоллбек: total_amount в XTR = точное число звёзд
+    const stars = Number(sp.total_amount) || 0;     // НИКАКОГО /1000!
+    const creditPerStar = 30;                       // линейная оценка (подстраховка)
+    const credited = Math.round(stars * creditPerStar);
 
-    // fallback: нераспознанный payload
-    const stars = sp.total_amount / 1000; // 1⭐ = 1000
-    const credited = stars * 1000;
     await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credited, ctx.from.id]);
     await ctx.reply(`💫 Платёж принят: ${stars}⭐ → +$${credited.toLocaleString()}`);
   } catch (e) {
