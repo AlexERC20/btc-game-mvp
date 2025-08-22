@@ -4,6 +4,7 @@ import express from 'express';
 import cors from 'cors';
 import { WebSocket } from 'ws';
 import pg from 'pg';
+export { verifyInitData } from './verifyInitData.js';
 
 const app = express();
 app.use(cors());
