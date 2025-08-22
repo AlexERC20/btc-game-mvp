@@ -362,18 +362,25 @@
 </div>
 
 <script>
-const qs = new URLSearchParams(location.search);
-const uid = qs.get('uid')
-  || (window.Telegram?.WebApp?.initDataUnsafe?.user?.id)
-  || prompt('Введите ваш Telegram ID для теста:');
-
-const username = (window.Telegram?.WebApp?.initDataUnsafe?.user?.username)
-  ? '@' + window.Telegram.WebApp.initDataUnsafe.user.username
-  : null;
+const tg = window.Telegram?.WebApp;
+const initData = tg?.initData || '';
+const initUser = tg?.initDataUnsafe?.user;
 
 // === УКАЖИ ИМЯ СВОЕГО БОТА (без @) ===
 const BOT_USERNAME = 'realpricebtc_bot';
 const CHANNEL_LINK = 'https://t.me/erc20coin';
+const qs = new URLSearchParams(location.search);
+
+if (!tg || !initUser) {
+  document.body.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:#000;color:#fff;text-align:center">
+      <h2>Открой игру в Telegram</h2>
+      <a href="https://t.me/${BOT_USERNAME}?start=app" style="margin-top:16px;color:#fff;background:#2AABEE;padding:12px 20px;border-radius:8px;text-decoration:none">Открыть бота</a>
+    </div>`;
+} else {
+
+const uid = initUser.id;
+const username = initUser.username ? '@' + initUser.username : null;
 
 if (window.Telegram && Telegram.WebApp) { try { Telegram.WebApp.expand(); } catch(e){} }
 
@@ -534,7 +541,7 @@ adSend.onclick = async ()=>{
   const r = await fetch('/api/banner/bid', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid, text })
+    body: JSON.stringify({ initData, text })
   }).then(r=>r.json()).catch(()=>({ ok:false }));
 
   if (!r.ok) {
@@ -631,7 +638,7 @@ function highlightChips(val){
 async function auth(){
   const r = await fetch('/api/auth',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({uid, username})
+    body:JSON.stringify({initData})
   }).then(r=>r.json()).catch(()=>({ok:false}));
   if (r.ok) {
     balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
@@ -642,7 +649,7 @@ async function auth(){
 async function refreshBalance(){
   const r = await fetch('/api/auth',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({uid, username})
+    body:JSON.stringify({initData})
   }).then(r=>r.json()).catch(()=>({ok:false}));
   if (r.ok) {
     balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
@@ -664,7 +671,10 @@ async function leaderboard(){
   `).join('') || '<div class="rank"><div class="left"><div class="badge">—</div><div class="name">ещё пусто</div></div><div class="val">$0</div></div>';
 }
 async function loadStats(){
-  const r = await fetch(`/api/stats?uid=${uid}`).then(r=>r.json()).catch(()=>({ok:false}));
+  const r = await fetch('/api/stats', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ initData })
+  }).then(r=>r.json()).catch(()=>({ok:false}));
   if (!r.ok) return;
   document.getElementById('statsWins').textContent = Number(r.wins||0);
   document.getElementById('statsLosses').textContent = Number(r.losses||0);
@@ -685,7 +695,10 @@ async function adPoll(){
 
 // polling
 async function poll(){
-  const r = await fetch('/api/round').then(r=>r.json()).catch(()=>null);
+  const r = await fetch('/api/round', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ initData })
+  }).then(r=>r.json()).catch(()=>null);
   if (!r) return;
 
   if (r.price){
@@ -792,7 +805,7 @@ async function place(side){
 
   const r = await fetch('/api/bet',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({uid, side, amount})
+    body:JSON.stringify({initData, side, amount})
   }).then(r=>r.json()).catch(()=>({ok:false,error:'SERVER'}));
 
   if (!r.ok) {
@@ -847,7 +860,7 @@ checkBonus.onclick = async ()=>{
   const r = await fetch('/api/bonus/check', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid })
+    body: JSON.stringify({ initData })
   }).then(r=>r.json()).catch(()=>({ ok:false }));
 
   if (!r.ok) { alert('Не удалось проверить бонус.'); return; }
@@ -885,7 +898,7 @@ buyStars.onclick = async ()=>{
   const resp = await fetch('/api/stars/create', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ uid, pack })
+    body: JSON.stringify({ initData, pack })
   }).then(r=>r.json()).catch(()=>({ ok:false }));
   if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
 
@@ -907,7 +920,7 @@ buyIns.onclick = async ()=>{
   const resp = await fetch('/api/insurance/create', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ uid })
+    body: JSON.stringify({ initData })
   }).then(r=>r.json()).catch(()=>({ ok:false }));
   if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
 
@@ -929,6 +942,7 @@ buyIns.onclick = async ()=>{
 auth();
 poll();
 setInterval(poll, 1000);
+}
 </script>
 </body>
 </html>
