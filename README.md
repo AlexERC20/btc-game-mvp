@@ -12,7 +12,7 @@
 Web Service (server):
 - Root Directory: server
 - Start: node server.js
-- Env: DATABASE_URL, BINANCE_WS
+- Env: DATABASE_URL, BINANCE_WS, BOTS_ENABLED (optional bot settings in .env)
 
 Background Worker/Web Service (bot):
 - Root Directory: bot

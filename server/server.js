@@ -63,6 +63,16 @@ const BINANCE_WS =
 const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
 const MIN_BET = 50; // ✅ минимальная ставка ($)
 
+// bot settings
+const BOTS_ENABLED = process.env.BOTS_ENABLED === 'true';
+const BOTS_COUNT = Number(process.env.BOTS_COUNT || 3);
+const BOTS_START_BALANCE = Number(process.env.BOTS_START_BALANCE || 100000);
+const BOTS_MAX_STAKE_PCT = Number(process.env.BOTS_MAX_STAKE_PCT || 0.20);
+const BOTS_MAX_BETS_PER_ROUND = Number(process.env.BOTS_MAX_BETS_PER_ROUND || 3);
+const BOTS_IMBALANCE_BIAS = Number(process.env.BOTS_IMBALANCE_BIAS || 0.70);
+const BOTS_FEE_SHARE = Number(process.env.BOTS_FEE_SHARE || 1.0);
+const BOTS_TOPUP_PER_ROUND = Number(process.env.BOTS_TOPUP_PER_ROUND || 20000);
+
 // shout auction defaults
 const SHOUT_STEP = 100;        // шаг изменения цены
 const SHOUT_MIN_PRICE = 100;   // минимальная цена чата
@@ -182,6 +192,22 @@ await pool.query(`
   ON CONFLICT (id) DO NOTHING;
 `);
 
+await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT FALSE`);
+await pool.query(`ALTER TABLE bets ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT FALSE`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS bot_fund (
+    id SMALLINT PRIMARY KEY DEFAULT 1,
+    amount BIGINT NOT NULL DEFAULT 0
+  );
+`);
+await pool.query(`INSERT INTO bot_fund(id, amount) VALUES(1, 0) ON CONFLICT (id) DO NOTHING`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS bot_round_spend (
+    round_id INT PRIMARY KEY,
+    spent_by_user JSONB NOT NULL DEFAULT '{}'::jsonb
+  );
+`);
+
 // ✅ Пакеты Stars: amount = число звёзд
 const STARS_PACKS = {
   '100':   { stars: 100,    credit: 3_000 },
@@ -283,6 +309,9 @@ let state = {
 };
 const MAX_HIST = 10;
 
+const botSchedule = new Map();
+let botList = [];
+
 /* ========= Цена (Binance WS) ========= */
 let ws = null;
 function connectPrice() {
@@ -346,9 +375,106 @@ async function grantDailyIfNeeded(telegramId) {
   return 0;
 }
 
+/* ========= Bot helpers ========= */
+function clamp(v, min, max) {
+  return Math.min(Math.max(v, min), max);
+}
+
+function chooseSideWithBias(bankBuy, bankSell) {
+  const weaker = bankBuy <= bankSell ? 'BUY' : 'SELL';
+  const stronger = weaker === 'BUY' ? 'SELL' : 'BUY';
+  if (Math.random() < BOTS_IMBALANCE_BIAS) return weaker;
+  return Math.random() < 0.5 ? weaker : stronger;
+}
+
+function pickAmountWithSkew(balance, allowed, bankBuy, bankSell) {
+  const total = bankBuy + bankSell;
+  const skew = total > 0 ? Math.min(0.5, Math.abs(bankBuy - bankSell) / total) : 0;
+  const mult = 1 + skew;
+  const raw = Math.floor(MIN_BET * mult + Math.random() * (allowed * mult - MIN_BET));
+  return clamp(raw, MIN_BET, allowed);
+}
+
+function planBotsForRound(roundId, betWindow) {
+  const scheduleForRound = {};
+  for (const bot of botList) {
+    const count = 1 + Math.floor(Math.random() * BOTS_MAX_BETS_PER_ROUND);
+    const times = new Set();
+    while (times.size < count) times.add(Math.floor(Math.random() * Math.max(1, betWindow - 1)));
+    scheduleForRound[bot.id] = Array.from(times).sort((a, b) => a - b);
+  }
+  botSchedule.set(roundId, scheduleForRound);
+}
+
+async function tryBotBet(botUserId) {
+  if (state.phase !== 'betting') return;
+
+  const { rows: [u] } = await pool.query('SELECT id, balance FROM users WHERE id=$1 AND is_bot=TRUE', [botUserId]);
+  if (!u || u.balance < MIN_BET) return;
+
+  const maxRoundStake = Math.floor(u.balance * BOTS_MAX_STAKE_PCT);
+  const { rows: [sp] } = await pool.query('SELECT spent_by_user FROM bot_round_spend WHERE round_id=$1', [state.currentRoundId]);
+  const spentMap = sp?.spent_by_user || {};
+  const spent = spentMap[botUserId] || 0;
+  const allowed = Math.max(MIN_BET, Math.min(maxRoundStake - spent, Math.floor(u.balance * 0.2)));
+  if (allowed < MIN_BET) return;
+
+  const side = chooseSideWithBias(state.bankBuy, state.bankSell);
+  const amount = clamp(pickAmountWithSkew(u.balance, allowed, state.bankBuy, state.bankSell), MIN_BET, allowed);
+
+  const upd = await pool.query('UPDATE users SET balance=balance-$1 WHERE id=$2 AND balance >= $1', [amount, u.id]);
+  if (upd.rowCount === 0) return;
+  await pool.query(
+    'INSERT INTO bets(user_id, round_id, side, amount, is_bot) VALUES ($1,$2,$3,$4,TRUE)',
+    [u.id, state.currentRoundId, side, amount]
+  );
+
+  const bet = { user_id: u.id, user: `bot:${u.id}`, amount, ts: Date.now(), is_bot:true };
+  if (side === 'BUY') { state.betsBuy.push(bet); state.bankBuy += amount; }
+  else               { state.betsSell.push(bet); state.bankSell += amount; }
+
+  spentMap[botUserId] = (spentMap[botUserId] || 0) + amount;
+  await pool.query(
+    `INSERT INTO bot_round_spend(round_id, spent_by_user)
+     VALUES($1, $2::jsonb)
+     ON CONFLICT (round_id) DO UPDATE SET spent_by_user = EXCLUDED.spent_by_user`,
+    [state.currentRoundId, JSON.stringify(spentMap)]
+  );
+}
+
+async function ensureBots() {
+  const bots = [];
+  for (let i = 1; i <= BOTS_COUNT; i++) {
+    const tgId = 10_000_000_000 + i;
+    const r = await pool.query(
+      `INSERT INTO users(telegram_id, username, balance, is_bot)
+       VALUES ($1, $2, $3, TRUE)
+       ON CONFLICT (telegram_id) DO UPDATE SET is_bot=TRUE
+       RETURNING id, telegram_id`,
+      [tgId, `@dealer${i}`, BOTS_START_BALANCE]
+    );
+    bots.push({ id: r.rows[0].id, telegram_id: r.rows[0].telegram_id });
+  }
+  return bots;
+}
+
+async function refillBotsFromFund() {
+  const { rows: [{ amount: fundAmt = 0 } = {}] } = await pool.query('SELECT amount FROM bot_fund WHERE id=1');
+  if (fundAmt <= 0) return;
+  const cap = Math.min(fundAmt, BOTS_TOPUP_PER_ROUND);
+  const { rows: bots } = await pool.query('SELECT id, balance FROM users WHERE is_bot=TRUE ORDER BY balance ASC');
+  if (!bots.length) return;
+  const perBot = Math.floor(cap / bots.length);
+  if (perBot < 1) return;
+  const ids = bots.map(b => b.id);
+  await pool.query('UPDATE users SET balance = balance + $1 WHERE id = ANY($2::int[])', [perBot, ids]);
+  await pool.query('UPDATE bot_fund SET amount = amount - $1 WHERE id=1', [perBot * bots.length]);
+}
+
 /* ========= Цикл раунда ========= */
 async function startRound() {
   if (!state.price) return;
+  if (BOTS_ENABLED) await refillBotsFromFund();
   state.phase = 'betting';
   state.secsLeft = state.roundLen;
   state.startPrice = state.price;
@@ -359,6 +485,15 @@ async function startRound() {
     [state.startPrice]
   );
   state.currentRoundId = r.rows[0].id;
+  if (BOTS_ENABLED) {
+    planBotsForRound(state.currentRoundId, state.betWindow);
+    await pool.query(
+      `INSERT INTO bot_round_spend(round_id, spent_by_user)
+       VALUES($1, '{}'::jsonb)
+       ON CONFLICT (round_id) DO UPDATE SET spent_by_user='{}'::jsonb`,
+      [state.currentRoundId]
+    );
+  }
 }
 
 function tick() {
@@ -384,6 +519,18 @@ function tick() {
       }
     }
 
+    if (BOTS_ENABLED && state.phase === 'betting') {
+      const elapsed = state.roundLen - state.secsLeft;
+      const sched = botSchedule.get(state.currentRoundId) || {};
+      for (const botId in sched) {
+        const slots = sched[botId];
+        if (slots.length && slots[0] === elapsed) {
+          slots.shift();
+          tryBotBet(Number(botId)).catch(console.error);
+        }
+      }
+    }
+
     if (state.phase === 'betting' &&
         state.secsLeft === state.roundLen - state.betWindow) {
       state.phase = 'locked';
@@ -399,6 +546,9 @@ function tick() {
       state.currentRoundId = null;
     }
   })().catch(console.error);
+}
+if (BOTS_ENABLED) {
+  botList = await ensureBots();
 }
 setInterval(tick, 1000);
 
@@ -416,6 +566,10 @@ async function settle() {
 
   const fee = Math.floor(totalLose * 0.10); // 10% только с проигравших
   const distributable = bank - fee;
+  const feeShare = Math.floor(fee * BOTS_FEE_SHARE);
+  if (feeShare > 0) {
+    await pool.query('UPDATE bot_fund SET amount = amount + $1 WHERE id=1', [feeShare]);
+  }
 
   const pct = ((state.price - state.startPrice) / state.startPrice) * 100;
 
@@ -678,6 +832,7 @@ app.get('/api/leaderboard', async (req, res) => {
       JOIN users u ON u.id = p.user_id
       WHERE p.created_at >= now() - interval '1 hour'
         AND p.amount > 0
+        AND u.is_bot = FALSE
       GROUP BY u.id, u.username, u.telegram_id
       ORDER BY won DESC
       LIMIT 20;
