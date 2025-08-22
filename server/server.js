@@ -4,7 +4,46 @@ import express from 'express';
 import cors from 'cors';
 import { WebSocket } from 'ws';
 import pg from 'pg';
-export { verifyInitData } from './verifyInitData.js';
+import crypto from 'crypto';
+
+function verifyInitData(initDataRaw, botToken) {
+  if (!initDataRaw || !botToken) return { ok:false, error:'NO_INITDATA' };
+  const params = new URLSearchParams(initDataRaw);
+  const hash = params.get('hash');
+  params.delete('hash');
+
+  const data = [];
+  for (const [k,v] of params) data.push(`${k}=${v}`);
+  data.sort();
+  const dataCheckString = data.join('\n');
+
+  const secret = crypto.createHmac('sha256', 'WebAppData')
+                       .update(botToken).digest();
+
+  const computed = crypto.createHmac('sha256', secret)
+                         .update(dataCheckString).digest('hex');
+
+  const ok = hash && crypto.timingSafeEqual(Buffer.from(computed,'hex'), Buffer.from(hash,'hex'));
+  if (!ok) return { ok:false, error:'BAD_HASH' };
+
+  // необязательно, но полезно: отсечь старые подписи > 24ч
+  const authDate = Number(params.get('auth_date')||0);
+  if ((Date.now()/1000 - authDate) > 24*3600) return { ok:false, error:'EXPIRED' };
+
+  let user = null;
+  try { user = JSON.parse(params.get('user') || 'null'); } catch {}
+  if (!user?.id) return { ok:false, error:'NO_USER' };
+
+  return { ok:true, user };
+}
+
+function requireTGAuth(req, res, next) {
+  const initData = req.body?.initData || req.query?.initData;
+  const v = verifyInitData(initData, process.env.BOT_TOKEN);
+  if (!v.ok) return res.status(401).json({ ok:false, error:'UNAUTHORIZED' });
+  req.tgUser = v.user;        // { id, username, ... }
+  next();
+}
 
 const app = express();
 app.use(cors());
@@ -148,13 +187,14 @@ const STARS_PACKS = {
 const INSURANCE_PACK = { count: 100, stars: 1000 };
 
 // Создание инвойса Stars (XTR)
-app.post('/api/stars/create', async (req, res) => {
+app.post('/api/stars/create', requireTGAuth, async (req, res) => {
   try {
-    const { uid, pack } = req.body || {};
+    const { pack } = req.body || {};
     const key = String(pack || '').trim();
     const p = STARS_PACKS[key];
-    if (!uid || !p) return res.status(400).json({ ok:false, error:'BAD_REQUEST' });
+    if (!p) return res.status(400).json({ ok:false, error:'BAD_REQUEST' });
 
+    const uid = req.tgUser.id;
     const payload = `${uid}:pack_${key}`;
 
     const tgResp = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
@@ -182,10 +222,9 @@ app.post('/api/stars/create', async (req, res) => {
 });
 
 // Покупка страховок за Stars
-app.post('/api/insurance/create', async (req, res) => {
+app.post('/api/insurance/create', requireTGAuth, async (req, res) => {
   try {
-    const { uid } = req.body || {};
-    if (!uid) return res.status(400).json({ ok:false, error:'BAD_REQUEST' });
+    const uid = req.tgUser.id;
 
     const payload = `${uid}:ins_${INSURANCE_PACK.count}`;
 
@@ -415,15 +454,15 @@ async function settle() {
 /* ========= API ========= */
 
 // Регистрация/пинг (сохранение username)
-app.post('/api/auth', async (req, res) => {
+app.post('/api/auth', requireTGAuth, async (req, res) => {
   try {
-    const { uid, username } = req.body || {};
-    if (!uid) return res.status(400).json({ ok: false, error: 'NO_UID' });
-    const u = await ensureUser(uid, username);
+    const tgId = req.tgUser.id;
+    const uname = req.tgUser.username ? '@' + req.tgUser.username : null;
+    const u = await ensureUser(tgId, uname);
     res.json({
       ok: true,
       user: {
-        id: u.id, telegram_id: uid, username: u.username,
+        id: u.id, telegram_id: tgId, username: u.username,
         balance: Number(u.balance),
         insurance: Number(u.insurance_count)
       }
@@ -435,13 +474,13 @@ app.post('/api/auth', async (req, res) => {
 });
 
 // Ставка (с MIN_BET=50)
-app.post('/api/bet', async (req, res) => {
+app.post('/api/bet', requireTGAuth, async (req, res) => {
   try {
     if (state.phase !== 'betting') {
       return res.status(400).json({ ok:false, error:'BETTING_CLOSED' });
     }
-    const { uid, side, amount } = req.body || {};
-    if (!uid || !side) {
+    const { side, amount } = req.body || {};
+    if (!side) {
       return res.status(400).json({ ok:false, error:'BAD_REQUEST' });
     }
 
@@ -450,7 +489,9 @@ app.post('/api/bet', async (req, res) => {
       return res.status(400).json({ ok:false, error:`MIN_BET_${MIN_BET}` });
     }
 
-    const u = await ensureUser(uid);
+    const tgId = req.tgUser.id;
+    const uname = req.tgUser.username ? '@' + req.tgUser.username : null;
+    const u = await ensureUser(tgId, uname);
     if (Number(u.balance) < amt) {
       return res.status(400).json({ ok:false, error:'INSUFFICIENT_BALANCE' });
     }
@@ -467,7 +508,7 @@ app.post('/api/bet', async (req, res) => {
       [u.id, state.currentRoundId, side, amt, insured]
     );
 
-    const bet = { user_id: u.id, user: String(uid), amount: amt, ts: Date.now(), insured };
+    const bet = { user_id: u.id, user: String(tgId), amount: amt, ts: Date.now(), insured };
     if (side === 'BUY')      { state.betsBuy.push(bet);  state.bankBuy  += amt; }
     else if (side === 'SELL'){ state.betsSell.push(bet); state.bankSell += amt; }
     else return res.status(400).json({ ok:false, error:'BAD_SIDE' });
@@ -480,7 +521,7 @@ app.post('/api/bet', async (req, res) => {
 });
 
 // Состояние
-app.get('/api/round', (req, res) => {
+app.get('/api/round', requireTGAuth, (req, res) => {
   res.json({
     price: state.price, startPrice: state.startPrice,
     phase: state.phase, secsLeft: state.secsLeft,
@@ -494,12 +535,11 @@ app.get('/api/round', (req, res) => {
 app.get('/api/history', (req, res) => res.json({ history: state.history }));
 
 // Статистика пользователя: последние ставки и агрегаты
-app.get('/api/stats', async (req, res) => {
+app.get('/api/stats', requireTGAuth, async (req, res) => {
   try {
-    const { uid } = req.query || {};
-    if (!uid) return res.status(400).json({ ok:false, error:'NO_UID' });
+    const tgId = req.tgUser.id;
 
-    const u = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
+    const u = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [tgId]);
     const userId = u.rows[0]?.id;
     if (!userId) return res.status(400).json({ ok:false, error:'NO_USER' });
 
@@ -561,12 +601,13 @@ app.get('/api/shout/state', async (req, res) => {
   }
 });
 
-app.post('/api/shout/post', async (req, res) => {
-  const { uid, msg } = req.body || {};
+app.post('/api/shout/post', requireTGAuth, async (req, res) => {
+  const { msg } = req.body || {};
+  const uid = req.tgUser.id;
   const text = String(msg||'').replace(/\n/g,' ').trim();
-  if (!uid || text.length < 1 || text.length > 80) return res.status(400).json({ ok:false, error:'BAD_REQUEST' });
+  if (text.length < 1 || text.length > 80) return res.status(400).json({ ok:false, error:'BAD_REQUEST' });
 
-  await ensureUser(uid, null);
+  await ensureUser(uid, req.tgUser.username ? '@' + req.tgUser.username : null);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -638,13 +679,12 @@ app.get('/api/leaderboard', async (req, res) => {
 
 /* ========= Проверка бонусов (подписка + ежедневка) ========= */
 // Вызывается фронтом из шита «Пополнение» — без редиректа в бота
-app.post('/api/bonus/check', async (req, res) => {
+app.post('/api/bonus/check', requireTGAuth, async (req, res) => {
   try {
-    const { uid } = req.body || {};
-    if (!uid) return res.json({ ok:false, msg:'NO_UID' });
+    const uid = req.tgUser.id;
 
     // убедимся, что пользователь есть
-    await ensureUser(uid, null);
+    await ensureUser(uid, req.tgUser.username ? '@' + req.tgUser.username : null);
 
     // проверка подписки на канал (бот должен видеть участников канала)
     let isMember = false;
