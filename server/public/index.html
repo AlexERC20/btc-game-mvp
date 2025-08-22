@@ -99,14 +99,34 @@
   .sheet .btnrow .btnsm.cancel{background:#333}
   .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
 
-  .banner{display:flex;flex-direction:column;gap:6px;background:#0b0b0b;border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin:8px 0}
-  .banner-left{display:flex;gap:6px;align-items:center;white-space:nowrap;overflow:hidden}
-  .banner-left #bannerText{overflow:hidden;text-overflow:ellipsis}
-  .banner-right{display:flex;gap:8px;align-items:center;justify-content:flex-end}
-  .badge{background:#121212;border:1px solid var(--border);padding:4px 8px;border-radius:999px}
-  .timer-badge{opacity:.8}
-  .banner-foot{font-size:12px;color:#b9b9b9}
-  #sheetBanner input{background:#121212;border:1px solid var(--border);border-radius:10px;padding:10px;color:#fff;font-size:14px;width:100%}
+  .adline{
+    background: var(--card);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:12px 12px 10px;
+    margin:8px 0 12px;
+  }
+  .ad-main{
+    display:flex; align-items:center; gap:8px; margin-bottom:6px;
+  }
+  .crown{ font-size:20px; line-height:1 }
+  .ad-user{
+    max-width:28%;
+    font-weight:700;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .ad-text{
+    flex:1;
+    color:#ddd;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .ad-actions{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+  }
+  .ad-price{ font-size:20px; font-weight:800 }
+  .ad-write{ padding:10px 14px }
+  .ad-foot{ margin-top:8px; color:var(--muted); font-size:13px }
+  .ad-foot .muted{ color:var(--muted) }
 </style>
 </head>
 <body>
@@ -145,18 +165,19 @@
     <button class="chipbtn" id="starsBtn">Купить ⭐</button>
   </div>
 
-  <div id="bannerBar" class="banner flash-target">
-    <div class="banner-left">
+  <div class="adline" id="adLine">
+    <div class="ad-main">
       <span class="crown">👑</span>
-      <span id="bannerName">@—</span>
-      <span id="bannerText">—</span>
+      <span class="ad-user" id="adUser">@user</span>
+      <span class="ad-text" id="adText">Здесь будет сообщение победителя…</span>
     </div>
-    <div class="banner-right">
-      <span id="bannerBid" class="badge">$—</span>
-      <span id="bannerTimer" class="timer-badge">00</span>
-      <button id="bannerWrite" class="chipbtn">✍ Написать</button>
+
+    <div class="ad-actions">
+      <div class="ad-price" id="adPrice">$100</div>
+      <button class="chipbtn ad-write" id="adWrite">✍️ Написать</button>
     </div>
-    <div class="banner-foot">войти: <b id="bannerPrice">$100</b> (шаг $100)</div>
+
+    <div class="ad-foot" id="adFoot">войти: <b id="adEnter">$100</b> <span class="muted">(шаг $100)</span></div>
   </div>
 
   <div class="history" id="hist"></div>
@@ -235,20 +256,6 @@
   </div>
 </div>
 
-<!-- SHEET: баннер -->
-<div class="sheet" id="sheetBanner">
-  <h3>Ваше сообщение (до 80 символов)</h3>
-  <input id="bannerInput" maxlength="80" placeholder="Напиши кратко и без переносов">
-  <div class="rowchips" style="justify-content:space-between">
-    <span id="bannerChars">0/80</span>
-    <span>войти сейчас: <b id="bannerEnter">$100</b></span>
-  </div>
-  <div class="btnrow">
-    <button class="btnsm cancel" data-close>Отмена</button>
-    <button class="btnsm" id="bannerSend">Отправить</button>
-  </div>
-</div>
-
 <!-- SHEET: статистика -->
 <div class="sheet" id="sheetStats">
   <h3>Статистика</h3>
@@ -279,9 +286,15 @@ if (window.Telegram && Telegram.WebApp) { try { Telegram.WebApp.expand(); } catc
 let CURRENT_PHASE = 'idle'; // <-- глобально храним текущую фазу
 let INS_COUNT = 0;
 let lastShownSettlementKey = null;
-let bannerPrice = 100;
-let lastBannerKey = null;
-let lastBannerLeaderId = null;
+
+const BID_STEP = 100;
+const MIN_BID  = 100;
+
+let adState = {
+  user: '@user',
+  text: 'Сообщение победителя…',
+  price: 100
+};
 
 // elements
 const priceEl = document.getElementById('price');
@@ -296,13 +309,12 @@ const buyBtn  = document.getElementById('buy');
 const sellBtn = document.getElementById('sell');
 const histEl  = document.getElementById('hist');
 const lbEl    = document.getElementById('lb');
-const bannerBar   = document.getElementById('bannerBar');
-const bannerName  = document.getElementById('bannerName');
-const bannerText  = document.getElementById('bannerText');
-const bannerBid   = document.getElementById('bannerBid');
-const bannerTimer = document.getElementById('bannerTimer');
-const bannerWrite = document.getElementById('bannerWrite');
-const bannerPriceEl = document.getElementById('bannerPrice');
+const adLine     = document.getElementById('adLine');
+const adUserEl   = document.getElementById('adUser');
+const adTextEl   = document.getElementById('adText');
+const adPriceEl  = document.getElementById('adPrice');
+const adEnterEl  = document.getElementById('adEnter');
+const adWriteBtn = document.getElementById('adWrite');
 
 const refBtn  = document.getElementById('refBtn');
 const topupBtn= document.getElementById('topupBtn');
@@ -318,7 +330,6 @@ const sheetTopup  = document.getElementById('sheetTopup');
 const sheetStars  = document.getElementById('sheetStars');
 const sheetIns    = document.getElementById('sheetIns');
 const sheetStats  = document.getElementById('sheetStats');
-const sheetBanner = document.getElementById('sheetBanner');
 
 // stake controls
 const chipsBox  = document.getElementById('chips');
@@ -335,10 +346,50 @@ const starsPacks = document.getElementById('starsPacks');
 const buyStars   = document.getElementById('buyStars');
 const insCountEl = document.getElementById('insCount');
 const buyIns     = document.getElementById('buyIns');
-const bannerInput = document.getElementById('bannerInput');
-const bannerChars = document.getElementById('bannerChars');
-const bannerSend  = document.getElementById('bannerSend');
-const bannerEnter = document.getElementById('bannerEnter');
+
+// нормализуем ник: гарантируем один '@'
+function normUser(u){
+  if (!u) return '@anon';
+  return u.startsWith('@') ? u : '@' + u;
+}
+
+// считаем цену «войти сейчас» = max(MIN_BID, current + step)
+function nextBid(){
+  const base = Number(adState?.price || 0);
+  return Math.max(MIN_BID, base + BID_STEP);
+}
+
+// отрисовка строки
+function renderAdLine(){
+  adUserEl.textContent = normUser(adState.user);
+  adTextEl.textContent = adState.text || '—';
+  adPriceEl.textContent = '$' + Number(adState.price||0).toLocaleString();
+  adEnterEl.textContent = '$' + nextBid().toLocaleString();
+}
+renderAdLine();
+
+// модалка «написать»
+adWriteBtn.onclick = async ()=>{
+  const msg = prompt('Ваше сообщение (до 80 символов):','');
+  if (msg === null) return;
+  const text = String(msg).slice(0,80).replace(/\n/g, ' ');
+  const bid  = nextBid();
+
+  const r = await fetch('/api/billboard/bid', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ uid, text, amount: bid })
+  }).then(r=>r.json()).catch(()=>({ ok:false }));
+
+  if (!r.ok) {
+    alert(r.error==='INSUFFICIENT_BALANCE' ? 'Недостаточно средств' : 'Не удалось разместить сообщение');
+    return;
+  }
+
+  adState = r.state || adState;
+  renderAdLine();
+  await refreshBalance();
+};
 
 const CIRC = 2*Math.PI*140;
 ring.setAttribute('stroke-dasharray', CIRC);
@@ -394,7 +445,7 @@ function chip(h){
 // sheet helpers
 function openSheet(el){ el.classList.add('open'); sheetBg.classList.add('show'); }
 function closeAllSheets(){
-  [sheetStake, sheetTopup, sheetStars, sheetIns, sheetStats, sheetBanner].forEach(s=>s.classList.remove('open'));
+  [sheetStake, sheetTopup, sheetStars, sheetIns, sheetStats].forEach(s=>s.classList.remove('open'));
   sheetBg.classList.remove('show');
 }
 sheetBg.addEventListener('click', closeAllSheets);
@@ -462,27 +513,11 @@ async function loadStats(){
   listEl.innerHTML = (r.list||[]).map(item=>`<div>${item}</div>`).join('');
 }
 
-async function bannerPoll(){
-  const r = await fetch('/api/banner/status').then(r=>r.json()).catch(()=>null);
+async function adPoll(){
+  const r = await fetch('/api/billboard/status').then(r=>r.json()).catch(()=>null);
   if (!r) return;
-  const leader = r.leader || {};
-  bannerName.textContent = leader.name || '@—';
-  bannerText.textContent = leader.text || '—';
-  bannerBid.textContent = '$' + Number(leader.bid||0).toLocaleString();
-  bannerPriceEl.textContent = '$' + Number(r.price||0).toLocaleString();
-  bannerEnter.textContent = '$' + Number(r.price||0).toLocaleString();
-  bannerTimer.textContent = String(r.endsIn||0).padStart(2,'0');
-  bannerPrice = Number(r.price||0);
-  const key = [leader.id, leader.text, leader.bid].join('|');
-  if (lastBannerKey && key !== lastBannerKey) {
-    flash(bannerBar,'green');
-  }
-  if (lastBannerLeaderId === uid && leader.id !== uid && lastBannerLeaderId !== null) {
-    flash(bannerBar,'red');
-    hapticLose();
-  }
-  lastBannerLeaderId = leader.id || null;
-  lastBannerKey = key;
+  adState = r.state || r;
+  renderAdLine();
 }
 
 // polling
@@ -522,7 +557,7 @@ async function poll(){
 
   await refreshBalance();
   await leaderboard();
-  await bannerPoll();
+  await adPoll();
 
   // --- Result animation during pause
   if (r.phase === 'pause' && r.lastSettlement) {
@@ -618,7 +653,6 @@ topupBtn.onclick = ()=> openSheet(sheetTopup);
 insBtn.onclick  = ()=>{ insCountEl.textContent = 'Доступно: ' + INS_COUNT; openSheet(sheetIns); };
 starsBtn.onclick = ()=> openSheet(sheetStars);
 statsBtn.onclick = () => { loadStats(); openSheet(sheetStats); };
-bannerWrite.onclick = ()=>{ hapticLight(); bannerInput.value=''; bannerChars.textContent='0/80'; bannerEnter.textContent = fmt(bannerPrice); openSheet(sheetBanner); };
 
 // stake sheet handlers
 chipsBox.addEventListener('click', (e)=>{
@@ -664,22 +698,6 @@ checkBonus.onclick = async ()=>{
   closeAllSheets();
 };
 
-// banner sheet handlers
-bannerInput.addEventListener('input', ()=>{ bannerChars.textContent = bannerInput.value.length + '/80'; });
-bannerSend.onclick = async ()=>{
-  hapticLight();
-  const text = bannerInput.value;
-  const resp = await fetch('/api/banner/bid', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid, text })
-  }).then(r=>r.json()).catch(()=>({ ok:false }));
-  if (!resp.ok) { alert(resp.error || 'Ошибка'); return; }
-  closeAllSheets();
-  const prev = lastBannerLeaderId;
-  await refreshBalance();
-  await bannerPoll();
-  if (lastBannerLeaderId === uid && prev !== uid) hapticWin();
-};
 
 // рефералы
 refBtn.onclick = ()=>{
