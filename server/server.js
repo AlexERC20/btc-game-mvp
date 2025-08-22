@@ -45,6 +45,8 @@ function requireTgAuth(req, res, next) {
   const v = verifyInitData(initData, process.env.BOT_TOKEN);
   if (!v.ok || !v.uid) return res.status(401).json({ ok:false, error:'UNAUTHORIZED' });
   req.tgUser = { id: v.uid, username: v.username, raw: v.user };
+  // обновляем таймштамп активности пользователя
+  pool.query('UPDATE users SET last_active_at=now() WHERE telegram_id=$1', [v.uid]).catch(()=>{});
   next();
 }
 
@@ -62,9 +64,9 @@ const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
 const MIN_BET = 50; // ✅ минимальная ставка ($)
 
 // shout auction defaults
-const SHOUT_STEP_DELTA = 100;   // шаг увеличения/уменьшения
-const SHOUT_MIN_STEP = 100;     // минимальный шаг
-const SHOUT_STEP_DOWN_SEC = 60; // каждые 60 секунд шаг уменьшается
+const SHOUT_STEP = 100;        // шаг изменения цены
+const SHOUT_MIN_PRICE = 100;   // минимальная цена чата
+const ONLINE_WINDOW_SEC = 60;  // окно (секунд) для подсчёта онлайн игроков
 
 // бонусы и канал для проверки подписки
 const CHANNEL = process.env.CHANNEL || '@erc20coin';
@@ -86,6 +88,7 @@ await pool.query(`
     insurance_count BIGINT NOT NULL DEFAULT 0,
     channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE,
     last_daily_bonus DATE,
+    last_active_at TIMESTAMPTZ DEFAULT now(),
     created_at TIMESTAMPTZ DEFAULT now()
   );
 
@@ -141,6 +144,7 @@ await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus DATE`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS insurance_count BIGINT NOT NULL DEFAULT 0`);
+await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ DEFAULT now()`);
 await pool.query(`ALTER TABLE bets ADD COLUMN IF NOT EXISTS insured BOOLEAN NOT NULL DEFAULT FALSE`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS banner_spent BIGINT NOT NULL DEFAULT 0`);
 
@@ -155,9 +159,11 @@ await pool.query(`
     message          TEXT,
     current_price    BIGINT NOT NULL DEFAULT 0,
     current_step     BIGINT NOT NULL DEFAULT 100,
-    last_change_at   TIMESTAMPTZ DEFAULT now()
+    last_change_at   TIMESTAMPTZ DEFAULT now(),
+    last_decay_round_id INT
   );
 `);
+await pool.query(`ALTER TABLE shout_state ADD COLUMN IF NOT EXISTS last_decay_round_id INT`);
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS shout_bids (
@@ -365,6 +371,19 @@ function tick() {
 
     state.secsLeft--;
 
+    if (state.phase === 'betting' && state.secsLeft === state.roundLen - 1) {
+      try {
+        await pool.query(
+          `UPDATE shout_state
+           SET current_price = GREATEST($1, current_price - $2), last_decay_round_id=$3
+           WHERE id=1 AND (last_decay_round_id IS NULL OR last_decay_round_id <> $3)`,
+          [SHOUT_MIN_PRICE, SHOUT_STEP, state.currentRoundId]
+        );
+      } catch (e) {
+        console.error('shout decay', e);
+      }
+    }
+
     if (state.phase === 'betting' &&
         state.secsLeft === state.roundLen - state.betWindow) {
       state.phase = 'locked';
@@ -522,7 +541,12 @@ app.post('/api/bet', requireTgAuth, async (req, res) => {
 });
 
 // Состояние
-app.get('/api/round', (req, res) => {
+app.get('/api/round', async (req, res) => {
+  const initData = req.query?.initData || '';
+  const v = verifyInitData(initData, process.env.BOT_TOKEN);
+  if (v.ok && v.uid) {
+    pool.query('UPDATE users SET last_active_at=now() WHERE telegram_id=$1', [v.uid]).catch(()=>{});
+  }
   res.json({
     price: state.price, startPrice: state.startPrice,
     phase: state.phase, secsLeft: state.secsLeft,
@@ -557,22 +581,21 @@ app.post('/api/stats', requireTgAuth, async (req, res) => {
     `;
     const r = await pool.query(q, [userId, LIMIT]);
 
-    const recent = r.rows.map(row => ({
-      round: row.round_id,
-      side: row.side,
-      bet: Number(row.bet_amount),
-      outcome: Number(row.payout) > 0 ? 'WIN' : 'LOSE',
-      amount: Number(row.payout) > 0 ? Number(row.payout) : Number(row.bet_amount),
-    }));
+    const wins = r.rows.filter(row => Number(row.payout) > 0).length;
+    const losses = r.rows.filter(row => Number(row.payout) === 0).length;
+    const list = r.rows.map(row => {
+      const win = Number(row.payout) > 0;
+      const amt = win ? Number(row.payout) : Number(row.bet_amount);
+      const sign = win ? '+' : '-';
+      return `${row.round_id}: ${row.side} ${sign}$${amt}`;
+    });
 
-    const totalWon = recent
-      .filter(r => r.outcome === 'WIN')
-      .reduce((s, x) => s + x.amount, 0);
-    const totalLost = recent
-      .filter(r => r.outcome === 'LOSE')
-      .reduce((s, x) => s + x.amount, 0);
+    const onlineRes = await pool.query(
+      `SELECT COUNT(*) FROM users WHERE last_active_at > now() - interval '${ONLINE_WINDOW_SEC} seconds'`
+    );
+    const online_count = Number(onlineRes.rows[0]?.count || 0);
 
-    res.json({ ok:true, totalWon, totalLost, recent });
+    res.json({ ok:true, wins, losses, list, online_count });
   } catch (e) {
     console.error('/api/stats', e);
     res.status(500).json({ ok:false, error:'SERVER' });
@@ -585,28 +608,15 @@ app.get('/api/shout', async (req, res) => {
   try {
     const r = await pool.query('SELECT * FROM shout_state WHERE id=1');
     const st = r.rows[0] || {};
-    const now = new Date();
-    const last = st.last_change_at ? new Date(st.last_change_at) : now;
-    const diffSec = Math.floor((now - last) / 1000);
-    const k = Math.floor(diffSec / SHOUT_STEP_DOWN_SEC);
-    const effectiveStep = Math.max(SHOUT_MIN_STEP, Number(st.current_step || SHOUT_MIN_STEP) - SHOUT_STEP_DELTA * k);
-    const nextPrice = Number(st.current_price || 0) + effectiveStep;
-    const secondsToDown = SHOUT_STEP_DOWN_SEC - (diffSec % SHOUT_STEP_DOWN_SEC);
-
-    if (k > 0) {
-      const newLast = new Date(last.getTime() + k * SHOUT_STEP_DOWN_SEC * 1000);
-      await pool.query('UPDATE shout_state SET current_step=$1, last_change_at=$2 WHERE id=1', [effectiveStep, newLast.toISOString()]);
-    }
-
+    const nextPrice = Number(st.current_price || 0) + SHOUT_STEP;
     res.json({
       ok: true,
       state: {
         holder: st.holder_user_id ? { name: st.holder_name, telegram_id: Number(st.holder_tid), user_id: Number(st.holder_user_id) } : { name: '@anon', telegram_id: null, user_id: null },
         message: st.message || '',
         current_price: Number(st.current_price || 0),
-        current_step: effectiveStep,
-        next_price: nextPrice,
-        seconds_to_step_down: secondsToDown
+        current_step: SHOUT_STEP,
+        next_price: nextPrice
       }
     });
   } catch (e) {
@@ -627,18 +637,7 @@ app.post('/api/shout/bid', requireTgAuth, async (req, res) => {
     await client.query('BEGIN');
     let sres = await client.query('SELECT * FROM shout_state WHERE id=1 FOR UPDATE');
     let st = sres.rows[0];
-    const now = new Date();
-    const last = st.last_change_at ? new Date(st.last_change_at) : now;
-    const diffSec = Math.floor((now - last) / 1000);
-    const k = Math.floor(diffSec / SHOUT_STEP_DOWN_SEC);
-    let effectiveStep = Math.max(SHOUT_MIN_STEP, Number(st.current_step || SHOUT_MIN_STEP) - SHOUT_STEP_DELTA * k);
-    if (k > 0) {
-      const newLast = new Date(last.getTime() + k * SHOUT_STEP_DOWN_SEC * 1000);
-      await client.query('UPDATE shout_state SET current_step=$1, last_change_at=$2 WHERE id=1', [effectiveStep, newLast.toISOString()]);
-      st.current_step = effectiveStep;
-      st.last_change_at = newLast;
-    }
-    const nextPrice = Number(st.current_price || 0) + effectiveStep;
+    const nextPrice = Number(st.current_price || 0) + SHOUT_STEP;
 
     const ures = await client.query('SELECT id, balance, username FROM users WHERE telegram_id=$1 FOR UPDATE', [uid]);
     const user = ures.rows[0];
@@ -653,7 +652,7 @@ app.post('/api/shout/bid', requireTgAuth, async (req, res) => {
     const holderName = user.username ? '@' + String(user.username).replace(/^@+/, '') : '@anon';
     await client.query(
       'UPDATE shout_state SET holder_user_id=$1, holder_tid=$2, holder_name=$3, message=$4, current_price=$5, current_step=$6, last_change_at=now() WHERE id=1',
-      [user.id, uid, holderName, text, nextPrice, effectiveStep + SHOUT_STEP_DELTA]
+      [user.id, uid, holderName, text, nextPrice, SHOUT_STEP]
     );
     await client.query('INSERT INTO shout_bids(user_id, telegram_id, username, message, paid) VALUES ($1,$2,$3,$4,$5)', [user.id, uid, holderName, text, nextPrice]);
 
