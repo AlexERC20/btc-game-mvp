@@ -452,6 +452,51 @@ app.get('/api/round', (req, res) => {
 });
 app.get('/api/history', (req, res) => res.json({ history: state.history }));
 
+// Статистика пользователя: последние ставки и агрегаты
+app.get('/api/stats', async (req, res) => {
+  try {
+    const { uid } = req.query || {};
+    if (!uid) return res.status(400).json({ ok:false, error:'NO_UID' });
+
+    const u = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
+    const userId = u.rows[0]?.id;
+    if (!userId) return res.status(400).json({ ok:false, error:'NO_USER' });
+
+    const LIMIT = 10;
+    const q = `
+      SELECT b.round_id, b.side, b.amount AS bet_amount,
+             COALESCE(p.amount, 0) AS payout
+      FROM bets b
+      LEFT JOIN payouts p
+        ON p.user_id = b.user_id AND p.round_id = b.round_id
+      WHERE b.user_id = $1
+      ORDER BY b.id DESC
+      LIMIT $2
+    `;
+    const r = await pool.query(q, [userId, LIMIT]);
+
+    const recent = r.rows.map(row => ({
+      round: row.round_id,
+      side: row.side,
+      bet: Number(row.bet_amount),
+      outcome: Number(row.payout) > 0 ? 'WIN' : 'LOSE',
+      amount: Number(row.payout) > 0 ? Number(row.payout) : Number(row.bet_amount),
+    }));
+
+    const totalWon = recent
+      .filter(r => r.outcome === 'WIN')
+      .reduce((s, x) => s + x.amount, 0);
+    const totalLost = recent
+      .filter(r => r.outcome === 'LOSE')
+      .reduce((s, x) => s + x.amount, 0);
+
+    res.json({ ok:true, totalWon, totalLost, recent });
+  } catch (e) {
+    console.error('/api/stats', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
 // Лидерборд за ЧАС
 app.get('/api/leaderboard', async (req, res) => {
   try {
