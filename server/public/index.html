@@ -17,6 +17,44 @@
   .price{font-size:24px;font-weight:800;text-align:center;margin-top:2px}
   .sub{font-size:12px;color:var(--muted);text-align:center;margin:2px 0 8px}
   .balance{text-align:center;font-size:16px;margin:4px 0 8px}
+
+  /* контейнер для вспышек */
+  .flash-target { position: relative; }
+
+  /* зелёная/красная вспышка рамки */
+  .flash-green, .flash-red {
+    box-shadow: 0 0 0 2px rgba(255,255,255,0);
+    animation-duration: 600ms;
+    animation-fill-mode: forwards;
+  }
+  @keyframes flashG {
+    0%   { box-shadow: 0 0 0 0 rgba(31,163,106,0.0); }
+    30%  { box-shadow: 0 0 0 4px rgba(31,163,106,0.9); }
+    100% { box-shadow: 0 0 0 0 rgba(31,163,106,0.0); }
+  }
+  @keyframes flashR {
+    0%   { box-shadow: 0 0 0 0 rgba(198,66,58,0.0); }
+    30%  { box-shadow: 0 0 0 4px rgba(198,66,58,0.9); }
+    100% { box-shadow: 0 0 0 0 rgba(198,66,58,0.0); }
+  }
+  .flash-green { animation-name: flashG; }
+  .flash-red   { animation-name: flashR;  }
+
+  /* всплывающие суммы */
+  .float-amount {
+    position: absolute; left: 50%; top: -8px; transform: translateX(-50%);
+    font-weight: 800; pointer-events: none; opacity: 0;
+    animation: floatUp 700ms ease-out forwards;
+    text-shadow: 0 1px 0 rgba(0,0,0,.6);
+  }
+  .float-plus  { color:#1fa36a; }
+  .float-minus { color:#c6423a; }
+
+  @keyframes floatUp {
+    0%   { transform: translate(-50%, 0);    opacity: 0; }
+    15%  { transform: translate(-50%, -6px); opacity: .95; }
+    100% { transform: translate(-50%, -28px); opacity: 0; }
+  }
   .center{display:flex;justify-content:center;align-items:center;margin:8px 0}
   .timer{position:relative;width:300px;height:300px}
   .timer svg{width:100%;height:100%;display:block;transform:rotate(-90deg)}
@@ -66,7 +104,7 @@
 <div class="wrap">
   <div class="price" id="price">$—</div>
   <div class="sub"   id="sub">Старт: —</div>
-  <div class="balance" id="bal">Баланс: $—</div>
+  <div class="balance flash-target" id="bal">Баланс: $—</div>
 
   <div class="center">
     <div class="timer">
@@ -190,6 +228,7 @@ if (window.Telegram && Telegram.WebApp) { try { Telegram.WebApp.expand(); } catc
 
 let CURRENT_PHASE = 'idle'; // <-- глобально храним текущую фазу
 let INS_COUNT = 0;
+let lastShownSettlementKey = null;
 
 // elements
 const priceEl = document.getElementById('price');
@@ -235,6 +274,39 @@ const buyIns     = document.getElementById('buyIns');
 
 const CIRC = 2*Math.PI*140;
 ring.setAttribute('stroke-dasharray', CIRC);
+
+// --- Haptic helpers (Telegram + fallback vibration)
+function hapticLight() {
+  try { Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+function hapticWin() {
+  try { Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+  if (navigator.vibrate) navigator.vibrate([20, 30, 20]);
+}
+function hapticLose() {
+  try { Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('error'); } catch {}
+  if (navigator.vibrate) navigator.vibrate([40, 40, 40]);
+}
+
+// --- DOM flash & float amount
+function flash(elem, type /* 'green' | 'red' */) {
+  if (!elem) return;
+  elem.classList.remove('flash-green','flash-red');
+  // force reflow
+  void elem.offsetWidth;
+  elem.classList.add(type === 'green' ? 'flash-green' : 'flash-red');
+  setTimeout(()=>elem.classList.remove('flash-green','flash-red'), 650);
+}
+
+function floatAmount(parent, text, plus /*true for +, false for -*/) {
+  if (!parent) return;
+  const span = document.createElement('span');
+  span.className = 'float-amount ' + (plus ? 'float-plus' : 'float-minus');
+  span.textContent = (plus ? '+' : '-') + '$' + Number(text||0).toLocaleString();
+  parent.appendChild(span);
+  setTimeout(()=>span.remove(), 750);
+}
 
 // helpers
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
@@ -346,6 +418,54 @@ async function poll(){
 
   await refreshBalance();
   await leaderboard();
+
+  // --- Result animation during pause
+  if (r.phase === 'pause' && r.lastSettlement) {
+    const key = JSON.stringify(r.lastSettlement);
+    if (key !== lastShownSettlementKey) {
+      lastShownSettlementKey = key;
+
+      // кто выиграл
+      const winSide = r.lastSettlement.side; // 'BUY' | 'SELL'
+      const myId = String(uid);
+
+      // моя выплата
+      const myPay = (r.lastSettlement.payouts || []).find(p => String(p.user) === myId)?.amount || 0;
+
+      // сколько я поставил на каждую сторону (в этом раунде)
+      const myBuy  = (r.betsBuy  || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
+      const mySell = (r.betsSell || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
+
+      // моя сумма проигрыша = мои ставки на проигравшей стороне
+      let myLose = 0;
+      if (winSide === 'BUY')  myLose = mySell;
+      if (winSide === 'SELL') myLose = myBuy;
+
+      // возможный возврат по страховке (если сервер его присылает)
+      let myRefund = 0;
+      const insList = r.lastSettlement.insuranceRefunds || [];
+      const meIns = insList.find(x => String(x.user) === myId);
+      if (meIns) myRefund = Number(meIns.refund || 0);
+
+      // Показываем анимации на блоке баланса
+      const target = document.getElementById('bal');
+
+      if (myPay > 0) {
+        flash(target, 'green');
+        floatAmount(target, myPay, true);
+        hapticWin();
+      } else if (myLose > 0) {
+        flash(target, 'red');
+        floatAmount(target, myLose, false);
+        hapticLose();
+
+        if (myRefund > 0) {
+          // небольшая задержка, чтобы минус и плюс не слились
+          setTimeout(()=>floatAmount(target, myRefund + ' (страховка)', true), 350);
+        }
+      }
+    }
+  }
 }
 
 // действия ставок
@@ -384,8 +504,8 @@ async function place(side){
   if (r.placed) setSettings({ amount: r.placed, oneClick: s.oneClick });
   await poll();
 }
-buyBtn.onclick = ()=> place('BUY');
-sellBtn.onclick = ()=> place('SELL');
+buyBtn.onclick  = () => { hapticLight(); place('BUY'); };
+sellBtn.onclick = () => { hapticLight(); place('SELL'); };
 
 // открыть листы
 cfgBtn.onclick   = ()=>{ highlightChips(getSettings().amount); customAmt.value=''; oneClick.checked=getSettings().oneClick; openSheet(sheetStake); };
