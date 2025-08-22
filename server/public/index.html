@@ -16,7 +16,8 @@
   .wrap{max-width:520px;margin:0 auto;padding:16px 14px 28px}
   .price{font-size:24px;font-weight:800;text-align:center;margin-top:2px}
   .sub{font-size:12px;color:var(--muted);text-align:center;margin:2px 0 8px}
-  .balance{text-align:center;font-size:16px;margin:4px 0 8px}
+  .balance{text-align:center;font-size:16px;margin:4px 0 4px}
+  .ins{font-size:12px;color:var(--muted);text-align:center;margin:0 0 8px}
   .center{display:flex;justify-content:center;align-items:center;margin:8px 0}
   .timer{position:relative;width:300px;height:300px}
   .timer svg{width:100%;height:100%;display:block;transform:rotate(-90deg)}
@@ -26,7 +27,7 @@
   .row{display:flex;gap:14px;justify-content:center;margin:12px 0}
   .btn{flex:1;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer}
   .btn:active{transform:translateY(1px) scale(.99)}
-  .btn[disabled]{opacity:.5;cursor:not-allowed;pointer-events:none} /* блок кликов, когда disabled */
+  .btn[disabled]{opacity:.5;cursor:not-allowed;pointer-events:none}
   .buy{background:var(--green)} .sell{background:var(--red)}
 
   .menu{display:flex;gap:10px;justify-content:center;margin:8px 0 10px;flex-wrap:wrap}
@@ -67,6 +68,7 @@
   <div class="price" id="price">$—</div>
   <div class="sub"   id="sub">Старт: —</div>
   <div class="balance" id="bal">Баланс: $—</div>
+  <div class="ins" id="ins">Страховки: 0</div>
 
   <div class="center">
     <div class="timer">
@@ -87,12 +89,12 @@
     <button class="btn sell" id="sell">↓ SELL</button>
   </div>
 
-  <!-- меню: БЕЗ кнопки "Проверить" -->
   <div class="menu">
     <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
     <button class="chipbtn" id="refBtn">Рефералы</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="starsBtn">Купить ⭐</button>
+    <button class="chipbtn" id="insBtn">Страховка</button>
   </div>
 
   <div class="history" id="hist"></div>
@@ -142,10 +144,10 @@
   </div>
 </div>
 
-<!-- SHEET: покупка Stars -->
+<!-- SHEET: покупка Stars (баланс) -->
 <div class="sheet" id="sheetStars">
   <h3>Купить звёзды ⭐</h3>
-  <p>Выбери пакет, оплати в Telegram Stars — баланс обновится автоматически.</p>
+  <p>Пакеты Stars → пополнение внутр. баланса.</p>
   <div class="rowchips" id="starsPacks">
     <button class="chipopt" data-pack="100">100⭐ → $3 000</button>
     <button class="chipopt" data-pack="500">500⭐ → $16 000</button>
@@ -159,6 +161,19 @@
   </div>
 </div>
 
+<!-- SHEET: страховка -->
+<div class="sheet" id="sheetIns">
+  <h3>Страховка ставок 🛡️</h3>
+  <p>1 страховка покрывает 1 проигранную ставку — возврат 50% суммы.</p>
+  <div class="rowchips" id="insPacks">
+    <button class="chipopt active" data-pack="100">100 страховок → 1000⭐</button>
+  </div>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Отмена</button>
+    <button class="btnsm" id="buyIns">Купить</button>
+  </div>
+</div>
+
 <script>
 const qs = new URLSearchParams(location.search);
 const uid = qs.get('uid')
@@ -169,18 +184,16 @@ const username = (window.Telegram?.WebApp?.initDataUnsafe?.user?.username)
   ? '@' + window.Telegram.WebApp.initDataUnsafe.user.username
   : null;
 
-// === УКАЖИ ИМЯ СВОЕГО БОТА (без @) ===
 const BOT_USERNAME = 'realpricebtc_bot';
 const CHANNEL_LINK = 'https://t.me/erc20coin';
 
 if (window.Telegram && Telegram.WebApp) { try { Telegram.WebApp.expand(); } catch(e){} }
 
-let CURRENT_PHASE = 'idle'; // <-- глобально храним текущую фазу
-
 // elements
 const priceEl = document.getElementById('price');
 const subEl   = document.getElementById('sub');
 const balEl   = document.getElementById('bal');
+const insEl   = document.getElementById('ins');
 const ring    = document.getElementById('ring');
 const tleft   = document.getElementById('tleft');
 const phaseEl = document.getElementById('phase');
@@ -194,12 +207,14 @@ const refBtn  = document.getElementById('refBtn');
 const topupBtn= document.getElementById('topupBtn');
 const starsBtn= document.getElementById('starsBtn');
 const cfgBtn  = document.getElementById('cfgBtn');
+const insBtn  = document.getElementById('insBtn');
 
 // sheets
 const sheetBg     = document.getElementById('sheetBg');
 const sheetStake  = document.getElementById('sheetStake');
 const sheetTopup  = document.getElementById('sheetTopup');
 const sheetStars  = document.getElementById('sheetStars');
+const sheetIns    = document.getElementById('sheetIns');
 
 // stake controls
 const chipsBox  = document.getElementById('chips');
@@ -215,8 +230,15 @@ const checkBonus  = document.getElementById('checkBonus');
 const starsPacks = document.getElementById('starsPacks');
 const buyStars   = document.getElementById('buyStars');
 
+// insurance controls
+const insPacks = document.getElementById('insPacks');
+const buyIns   = document.getElementById('buyIns');
+
 const CIRC = 2*Math.PI*140;
 ring.setAttribute('stroke-dasharray', CIRC);
+
+let lastPhase = 'idle';
+let placingLock = false;
 
 // helpers
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
@@ -233,10 +255,10 @@ function chip(h){
   return `<div class="chip"><span class="${cls}">${dir}</span><span class="${cls}">${pct}</span><span>${fmt(h.win)}</span></div>`;
 }
 
-// sheet helpers
+// sheets
 function openSheet(el){ el.classList.add('open'); sheetBg.classList.add('show'); }
 function closeAllSheets(){
-  [sheetStake, sheetTopup, sheetStars].forEach(s=>s.classList.remove('open'));
+  [sheetStake, sheetTopup, sheetStars, sheetIns].forEach(s=>s.classList.remove('open'));
   sheetBg.classList.remove('show');
 }
 sheetBg.addEventListener('click', closeAllSheets);
@@ -265,14 +287,13 @@ async function auth(){
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({uid, username})
   }).then(r=>r.json()).catch(()=>({ok:false}));
-  if (r.ok) balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
+  if (r.ok) {
+    balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
+    insEl.textContent = 'Страховки: ' + (r.user.insurance_count ?? 0);
+  }
 }
 async function refreshBalance(){
-  const r = await fetch('/api/auth',{
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({uid, username})
-  }).then(r=>r.json()).catch(()=>({ok:false}));
-  if (r.ok) balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
+  await auth();
 }
 async function leaderboard(){
   const r = await fetch('/api/leaderboard').then(r=>r.json()).catch(()=>({ok:false}));
@@ -307,16 +328,16 @@ async function poll(){
   ring.style.transition='stroke-dashoffset .5s linear';
   ring.setAttribute('stroke-dashoffset', CIRC*progress);
 
-  CURRENT_PHASE = r.phase || 'idle';         // фиксируем текущую фазу
-  phaseEl.textContent = phaseText(CURRENT_PHASE);
+  lastPhase = r.phase || 'idle';
+  phaseEl.textContent = phaseText(lastPhase);
   bankEl.textContent  = 'Банк: ' + fmt(r.bank);
-
-  const open = CURRENT_PHASE === 'betting';  // только в betting — активны кнопки
-  buyBtn.disabled  = !open;
-  sellBtn.disabled = !open;
 
   const h = await fetch('/api/history').then(r=>r.json()).catch(()=>({history:[]}));
   histEl.innerHTML = (h.history||[]).map(chip).join('');
+
+  const open = lastPhase==='betting';
+  buyBtn.disabled = !open;
+  sellBtn.disabled = !open;
 
   await refreshBalance();
   await leaderboard();
@@ -324,22 +345,20 @@ async function poll(){
 
 // действия ставок
 async function place(side){
-  // защита от кликов вне окна ставок
-  if (CURRENT_PHASE !== 'betting') {
-    alert('Окно ставок закрыто');
-    return;
-  }
+  if (lastPhase !== 'betting') { alert('Окно ставок закрыто'); return; }
+  if (placingLock) return;
+  placingLock = true;
 
   const s = getSettings();
   let amount = s.amount;
 
   if (!s.oneClick){
     const val = prompt('Сумма ставки ($):', String(amount));
-    if (val === null) return;
+    if (val === null){ placingLock = false; return; }
     amount = parseInt(val,10);
-    if (!amount || amount<=0) return alert('Введи положительную сумму');
+    if (!amount || amount<=0){ alert('Введи положительную сумму'); placingLock = false; return; }
   }
-  if (amount < 50){ alert('Минимальная ставка $50'); return; }
+  if (amount < 50){ alert('Минимальная ставка $50'); placingLock = false; return; }
 
   const r = await fetch('/api/bet',{
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -353,9 +372,11 @@ async function place(side){
       r.error?.startsWith?.('MIN_BET_') ? `Минимальная ставка: $${r.error.split('_').pop()}` :
       'Ошибка: '+(r.error||'UNKNOWN');
     alert(msg);
+    placingLock = false;
     return;
   }
   if (r.placed) setSettings({ amount: r.placed, oneClick: s.oneClick });
+  placingLock = false;
   await poll();
 }
 buyBtn.onclick = ()=> place('BUY');
@@ -365,6 +386,7 @@ sellBtn.onclick = ()=> place('SELL');
 cfgBtn.onclick   = ()=>{ highlightChips(getSettings().amount); customAmt.value=''; oneClick.checked=getSettings().oneClick; openSheet(sheetStake); };
 topupBtn.onclick = ()=> openSheet(sheetTopup);
 starsBtn.onclick = ()=> openSheet(sheetStars);
+insBtn.onclick   = ()=> openSheet(sheetIns);
 
 // stake sheet handlers
 chipsBox.addEventListener('click', (e)=>{
@@ -391,36 +413,17 @@ openChannel.onclick = ()=>{
     else window.location.href = CHANNEL_LINK;
   }catch(e){ window.location.href = CHANNEL_LINK; }
 };
-// новая проверка без редиректа — дергаем ваш API
 checkBonus.onclick = async ()=>{
-  const r = await fetch('/api/bonus/check', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid })
-  }).then(r=>r.json()).catch(()=>({ ok:false }));
-
-  if (!r.ok) { alert('Не удалось проверить бонус.'); return; }
-
-  if (r.added > 0) {
-    await refreshBalance();
-    alert('Начислено: $' + Number(r.added).toLocaleString());
-  } else {
-    alert(r.msg || 'Пока ничего не начислено.');
-  }
-  closeAllSheets();
+  // у тебя уже есть /api/bonus/check на бэке — если нет, оставь как есть или дергай /start=check через бота
+  const botLink = `https://t.me/${BOT_USERNAME}?start=check`;
+  try{
+    if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(botLink);
+    else window.location.href = botLink;
+  }catch(e){ window.location.href = botLink; }
+  setTimeout(refreshBalance, 1500);
 };
 
-// рефералы
-refBtn.onclick = ()=>{
-  const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
-  if (navigator.share){
-    navigator.share({ title:'BTC Game', text:'Залетай в игру!', url:link }).catch(()=>{});
-  } else {
-    alert('Твоя реф-ссылка:\n' + link + '\nЗа каждого друга +$500 после его первого входа.');
-  }
-};
-
-// Stars: выбор пакета и оплата
+// Stars (баланс)
 let selectedPack = null;
 starsPacks.addEventListener('click', (e)=>{
   const b = e.target.closest('.chipopt'); if (!b) return;
@@ -433,7 +436,7 @@ buyStars.onclick = async ()=>{
   const resp = await fetch('/api/stars/create', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ uid, pack })
+    body: JSON.stringify({ uid, pack, kind: 'balance' })
   }).then(r=>r.json()).catch(()=>({ ok:false }));
   if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
 
@@ -441,6 +444,30 @@ buyStars.onclick = async ()=>{
     if (status === 'paid') {
       await refreshBalance();
       alert('Оплата успешна! Баланс обновлён.');
+    } else if (status === 'cancelled') {
+      alert('Платёж отменён');
+    } else if (status === 'failed') {
+      alert('Платёж не прошёл');
+    }
+  });
+  try { await open; await refreshBalance(); } catch {}
+  closeAllSheets();
+};
+
+// Insurance
+buyIns.onclick = async ()=>{
+  const pack = '100';
+  const resp = await fetch('/api/stars/create', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ uid, pack, kind: 'insurance' })
+  }).then(r=>r.json()).catch(()=>({ ok:false }));
+  if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
+
+  const open = Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
+    if (status === 'paid') {
+      await refreshBalance();
+      alert('Страховки начислены!');
     } else if (status === 'cancelled') {
       alert('Платёж отменён');
     } else if (status === 'failed') {
