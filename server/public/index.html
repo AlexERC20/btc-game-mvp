@@ -118,7 +118,7 @@
     line-height:1.3;
     overflow:hidden;
     display:-webkit-box;
-    -webkit-line-clamp:3;
+    -webkit-line-clamp:2;
     -webkit-box-orient:vertical;
   }
   .ad-actions{ display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
@@ -262,7 +262,7 @@
       <div class="ad-text" id="adText">Сообщение победителя…</div>
     </div>
     <div class="ad-actions">
-      <div class="ad-price" id="adPrice">Текущая цена: $100 (шаг $100)</div>
+      <div class="ad-price" id="adPrice">Цена: $100</div>
       <button class="chipbtn ad-write" id="adWrite">✍️ Написать</button>
     </div>
   </div>
@@ -358,11 +358,11 @@
 <div class="sheet" id="sheetAd">
   <h3>Ваше сообщение</h3>
   <div class="inputline">
-    <input id="adInput" type="text" maxlength="80" placeholder="Сообщение (до 80 символов)">
+    <input id="adInput" type="text" maxlength="50" placeholder="Сообщение (до 50 символов)">
   </div>
   <div class="ad-info">
-    <div class="ad-count" id="adCount">0/80</div>
-    <div class="ad-enter" id="adEnter">Войти сейчас: $100</div>
+    <div class="ad-count" id="adCount">0/50</div>
+    <div class="ad-enter" id="adEnter">Цена сейчас: $100</div>
   </div>
   <div class="btnrow">
     <button class="btnsm cancel" data-close>Отмена</button>
@@ -396,16 +396,14 @@ let CURRENT_PHASE = 'idle'; // <-- глобально храним текущу�
 let INS_COUNT = 0;
 let lastShownSettlementKey = null;
 
-const BID_STEP = 100;
-
 let adState = {
   user: '',
   text: '',
-  price: 100,
-  step: BID_STEP
+  nextPrice: 100
 };
 
 let prevAd = null;
+let adPriceTimer = null;
 
 // elements
 const priceEl = document.getElementById('price');
@@ -493,9 +491,8 @@ function playOnce(el, cls){
 }
 
 function updateAdEnter(){
-  const step = Number(adState.step || BID_STEP);
-  const enter = Number(adState.price || 0) + step;
-  if (adEnter) adEnter.textContent = 'Войти сейчас: $' + enter.toLocaleString();
+  const price = Number(adState.nextPrice || 0);
+  if (adEnter) adEnter.textContent = 'Цена сейчас: $' + price.toLocaleString();
 }
 
 // отрисовка строки
@@ -505,18 +502,13 @@ function renderAdLine() {
   const text  = adTextEl;
   const price = adPriceEl;
 
-  const newUser  = normUser(adState.user);
-  const newText  = (adState.text || '').replace(/\n/g, ' ').slice(0, 80);
-  const newPrice = Number(adState.price || 0);
-  const step     = Number(adState.step || BID_STEP);
+  const newUser   = normUser(adState.user);
+  const newText   = (adState.text || '').replace(/\n/g, ' ').slice(0, 50);
+  const nextPrice = Number(adState.nextPrice || 0);
 
   user.textContent  = newUser;
   text.textContent  = newText || 'Пока пусто.';
-  if (newText) {
-    price.textContent = 'Текущая цена: $' + newPrice.toLocaleString() + ' (шаг $' + step.toLocaleString() + ')';
-  } else {
-    price.textContent = 'Войти: $' + newPrice.toLocaleString() + ' (шаг $' + step.toLocaleString() + ')';
-  }
+  price.textContent = 'Цена: $' + nextPrice.toLocaleString();
   updateAdEnter();
 
   line.classList.add('ad-shimmer');
@@ -529,7 +521,7 @@ function renderAdLine() {
       hapticImpact('medium');
     }
 
-    if (prevAd.price !== newPrice) {
+    if (prevAd.nextPrice !== nextPrice) {
       playOnce(price, 'ad-price-changed');
     }
     if (prevAd.text !== newText) {
@@ -537,7 +529,7 @@ function renderAdLine() {
     }
   }
 
-  prevAd = { user: newUser, price: newPrice, text: newText };
+  prevAd = { user: newUser, nextPrice, text: newText };
 }
 renderAdLine();
 
@@ -545,36 +537,40 @@ renderAdLine();
 adWriteBtn.onclick = async ()=>{
   hapticImpact('light');
   adInput.value = '';
-  adCount.textContent = '0/80';
+  adCount.textContent = '0/50';
   adSend.disabled = true;
-  updateAdEnter();
+  await adPoll();
   openSheet(sheetAd);
   adInput.focus();
+  adPriceTimer = setInterval(adPoll, 1000);
 };
 
 adInput.addEventListener('input', () => {
+  adInput.value = adInput.value.slice(0,50);
   const len = adInput.value.length;
-  adCount.textContent = len + '/80';
+  adCount.textContent = len + '/50';
   adSend.disabled = len === 0;
 });
 
 adSend.onclick = async ()=>{
-  const text = adInput.value.trim().replace(/\n/g,' ').slice(0,80);
+  const text = adInput.value.trim().replace(/\n/g,' ').slice(0,50);
   if (!text) return;
-  const r = await fetch('/api/shout/post', {
+  const r = await fetch('/api/shout/bid', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ initData, msg:text })
+    body: JSON.stringify({ initData, message:text })
   }).then(r=>r.json()).catch(()=>({ ok:false }));
 
   if (!r.ok) {
-    alert(r.error==='INSUFFICIENT_BALANCE' ? 'Недостаточно средств' : 'Не удалось разместить сообщение');
+    alert(r.error==='INSUFFICIENT_BALANCE' ? 'Недостаточно средств' : 'Цена изменилась, попробуйте снова');
+    await adPoll();
     return;
   }
 
   closeAllSheets();
   playOnce(adLine, 'flash-win');
   hapticImpact('medium');
+  alert('Размещено за $' + Number(r.paid).toLocaleString());
 
   await adPoll();
   await refreshBalance();
@@ -636,6 +632,7 @@ function openSheet(el){ el.classList.add('open'); sheetBg.classList.add('show');
 function closeAllSheets(){
   [sheetStake, sheetTopup, sheetStars, sheetIns, sheetStats, sheetAd].forEach(s=>s.classList.remove('open'));
   sheetBg.classList.remove('show');
+  if (adPriceTimer) { clearInterval(adPriceTimer); adPriceTimer = null; }
 }
 sheetBg.addEventListener('click', closeAllSheets);
 document.querySelectorAll('[data-close]').forEach(btn=>btn.addEventListener('click', closeAllSheets));
@@ -703,15 +700,13 @@ async function loadStats(){
 }
 
 async function adPoll(){
-  const r = await fetch(`/api/shout/state?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>null);
+  const r = await fetch(`/api/shout?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>null);
   if (!r || !r.ok) return;
   const st = r.state || {};
   adState = {
-    user: st.name || '',
-    text: st.msg || '',
-    price: Number(st.price || 0),
-    step: Number(st.step || BID_STEP),
-    expiresIn: Number(st.expiresIn || 0)
+    user: st.holder?.name || '',
+    text: st.message || '',
+    nextPrice: Number(st.next_price || 0)
   };
   renderAdLine();
 }
