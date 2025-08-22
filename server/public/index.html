@@ -374,25 +374,34 @@
 const BOT_USERNAME = 'realpricebtc_bot';
 const CHANNEL_LINK = 'https://t.me/erc20coin';
 
-// --- Мягкая инициализация TWA ---
 const tg = window.Telegram?.WebApp;
-if (tg) {
-  try { tg.ready(); tg.expand(); } catch(e){}
+
+// ЖДЁМ initData (до 1500ms), иначе считаем, что это не Telegram WebApp
+async function waitForTgUser(timeout=1500) {
+  try { tg?.ready?.(); } catch{}
+  const start = Date.now();
+  return await new Promise(resolve=>{
+    const tick = () => {
+      const has = !!(tg && (tg.initData?.length || tg.initDataUnsafe?.user?.id));
+      if (has) return resolve(true);
+      if (Date.now()-start > timeout) return resolve(false);
+      setTimeout(tick, 60);
+    };
+    tick();
+  });
 }
-// Плашка-блокировка (если не в Telegram)
-function showOpenInTelegram() {
-  const el = document.createElement('div');
-  el.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;';
-  el.innerHTML = `
-    <div style="text-align:center;color:#fff">
-      <div style="font-size:20px;margin-bottom:10px">Открой игру в Telegram</div>
-      <div style="opacity:.8;margin-bottom:16px">Мини-приложение доступно только внутри Telegram</div>
-      <button id="openBotBtn" style="background:#2aa86b;border:none;border-radius:12px;padding:12px 18px;color:#fff;font-weight:700">
-        Открыть бота
-      </button>
+
+// Простой гейт-экран
+function showGate() {
+  document.body.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#000;color:#fff">
+      <div style="max-width:520px;padding:24px;text-align:center">
+        <h2 style="margin:0 0 12px">Открой игру в Telegram</h2>
+        <p style="opacity:.8;margin:0 0 16px">Мини-приложение доступно только внутри Telegram</p>
+        <button id="openBot" style="background:#1fa36a;border:none;border-radius:12px;padding:12px 18px;color:#fff;font-weight:700;font-size:16px;cursor:pointer">Открыть бота</button>
+      </div>
     </div>`;
-  document.body.appendChild(el);
-  document.getElementById('openBotBtn').onclick = () => {
+  document.getElementById('openBot').onclick = ()=>{
     const link = `https://t.me/${BOT_USERNAME}?startapp=go`;
     try {
       if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(link);
@@ -401,22 +410,26 @@ function showOpenInTelegram() {
   };
 }
 
-const initData = tg?.initData || '';
-const tgUser = tg?.initDataUnsafe?.user;
+// Единая обёртка для POST — ВСЕГДА шлём initData
+async function api(path, payload={}) {
+  const initData = tg?.initData || '';
+  const r = await fetch(path, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ initData, ...payload })
+  }).then(r=>r.json()).catch(()=>({ok:false,error:'NET'}));
+  return r;
+}
 
-if (!tg || !initData || !tgUser?.id) {
-  showOpenInTelegram();
-} else {
-  (async () => {
-  const uid = tgUser.id;                     // ✅ только настоящий id
-  const username = tgUser.username ? '@' + String(tgUser.username).replace(/^@+/, '') : null;
-  async function api(path, payload) {
-    return fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ initData, ...(payload || {}) })
-    }).then(r => r.json());
-  }
+// ====== Точка входа фронта ======
+(async () => {
+  const ok = await waitForTgUser(1500);
+  if (!ok) { showGate(); return; }
+
+  // у нас ТЕЛЕГРАМ: можно получить user/username
+  const uid = tg.initDataUnsafe?.user?.id;
+  const username = tg.initDataUnsafe?.user?.username ? '@'+tg.initDataUnsafe.user.username : null;
+  const initData = tg.initData || '';
 
   let CURRENT_PHASE = 'idle'; // <-- глобально храним текущую фазу
 let INS_COUNT = 0;
@@ -678,7 +691,7 @@ function highlightChips(val){
 
 // api
 async function auth(){
-  const r = await api('/api/auth').catch(()=>({ok:false}));
+  const r = await api('/api/auth', { username }).catch(()=>({ok:false}));
   if (r.ok) {
     balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
     INS_COUNT = Number(r.user.insurance || 0);
@@ -686,7 +699,7 @@ async function auth(){
   }
 }
 async function refreshBalance(){
-  const r = await api('/api/auth').catch(()=>({ok:false}));
+  const r = await api('/api/auth', { username }).catch(()=>({ok:false}));
   if (r.ok) {
     balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
     INS_COUNT = Number(r.user.insurance || 0);
@@ -707,7 +720,7 @@ async function leaderboard(){
   `).join('') || '<div class="rank"><div class="left"><div class="badge">—</div><div class="name">ещё пусто</div></div><div class="val">$0</div></div>';
 }
 async function loadStats(){
-  const r = await fetch(`/api/stats?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>({ok:false}));
+  const r = await api('/api/stats').catch(()=>({ok:false}));
   if (!r.ok) return;
   document.getElementById('statsWins').textContent = Number(r.wins||0);
   document.getElementById('statsLosses').textContent = Number(r.losses||0);
@@ -959,7 +972,6 @@ auth();
 poll();
 setInterval(poll, 1000);
 })();
-}
 </script>
 </body>
 </html>
