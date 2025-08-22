@@ -371,28 +371,79 @@
 </div>
 
 <script>
-const tg = window.Telegram?.WebApp;
-const initData = tg?.initData || '';
-const initUser = tg?.initDataUnsafe?.user || null;
-
-// если не из Telegram — показываем заглушку и выходим
-if (!initUser || !initData) {
-  document.getElementById('tgOnly').style.display = 'flex';
-  // важно: дальше НИЧЕГО не выполняем (никаких fetch к /api)
-  throw new Error('Not in Telegram WebApp');
-}
-
-// нормальные данные
-const uid = initUser.id;
-const username = initUser.username ? '@' + initUser.username : null;
-
-try { tg.expand(); } catch {}
-
-// === УКАЖИ ИМЯ СВОЕГО БОТА (без @) ===
 const BOT_USERNAME = 'realpricebtc_bot';
 const CHANNEL_LINK = 'https://t.me/erc20coin';
 
-let CURRENT_PHASE = 'idle'; // <-- глобально храним текущую фазу
+// --- Мягкая инициализация TWA ---
+const tg = window.Telegram?.WebApp;
+if (tg) {
+  try { tg.ready(); tg.expand(); } catch(e){}
+}
+
+// Простая проверка «точно браузер»
+const isClearlyBrowser = !/Telegram/i.test(navigator.userAgent);
+
+// Плашка-блокировка (покажем только если реально браузер)
+function showOpenInTelegram() {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;';
+  el.innerHTML = `
+    <div style="text-align:center;color:#fff">
+      <div style="font-size:20px;margin-bottom:10px">Открой игру в Telegram</div>
+      <div style="opacity:.8;margin-bottom:16px">Мини-приложение доступно только внутри Telegram</div>
+      <button id="openBotBtn" style="background:#2aa86b;border:none;border-radius:12px;padding:12px 18px;color:#fff;font-weight:700">
+        Открыть бота
+      </button>
+    </div>`;
+  document.body.appendChild(el);
+  document.getElementById('openBotBtn').onclick = () => {
+    const link = `https://t.me/${BOT_USERNAME}`;
+    try {
+      if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(link);
+      else location.href = link;
+    } catch { location.href = link; }
+  };
+}
+
+// Ждём initDataUnsafe с небольшим таймаутом
+function waitForTgUser(maxMs = 1200) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      const u = window.Telegram?.WebApp?.initDataUnsafe?.user;
+      if (u?.id) {
+        clearInterval(timer);
+        resolve(u);
+      } else if (Date.now() - started > maxMs) {
+        clearInterval(timer);
+        resolve(null);
+      }
+    }, 100);
+  });
+}
+
+(async () => {
+  const tgUser = await waitForTgUser();
+
+  // Если нет реального пользователя и мы явно в браузере — показываем блокировку и ничего не вызываем
+  if (!tgUser && isClearlyBrowser) {
+    showOpenInTelegram();
+    return;
+  }
+
+  // Если нет tgUser, но это всё-таки Telegram (редкие задержки) — дадим ещё шанс
+  if (!tgUser && window.Telegram?.WebApp) {
+    // мягко попробуем ещё раз через 1.5с
+    setTimeout(() => location.reload(), 1500);
+    return;
+  }
+
+  // --- тут дальше ваш обычный код, НО uid берём только из Telegram ---
+  const uid = tgUser.id;                     // ✅ только настоящий id
+  const username = tgUser.username ? '@' + String(tgUser.username).replace(/^@+/, '') : null;
+  const initData = tg?.initData || '';
+
+  let CURRENT_PHASE = 'idle'; // <-- глобально храним текущую фазу
 let INS_COUNT = 0;
 let lastShownSettlementKey = null;
 
@@ -957,6 +1008,7 @@ buyIns.onclick = async ()=>{
 auth();
 poll();
 setInterval(poll, 1000);
+})();
 </script>
 </body>
 </html>
