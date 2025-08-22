@@ -122,11 +122,16 @@
   }
   .ad-actions{
     display:flex; align-items:center; justify-content:space-between; gap:8px;
+    margin-top:6px;
   }
-  .ad-price{ font-size:20px; font-weight:800 }
+  .ad-price{ color:var(--muted); font-size:13px }
   .ad-write{ padding:10px 14px }
-  .ad-foot{ margin-top:8px; color:var(--muted); font-size:13px }
-  .ad-foot .muted{ color:var(--muted) }
+  .ad-count{ color:var(--muted); font-size:13px; text-align:right }
+  .ad-text-change{ animation: adTextChange .3s ease-out }
+  @keyframes adTextChange{
+    from{ opacity:0; transform:translateY(4px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
 
   /* ===== accessibility ===== */
   @media (prefers-reduced-motion: reduce) {
@@ -251,11 +256,9 @@
     </div>
 
     <div class="ad-actions">
-      <div class="ad-price" id="adPrice">$100</div>
+      <div class="ad-price" id="adPrice">Текущая ставка: $100 (шаг $100)</div>
       <button class="chipbtn ad-write" id="adWrite">✍️ Написать</button>
     </div>
-
-    <div class="ad-foot" id="adFoot">войти: <b id="adEnter">$100</b> <span class="muted">(шаг $100)</span></div>
   </div>
 
   <div class="history" id="hist"></div>
@@ -345,6 +348,19 @@
   </div>
 </div>
 
+<!-- SHEET: аукцион сообщения -->
+<div class="sheet" id="sheetAd">
+  <h3>Ваше сообщение</h3>
+  <div class="inputline">
+    <input id="adInput" type="text" maxlength="80" placeholder="Сообщение (до 80 символов)">
+  </div>
+  <div class="ad-count" id="adCount">0/80</div>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Отмена</button>
+    <button class="btnsm" id="adSend" disabled>Отправить</button>
+  </div>
+</div>
+
 <script>
 const qs = new URLSearchParams(location.search);
 const uid = qs.get('uid')
@@ -366,7 +382,6 @@ let INS_COUNT = 0;
 let lastShownSettlementKey = null;
 
 const BID_STEP = 100;
-const MIN_BID  = 100;
 
 let adState = {
   user: '@user',
@@ -393,7 +408,6 @@ const adLine     = document.getElementById('adLine');
 const adUserEl   = document.getElementById('adUser');
 const adTextEl   = document.getElementById('adText');
 const adPriceEl  = document.getElementById('adPrice');
-const adEnterEl  = document.getElementById('adEnter');
 const adWriteBtn = document.getElementById('adWrite');
 
 const refBtn  = document.getElementById('refBtn');
@@ -410,6 +424,7 @@ const sheetTopup  = document.getElementById('sheetTopup');
 const sheetStars  = document.getElementById('sheetStars');
 const sheetIns    = document.getElementById('sheetIns');
 const sheetStats  = document.getElementById('sheetStats');
+const sheetAd     = document.getElementById('sheetAd');
 
 // stake controls
 const chipsBox  = document.getElementById('chips');
@@ -426,17 +441,14 @@ const starsPacks = document.getElementById('starsPacks');
 const buyStars   = document.getElementById('buyStars');
 const insCountEl = document.getElementById('insCount');
 const buyIns     = document.getElementById('buyIns');
+const adInput    = document.getElementById('adInput');
+const adSend     = document.getElementById('adSend');
+const adCount    = document.getElementById('adCount');
 
 // нормализуем ник: гарантируем один '@'
 function normUser(u){
   if (!u) return '@anon';
   return u.startsWith('@') ? u : '@' + u;
-}
-
-// считаем цену «войти сейчас» = max(MIN_BID, current + step)
-function nextBid(){
-  const base = Number(adState?.price || 0);
-  return Math.max(MIN_BID, base + BID_STEP);
 }
 
 // лёгкий haptic (если доступен в Telegram WebApp)
@@ -469,17 +481,14 @@ function renderAdLine() {
   const user  = adUserEl;
   const text  = adTextEl;
   const price = adPriceEl;
-  const enter = adEnterEl;
 
   const newUser  = normUser(adState.user);
   const newText  = (adState.text || '').replace(/\n/g, ' ').slice(0, 80);
   const newPrice = Number(adState.price || 0);
-  const newEnter = nextBid();
 
   user.textContent  = newUser;
   text.textContent  = newText || '—';
-  price.textContent = '$' + newPrice.toLocaleString();
-  enter.textContent = '$' + newEnter.toLocaleString();
+  price.textContent = 'Текущая ставка: $' + newPrice.toLocaleString() + ' (шаг $' + BID_STEP + ')';
 
   line.classList.add('ad-shimmer');
 
@@ -494,24 +503,38 @@ function renderAdLine() {
     if (prevAd.price !== newPrice) {
       playOnce(price, 'ad-price-changed');
     }
+    if (prevAd.text !== newText) {
+      playOnce(text, 'ad-text-change');
+    }
   }
 
-  prevAd = { user: newUser, price: newPrice };
+  prevAd = { user: newUser, price: newPrice, text: newText };
 }
 renderAdLine();
 
 // модалка «написать»
 adWriteBtn.onclick = async ()=>{
   hapticImpact('light');
-  const msg = prompt('Ваше сообщение (до 80 символов):','');
-  if (msg === null) return;
-  const text = String(msg).slice(0,80).replace(/\n/g, ' ');
-  const bid  = nextBid();
+  adInput.value = '';
+  adCount.textContent = '0/80';
+  adSend.disabled = true;
+  openSheet(sheetAd);
+  adInput.focus();
+};
 
-  const r = await fetch('/api/billboard/bid', {
+adInput.addEventListener('input', () => {
+  const len = adInput.value.length;
+  adCount.textContent = len + '/80';
+  adSend.disabled = len === 0;
+});
+
+adSend.onclick = async ()=>{
+  const text = adInput.value.trim().slice(0,80);
+  if (!text) return;
+  const r = await fetch('/api/banner/bid', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid, text, amount: bid })
+    body: JSON.stringify({ uid, text })
   }).then(r=>r.json()).catch(()=>({ ok:false }));
 
   if (!r.ok) {
@@ -519,12 +542,11 @@ adWriteBtn.onclick = async ()=>{
     return;
   }
 
-  const line = document.getElementById('adLine');
-  playOnce(line, 'flash-win');
+  closeAllSheets();
+  playOnce(adLine, 'flash-win');
   hapticImpact('success');
 
-  adState = r.state || adState;
-  renderAdLine();
+  await adPoll();
   await refreshBalance();
 };
 
@@ -582,7 +604,7 @@ function chip(h){
 // sheet helpers
 function openSheet(el){ el.classList.add('open'); sheetBg.classList.add('show'); }
 function closeAllSheets(){
-  [sheetStake, sheetTopup, sheetStars, sheetIns, sheetStats].forEach(s=>s.classList.remove('open'));
+  [sheetStake, sheetTopup, sheetStars, sheetIns, sheetStats, sheetAd].forEach(s=>s.classList.remove('open'));
   sheetBg.classList.remove('show');
 }
 sheetBg.addEventListener('click', closeAllSheets);
@@ -651,9 +673,13 @@ async function loadStats(){
 }
 
 async function adPoll(){
-  const r = await fetch('/api/billboard/status').then(r=>r.json()).catch(()=>null);
-  if (!r) return;
-  adState = r.state || r;
+  const r = await fetch('/api/banner/status').then(r=>r.json()).catch(()=>null);
+  if (!r || !r.ok) return;
+  adState = {
+    user: r.leader?.name || '@user',
+    text: r.leader?.text || 'Сообщение победителя…',
+    price: r.price
+  };
   renderAdLine();
 }
 
