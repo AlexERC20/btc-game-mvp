@@ -7,41 +7,44 @@ import pg from 'pg';
 import crypto from 'crypto';
 
 function verifyInitData(initDataRaw, botToken) {
-  if (!initDataRaw || !botToken) return { ok:false, error:'NO_INITDATA' };
-  const params = new URLSearchParams(initDataRaw);
-  const hash = params.get('hash');
-  params.delete('hash');
+  try {
+    if (!initDataRaw || !botToken) return { ok:false };
+    const params = new URLSearchParams(initDataRaw);
+    const hash = params.get('hash');
+    if (!hash) return { ok:false };
+    params.delete('hash');
 
-  const data = [];
-  for (const [k,v] of params) data.push(`${k}=${v}`);
-  data.sort();
-  const dataCheckString = data.join('\n');
+    const data = [];
+    for (const [k,v] of params.entries()) data.push(`${k}=${v}`);
+    data.sort();
+    const checkString = data.join('\n');
 
-  const secret = crypto.createHmac('sha256', 'WebAppData')
-                       .update(botToken).digest();
+    const secret = crypto.createHmac('sha256', 'WebAppData')
+                         .update(botToken).digest();
+    const calc = crypto.createHmac('sha256', secret)
+                       .update(checkString).digest('hex');
 
-  const computed = crypto.createHmac('sha256', secret)
-                         .update(dataCheckString).digest('hex');
+    const ok = crypto.timingSafeEqual(Buffer.from(calc, 'hex'), Buffer.from(hash, 'hex'));
+    if (!ok) return { ok:false };
 
-  const ok = hash && crypto.timingSafeEqual(Buffer.from(computed,'hex'), Buffer.from(hash,'hex'));
-  if (!ok) return { ok:false, error:'BAD_HASH' };
+    const authDate = Number(params.get('auth_date') || 0);
+    if (!authDate || Math.abs(Date.now()/1000 - authDate) > 3600) return { ok:false };
 
-  // необязательно, но полезно: отсечь старые подписи > 24ч
-  const authDate = Number(params.get('auth_date')||0);
-  if ((Date.now()/1000 - authDate) > 24*3600) return { ok:false, error:'EXPIRED' };
+    const userRaw = params.get('user');
+    const user = userRaw ? JSON.parse(userRaw) : null;
+    if (!user?.id) return { ok:false };
 
-  let user = null;
-  try { user = JSON.parse(params.get('user') || 'null'); } catch {}
-  if (!user?.id) return { ok:false, error:'NO_USER' };
-
-  return { ok:true, user };
+    return { ok:true, uid: user.id, username: user.username || null, rawUser: user };
+  } catch (e) {
+    return { ok:false };
+  }
 }
 
 function requireTGAuth(req, res, next) {
   const initData = req.body?.initData || req.query?.initData;
   const v = verifyInitData(initData, process.env.BOT_TOKEN);
-  if (!v.ok) return res.status(401).json({ ok:false, error:'UNAUTHORIZED' });
-  req.tgUser = v.user;        // { id, username, ... }
+  if (!v.ok || !v.uid) return res.status(401).json({ ok:false, error:'UNAUTHORIZED' });
+  req.tgUser = { id: v.uid, username: v.username, raw: v.rawUser };
   next();
 }
 
