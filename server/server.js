@@ -18,6 +18,11 @@ const BINANCE_WS =
 const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
 const MIN_BET = 50; // ✅ минимальная ставка ($)
 
+// баннер аукцион
+const BANNER_BASE = 100;
+const BANNER_STEP = 100;
+const BANNER_HOLD_SEC = 60;
+
 // бонусы и канал для проверки подписки
 const CHANNEL = process.env.CHANNEL || '@erc20coin';
 const SUBSCRIBE_BONUS = 5000; // разовый за подписку
@@ -94,6 +99,36 @@ await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claim
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus DATE`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS insurance_count BIGINT NOT NULL DEFAULT 0`);
 await pool.query(`ALTER TABLE bets ADD COLUMN IF NOT EXISTS insured BOOLEAN NOT NULL DEFAULT FALSE`);
+await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS banner_spent BIGINT NOT NULL DEFAULT 0`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS banner_auction(
+    id SERIAL PRIMARY KEY,
+    current_price BIGINT NOT NULL DEFAULT ${BANNER_BASE},
+    min_step BIGINT NOT NULL DEFAULT ${BANNER_STEP},
+    leader_user_id INT,
+    leader_text TEXT,
+    leader_bid BIGINT NOT NULL DEFAULT 0,
+    ends_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS banner_bids(
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    amount BIGINT NOT NULL,
+    text TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    outbid_refund BOOLEAN DEFAULT FALSE
+  );
+`);
+
+const ba = await pool.query('SELECT COUNT(*) FROM banner_auction');
+if (Number(ba.rows[0]?.count || 0) === 0) {
+  await pool.query('INSERT INTO banner_auction(current_price, min_step) VALUES ($1,$2)', [BANNER_BASE, BANNER_STEP]);
+}
 
 // ✅ Пакеты Stars: amount = число звёзд
 const STARS_PACKS = {
@@ -276,6 +311,27 @@ async function startRound() {
 
 function tick() {
   (async () => {
+    // баннер аукцион: финализация по таймеру
+    try {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        const r = await client.query('SELECT * FROM banner_auction FOR UPDATE LIMIT 1');
+        const row = r.rows[0];
+        if (row && row.ends_at && new Date(row.ends_at) <= new Date()) {
+          if (row.leader_user_id) {
+            await client.query('UPDATE users SET banner_spent = banner_spent + $1 WHERE id=$2', [row.leader_bid, row.leader_user_id]);
+          }
+          await client.query('UPDATE banner_auction SET current_price=$1, ends_at=NULL, updated_at=now() WHERE id=$2', [BANNER_BASE, row.id]);
+        }
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK');
+      } finally {
+        client.release();
+      }
+    } catch {}
+
     if (state.phase === 'idle') {
       if (!state.price) return;
       await startRound();
@@ -494,6 +550,89 @@ app.get('/api/stats', async (req, res) => {
   } catch (e) {
     console.error('/api/stats', e);
     res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+// -------- Banner auction endpoints --------
+app.get('/api/banner/status', async (req, res) => {
+  try {
+    const q = `
+      SELECT ba.*, u.username, u.telegram_id
+      FROM banner_auction ba
+      LEFT JOIN users u ON u.id = ba.leader_user_id
+      LIMIT 1`;
+    const r = await pool.query(q);
+    const row = r.rows[0] || {};
+    const endsIn = row.ends_at ? Math.max(0, Math.floor((new Date(row.ends_at) - Date.now())/1000)) : 0;
+    let name = null;
+    if (row.username) name = '@' + row.username;
+    else if (row.telegram_id) name = '@' + row.telegram_id;
+    res.json({
+      ok: true,
+      price: Number(row.current_price || BANNER_BASE),
+      step: Number(row.min_step || BANNER_STEP),
+      endsIn,
+      leader: row.leader_user_id ? {
+        id: row.leader_user_id,
+        name,
+        text: row.leader_text || '',
+        bid: Number(row.leader_bid || 0)
+      } : null
+    });
+  } catch (e) {
+    console.error('/api/banner/status', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+app.post('/api/banner/bid', async (req, res) => {
+  const { uid, text } = req.body || {};
+  if (!uid) return res.status(400).json({ ok:false, error:'NO_UID' });
+  const msg = String(text||'').replace(/\n/g,' ').trim().slice(0,80);
+  if (!msg) return res.status(400).json({ ok:false, error:'BAD_TEXT' });
+
+  await ensureUser(uid, null);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const ures = await client.query('SELECT id, balance FROM users WHERE telegram_id=$1 FOR UPDATE', [uid]);
+    const user = ures.rows[0];
+    if (!user) throw new Error('NO_USER');
+
+    const ares = await client.query('SELECT * FROM banner_auction FOR UPDATE LIMIT 1');
+    const auction = ares.rows[0];
+    const amount = Number(auction.current_price);
+
+    if (Number(user.balance) < amount) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ ok:false, error:'INSUFFICIENT_BALANCE' });
+    }
+
+    if (auction.leader_user_id && auction.leader_user_id !== user.id) {
+      await client.query('UPDATE users SET balance=balance+$1 WHERE id=$2', [auction.leader_bid, auction.leader_user_id]);
+      await client.query(
+        `UPDATE banner_bids SET outbid_refund=true
+         WHERE user_id=$1 AND id=(SELECT id FROM banner_bids WHERE user_id=$1 ORDER BY id DESC LIMIT 1)`,
+        [auction.leader_user_id]
+      );
+    }
+
+    await client.query('UPDATE users SET balance=balance-$1 WHERE id=$2', [amount, user.id]);
+    await client.query('INSERT INTO banner_bids(user_id, amount, text) VALUES ($1,$2,$3)', [user.id, amount, msg]);
+    const endsAt = new Date(Date.now() + BANNER_HOLD_SEC*1000);
+    await client.query(
+      'UPDATE banner_auction SET leader_user_id=$1, leader_text=$2, leader_bid=$3, current_price=$4, ends_at=$5, updated_at=now() WHERE id=$6',
+      [user.id, msg, amount, amount + auction.min_step, endsAt.toISOString(), auction.id]
+    );
+
+    await client.query('COMMIT');
+    res.json({ ok:true });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('/api/banner/bid', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  } finally {
+    client.release();
   }
 });
 
