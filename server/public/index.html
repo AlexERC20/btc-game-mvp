@@ -396,6 +396,15 @@ let adState = {
 
 let prevAd = null;
 
+let TG_BLOCKER_SHOWN = false;
+
+function renderTelegramBlocker(){
+  const div = document.createElement('div');
+  div.className = 'wrap';
+  div.innerHTML = '<p>Доступно только в Telegram</p>';
+  document.body.appendChild(div);
+}
+
 // elements
 const priceEl = document.getElementById('price');
 const subEl   = document.getElementById('sub');
@@ -707,6 +716,17 @@ async function adPoll(){
 
 // polling
 async function poll(){
+  const hasInitData = Boolean(window.Telegram?.WebApp?.initData);
+  const hasInitUser = Boolean(window.Telegram?.WebApp?.initDataUnsafe?.user);
+  if (!hasInitData || !hasInitUser) {
+    if (!TG_BLOCKER_SHOWN) {
+      document.body.innerHTML = '';
+      renderTelegramBlocker();
+      TG_BLOCKER_SHOWN = true;
+    }
+    return;
+  }
+
   const r = await fetch('/api/round').then(r=>r.json()).catch(()=>null);
   if (!r) return;
 
