@@ -42,6 +42,7 @@ await pool.query(`
     telegram_id BIGINT UNIQUE NOT NULL,
     username TEXT,
     balance BIGINT NOT NULL DEFAULT ${AMOUNTS.REGISTER},
+    insurance_count BIGINT NOT NULL DEFAULT 0,
     channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE,
     last_daily_bonus DATE,
     created_at TIMESTAMPTZ DEFAULT now()
@@ -57,6 +58,7 @@ await pool.query(`
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE;`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus DATE;`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;`);
+await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS insurance_count BIGINT NOT NULL DEFAULT 0;`);
 
 const bot = new Telegraf(BOT_TOKEN);
 
@@ -252,18 +254,25 @@ bot.on('message', async (ctx) => {
   if (!sp) return;
 
   try {
-    // payload формата "<uid>:pack_<N>"
     const payload = sp.invoice_payload || '';
-    const [uidStr, packStr] = payload.split(':pack_');
+    const [uidStr, token] = payload.split(':');
     const uid = Number(uidStr);
-    const pack = packStr?.trim();
 
-    // Основной сценарий: пришёл payload с ключом пакета
-    if (uid && STARS_PACKS[pack]) {
-      const credit = STARS_PACKS[pack].credit;
-      await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credit, uid]);
-      await ctx.reply(`💫 Платёж принят: пакет ${pack}⭐ → +$${credit.toLocaleString()} на баланс.`);
-      return;
+    if (token?.startsWith('pack_')) {
+      const pack = token.replace('pack_', '');
+      if (uid && STARS_PACKS[pack]) {
+        const credit = STARS_PACKS[pack].credit;
+        await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credit, uid]);
+        await ctx.reply(`💫 Платёж принят: пакет ${pack}⭐ → +$${credit.toLocaleString()} на баланс.`);
+        return;
+      }
+    } else if (token?.startsWith('ins_')) {
+      const cnt = Number(token.replace('ins_', '')) || 0;
+      if (uid && cnt > 0) {
+        await pool.query('UPDATE users SET insurance_count = insurance_count + $1 WHERE telegram_id=$2', [cnt, uid]);
+        await ctx.reply(`🛡️ Страховки зачислены: +${cnt}.`);
+        return;
+      }
     }
 
     // Фоллбек: total_amount в XTR = точное число звёзд

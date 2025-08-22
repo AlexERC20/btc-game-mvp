@@ -35,6 +35,7 @@ await pool.query(`
     telegram_id BIGINT UNIQUE NOT NULL,
     username TEXT,
     balance BIGINT NOT NULL DEFAULT 1000,  -- старт теперь 1000
+    insurance_count BIGINT NOT NULL DEFAULT 0,
     channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE,
     last_daily_bonus DATE,
     created_at TIMESTAMPTZ DEFAULT now()
@@ -56,6 +57,7 @@ await pool.query(`
     round_id INT,
     side TEXT NOT NULL,
     amount BIGINT NOT NULL,
+    insured BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ DEFAULT now()
   );
 
@@ -90,6 +92,8 @@ await pool.query(`
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus DATE`);
+await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS insurance_count BIGINT NOT NULL DEFAULT 0`);
+await pool.query(`ALTER TABLE bets ADD COLUMN IF NOT EXISTS insured BOOLEAN NOT NULL DEFAULT FALSE`);
 
 // ✅ Пакеты Stars: amount = число звёзд
 const STARS_PACKS = {
@@ -99,6 +103,8 @@ const STARS_PACKS = {
   '10000': { stars: 10000,  credit: 400_000 },
   '30000': { stars: 30000,  credit: 1_500_000 },
 };
+
+const INSURANCE_PACK = { count: 100, stars: 1000 };
 
 // Создание инвойса Stars (XTR)
 app.post('/api/stars/create', async (req, res) => {
@@ -130,6 +136,38 @@ app.post('/api/stars/create', async (req, res) => {
     res.json({ ok:true, link: tgResp.result });
   } catch (e) {
     console.error('stars/create exception:', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+// Покупка страховок за Stars
+app.post('/api/insurance/create', async (req, res) => {
+  try {
+    const { uid } = req.body || {};
+    if (!uid) return res.status(400).json({ ok:false, error:'BAD_REQUEST' });
+
+    const payload = `${uid}:ins_${INSURANCE_PACK.count}`;
+
+    const tgResp = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: `Insurance ${INSURANCE_PACK.count}`,
+        description: `Insurance ${INSURANCE_PACK.count} bets`,
+        payload,
+        provider_token: '',
+        currency: 'XTR',
+        prices: [{ label: `Insurance`, amount: INSURANCE_PACK.stars }],
+      })
+    }).then(r => r.json());
+
+    if (!tgResp?.ok) {
+      console.error('TG createInvoiceLink error:', tgResp);
+      return res.status(400).json({ ok:false, error:'TG_API', details: tgResp });
+    }
+    res.json({ ok:true, link: tgResp.result });
+  } catch (e) {
+    console.error('insurance/create exception:', e);
     res.status(500).json({ ok:false, error:'SERVER' });
   }
 });
@@ -190,7 +228,7 @@ async function ensureUser(telegramId, username) {
     );
   }
   const r = await pool.query(
-    'SELECT id, balance, username FROM users WHERE telegram_id=$1',
+    'SELECT id, balance, username, insurance_count FROM users WHERE telegram_id=$1',
     [telegramId]
   );
   return r.rows[0];
@@ -273,7 +311,7 @@ async function settle() {
   const losers  = up ? state.betsSell : state.betsBuy;
 
   const totalWin  = winners.reduce((s, x) => s + x.amount, 0);
-  const totalLose = losers.reduce((s, x) => s + x.amount, 0);
+  const totalLose = losers.reduce((s, x) => s + (x.insured ? Math.floor(x.amount/2) : x.amount), 0);
   const bank = totalWin + totalLose;
 
   const fee = Math.floor(totalLose * 0.10); // 10% только с проигравших
@@ -300,6 +338,18 @@ async function settle() {
           'UPDATE users SET balance=balance+$1 WHERE id=$2',
           [share, w.user_id]
         );
+        if (w.insured) {
+          await pool.query('UPDATE users SET insurance_count=insurance_count+1 WHERE id=$1', [w.user_id]);
+        }
+      }
+    }
+  }
+
+  for (const l of losers) {
+    if (l.insured) {
+      const refund = Math.floor(l.amount / 2);
+      if (refund > 0) {
+        await pool.query('UPDATE users SET balance=balance+$1 WHERE id=$2', [refund, l.user_id]);
       }
     }
   }
@@ -333,7 +383,8 @@ app.post('/api/auth', async (req, res) => {
       ok: true,
       user: {
         id: u.id, telegram_id: uid, username: u.username,
-        balance: Number(u.balance)
+        balance: Number(u.balance),
+        insurance: Number(u.insurance_count)
       }
     });
   } catch (e) {
@@ -363,13 +414,19 @@ app.post('/api/bet', async (req, res) => {
       return res.status(400).json({ ok:false, error:'INSUFFICIENT_BALANCE' });
     }
 
+    let insured = false;
+    if (Number(u.insurance_count) > 0) {
+      insured = true;
+      await pool.query('UPDATE users SET insurance_count=insurance_count-1 WHERE id=$1', [u.id]);
+    }
+
     await pool.query('UPDATE users SET balance=balance-$1 WHERE id=$2', [amt, u.id]);
     await pool.query(
-      'INSERT INTO bets(user_id, round_id, side, amount) VALUES ($1,$2,$3,$4)',
-      [u.id, state.currentRoundId, side, amt]
+      'INSERT INTO bets(user_id, round_id, side, amount, insured) VALUES ($1,$2,$3,$4,$5)',
+      [u.id, state.currentRoundId, side, amt, insured]
     );
 
-    const bet = { user_id: u.id, user: String(uid), amount: amt, ts: Date.now() };
+    const bet = { user_id: u.id, user: String(uid), amount: amt, ts: Date.now(), insured };
     if (side === 'BUY')      { state.betsBuy.push(bet);  state.bankBuy  += amt; }
     else if (side === 'SELL'){ state.betsSell.push(bet); state.bankSell += amt; }
     else return res.status(400).json({ ok:false, error:'BAD_SIDE' });
