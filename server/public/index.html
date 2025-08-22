@@ -348,6 +348,7 @@
   <h3>Статистика</h3>
   <p>Побед: <span id="statsWins">0</span></p>
   <p>Поражений: <span id="statsLosses">0</span></p>
+  <p>Онлайн: <span id="statsOnline">0</span></p>
   <div id="statsList"></div>
   <div class="btnrow">
     <button class="btnsm cancel" data-close>Закрыть</button>
@@ -702,6 +703,7 @@ async function loadStats(){
   if (!r.ok) return;
   document.getElementById('statsWins').textContent = Number(r.wins||0);
   document.getElementById('statsLosses').textContent = Number(r.losses||0);
+  document.getElementById('statsOnline').textContent = Number(r.online_count||0);
   const listEl = document.getElementById('statsList');
   listEl.innerHTML = (r.list||[]).map(item=>`<div>${item}</div>`).join('');
 }
