@@ -475,38 +475,6 @@ app.get('/api/leaderboard', async (req, res) => {
   }
 });
 
-// Создание инвойса Stars
-app.post('/api/stars/create', async (req, res) => {
-  try {
-    const { uid, pack } = req.body || {};
-    const p = STARS_PACKS[pack];
-    if (!uid || !p) return res.json({ ok:false, error:'BAD_REQUEST' });
-
-    const payload = `${uid}:pack_${pack}`; // вернётся в successful_payment
-
-    // createInvoiceLink (валюта XTR, без provider_token)
-    const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/createInvoiceLink`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        title:       `${pack}⭐`,
-        description: `Пакет на ${pack} звёзд`,
-        payload,
-        provider_token: '',
-        currency: 'XTR',
-        prices: [{ label: `${pack}⭐`, amount: p.millis }], // 1⭐ = 1000 millis
-      })
-    }).then(r=>r.json());
-
-    if (!r.ok) return res.json({ ok:false, error:'TG_API', details:r });
-
-    res.json({ ok:true, link: r.result });
-  } catch (e) {
-    console.error('stars/create', e);
-    res.json({ ok:false, error:'SERVER' });
-  }
-});
-
 /* ========= Проверка бонусов (подписка + ежедневка) ========= */
 // Вызывается фронтом из шита «Пополнение» — без редиректа в бота
 app.post('/api/bonus/check', async (req, res) => {
