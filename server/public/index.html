@@ -131,6 +131,7 @@
     <button class="chipbtn" id="refBtn">Рефералы</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="insBtn">Страховки</button>
+    <button class="chipbtn" id="statsBtn">Статистика</button>
     <button class="chipbtn" id="starsBtn">Купить ⭐</button>
   </div>
 
@@ -210,6 +211,17 @@
   </div>
 </div>
 
+<!-- SHEET: статистика -->
+<div class="sheet" id="sheetStats">
+  <h3>Статистика</h3>
+  <p>Побед: <span id="statsWins">0</span></p>
+  <p>Поражений: <span id="statsLosses">0</span></p>
+  <div id="statsList"></div>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Закрыть</button>
+  </div>
+</div>
+
 <script>
 const qs = new URLSearchParams(location.search);
 const uid = qs.get('uid')
@@ -247,6 +259,7 @@ const refBtn  = document.getElementById('refBtn');
 const topupBtn= document.getElementById('topupBtn');
 const starsBtn= document.getElementById('starsBtn');
 const insBtn  = document.getElementById('insBtn');
+const statsBtn= document.getElementById('statsBtn');
 const cfgBtn  = document.getElementById('cfgBtn');
 
 // sheets
@@ -255,6 +268,7 @@ const sheetStake  = document.getElementById('sheetStake');
 const sheetTopup  = document.getElementById('sheetTopup');
 const sheetStars  = document.getElementById('sheetStars');
 const sheetIns    = document.getElementById('sheetIns');
+const sheetStats  = document.getElementById('sheetStats');
 
 // stake controls
 const chipsBox  = document.getElementById('chips');
@@ -326,7 +340,7 @@ function chip(h){
 // sheet helpers
 function openSheet(el){ el.classList.add('open'); sheetBg.classList.add('show'); }
 function closeAllSheets(){
-  [sheetStake, sheetTopup, sheetStars, sheetIns].forEach(s=>s.classList.remove('open'));
+  [sheetStake, sheetTopup, sheetStars, sheetIns, sheetStats].forEach(s=>s.classList.remove('open'));
   sheetBg.classList.remove('show');
 }
 sheetBg.addEventListener('click', closeAllSheets);
@@ -384,6 +398,14 @@ async function leaderboard(){
       <div class="val">${fmt(x.won)}</div>
     </div>
   `).join('') || '<div class="rank"><div class="left"><div class="badge">—</div><div class="name">ещё пусто</div></div><div class="val">$0</div></div>';
+}
+async function loadStats(){
+  const r = await fetch(`/api/stats?uid=${uid}`).then(r=>r.json()).catch(()=>({ok:false}));
+  if (!r.ok) return;
+  document.getElementById('statsWins').textContent = Number(r.wins||0);
+  document.getElementById('statsLosses').textContent = Number(r.losses||0);
+  const listEl = document.getElementById('statsList');
+  listEl.innerHTML = (r.list||[]).map(item=>`<div>${item}</div>`).join('');
 }
 
 // polling
@@ -512,6 +534,7 @@ cfgBtn.onclick   = ()=>{ highlightChips(getSettings().amount); customAmt.value='
 topupBtn.onclick = ()=> openSheet(sheetTopup);
 insBtn.onclick  = ()=>{ insCountEl.textContent = 'Доступно: ' + INS_COUNT; openSheet(sheetIns); };
 starsBtn.onclick = ()=> openSheet(sheetStars);
+statsBtn.onclick = () => { loadStats(); openSheet(sheetStats); };
 
 // stake sheet handlers
 chipsBox.addEventListener('click', (e)=>{
