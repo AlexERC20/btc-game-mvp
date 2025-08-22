@@ -26,7 +26,7 @@
   .row{display:flex;gap:14px;justify-content:center;margin:12px 0}
   .btn{flex:1;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer}
   .btn:active{transform:translateY(1px) scale(.99)}
-  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .btn[disabled]{opacity:.5;cursor:not-allowed;pointer-events:none} /* блок кликов, когда disabled */
   .buy{background:var(--green)} .sell{background:var(--red)}
 
   .menu{display:flex;gap:10px;justify-content:center;margin:8px 0 10px;flex-wrap:wrap}
@@ -64,7 +64,7 @@
 </head>
 <body>
 <div class="wrap">
-<div class="price" id="price">$—</div>
+  <div class="price" id="price">$—</div>
   <div class="sub"   id="sub">Старт: —</div>
   <div class="balance" id="bal">Баланс: $—</div>
 
@@ -93,7 +93,6 @@
     <button class="chipbtn" id="refBtn">Рефералы</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="starsBtn">Купить ⭐</button>
-
   </div>
 
   <div class="history" id="hist"></div>
@@ -175,6 +174,8 @@ const BOT_USERNAME = 'realpricebtc_bot';
 const CHANNEL_LINK = 'https://t.me/erc20coin';
 
 if (window.Telegram && Telegram.WebApp) { try { Telegram.WebApp.expand(); } catch(e){} }
+
+let CURRENT_PHASE = 'idle'; // <-- глобально храним текущую фазу
 
 // elements
 const priceEl = document.getElementById('price');
@@ -306,8 +307,13 @@ async function poll(){
   ring.style.transition='stroke-dashoffset .5s linear';
   ring.setAttribute('stroke-dashoffset', CIRC*progress);
 
-  phaseEl.textContent = phaseText(r.phase);
+  CURRENT_PHASE = r.phase || 'idle';         // фиксируем текущую фазу
+  phaseEl.textContent = phaseText(CURRENT_PHASE);
   bankEl.textContent  = 'Банк: ' + fmt(r.bank);
+
+  const open = CURRENT_PHASE === 'betting';  // только в betting — активны кнопки
+  buyBtn.disabled  = !open;
+  sellBtn.disabled = !open;
 
   const h = await fetch('/api/history').then(r=>r.json()).catch(()=>({history:[]}));
   histEl.innerHTML = (h.history||[]).map(chip).join('');
@@ -318,6 +324,12 @@ async function poll(){
 
 // действия ставок
 async function place(side){
+  // защита от кликов вне окна ставок
+  if (CURRENT_PHASE !== 'betting') {
+    alert('Окно ставок закрыто');
+    return;
+  }
+
   const s = getSettings();
   let amount = s.amount;
 
@@ -379,7 +391,7 @@ openChannel.onclick = ()=>{
     else window.location.href = CHANNEL_LINK;
   }catch(e){ window.location.href = CHANNEL_LINK; }
 };
-// ✅ новая проверка БЕЗ редиректа — дергаем ваш API
+// новая проверка без редиректа — дергаем ваш API
 checkBonus.onclick = async ()=>{
   const r = await fetch('/api/bonus/check', {
     method:'POST',
@@ -389,7 +401,6 @@ checkBonus.onclick = async ()=>{
 
   if (!r.ok) { alert('Не удалось проверить бонус.'); return; }
 
-  // r.added может быть суммой всех начислений (подписка/ежедневка)
   if (r.added > 0) {
     await refreshBalance();
     alert('Начислено: $' + Number(r.added).toLocaleString());
