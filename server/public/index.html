@@ -656,10 +656,10 @@ function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
 function renderProfile(p){
   if (!p) return;
   document.getElementById('lvl').textContent = p.level;
-  const prog = Math.max(0, Math.min(1, p.progress || (p.xp / p.next_xp)));
+  const prog = Math.max(0, Math.min(1, (p.level_progress || 0) / (p.level_threshold || 1)));
   document.getElementById('xpFill').style.width = (prog*100).toFixed(1)+'%';
-  document.getElementById('xpText').textContent = `${Number(p.xp).toLocaleString()} / ${Number(p.next_xp).toLocaleString()} XP`;
-  document.getElementById('nextReward').textContent = '+ ' + fmt(p.next_reward || 0);
+  document.getElementById('xpText').textContent = `${Number(p.level_progress || 0).toLocaleString()} / ${Number(p.level_threshold || 0).toLocaleString()} XP`;
+  document.getElementById('nextReward').textContent = '';
 }
 function phaseText(p){
   if (p==='betting') return 'Ставки открыты';
@@ -879,7 +879,7 @@ async function auth(){
     if (typeof r.user.ref_count === 'number') {
       claimBtn.style.display = r.user.ref_count >= 30 ? 'inline-block' : 'none';
     }
-    renderProfile(r.profile);
+    renderProfile(r.user);
   }
 }
 async function refreshBalance(){
@@ -894,6 +894,7 @@ async function refreshBalance(){
     if (typeof r.user.ref_count === 'number') {
       claimBtn.style.display = r.user.ref_count >= 30 ? 'inline-block' : 'none';
     }
+    renderProfile(r.user);
   }
 }
 
@@ -966,7 +967,7 @@ async function maybeCelebrateWin(){
 async function poll(){
   const r = await fetch(`/api/round?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>null);
   if (!r) return;
-  renderProfile(r.profile);
+  renderProfile(r.user);
 
   if (r.price){
     priceEl.textContent = fmt(r.price);
