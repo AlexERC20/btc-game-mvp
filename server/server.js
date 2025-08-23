@@ -178,6 +178,17 @@ await pool.query(`
 `);
 
 await pool.query(`
+  CREATE TABLE IF NOT EXISTS shout_messages (
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    username TEXT,
+    text TEXT NOT NULL,
+    price BIGINT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now()
+  );
+`);
+
+await pool.query(`
   INSERT INTO shout_state(id) VALUES (1)
   ON CONFLICT (id) DO NOTHING;
 `);
@@ -850,6 +861,7 @@ app.post('/api/shout/bid', requireTgAuth, async (req, res) => {
       [user.id, uid, holderName, text, nextPrice, SHOUT_STEP]
     );
     await client.query('INSERT INTO shout_bids(user_id, telegram_id, username, message, paid) VALUES ($1,$2,$3,$4,$5)', [user.id, uid, holderName, text, nextPrice]);
+    await client.query('INSERT INTO shout_messages(user_id, username, text, price) VALUES ($1,$2,$3,$4)', [user.id, holderName, text, nextPrice]);
 
     await client.query('COMMIT');
     res.json({ ok:true, paid: nextPrice });
@@ -859,6 +871,18 @@ app.post('/api/shout/bid', requireTgAuth, async (req, res) => {
     res.status(500).json({ ok:false, error:'SERVER' });
   } finally {
     client.release();
+  }
+});
+
+app.get('/api/shout/history', async (req, res) => {
+  const limit = Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 50));
+  try {
+    const q = 'SELECT id, username, text, price, created_at FROM shout_messages ORDER BY created_at DESC LIMIT $1';
+    const r = await pool.query(q, [limit]);
+    res.json({ ok:true, items: r.rows });
+  } catch (e) {
+    console.error('/api/shout/history', e);
+    res.status(500).json({ ok:false, items: [] });
   }
 });
 

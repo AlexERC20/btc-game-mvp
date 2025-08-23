@@ -81,10 +81,10 @@
   .badge{width:24px;height:24px;border-radius:999px;background:#222;display:flex;align-items:center;justify-content:center;font-weight:800}
 
   /* bottom sheets */
-  .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:.2s}
+  .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:.2s;z-index:900}
   .sheet-backdrop.show{opacity:1;pointer-events:auto}
   .sheet{position:fixed;left:0;right:0;bottom:-60%;background:#0b0b0b;border-top:1px solid var(--border);
-         border-radius:16px 16px 0 0;padding:14px 14px 18px;transition:.25s}
+         border-radius:16px 16px 0 0;padding:14px 14px 18px;transition:.25s;z-index:1000}
   .sheet.open{bottom:0}
   .sheet h3{margin:6px 0 10px;font-size:16px}
   .rowchips{display:flex;gap:8px;flex-wrap:wrap}
@@ -93,12 +93,16 @@
   .inputline{display:flex;gap:8px;margin:10px 0}
   .inputline input{flex:1;background:#121212;border:1px solid var(--border);border-radius:10px;
                    padding:10px;color:#fff;font-size:14px}
-  .switchline{display:flex;justify-content:space-between;align-items:center;margin:8px 0;color:#ddd}
   .sheet .btnrow{display:flex;gap:10px;margin-top:10px}
   .sheet .btnrow .btnsm{flex:1;background:var(--green);border:none;border-radius:12px;color:#fff;padding:10px 0;font-weight:700}
   .sheet .btnrow .btnsm.cancel{background:#333}
   .btnsm[disabled]{ background:#333 !important; opacity:0.8; cursor:not-allowed; }
   .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
+
+  #sheetChatFeed .feed{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+  .msg{background:#121212;border:1px solid var(--border);border-radius:12px;padding:10px}
+  .msg .meta{color:#aaa;font-size:12px;margin-bottom:4px}
+  .msg .text{font-size:14px;line-height:1.3}
 
   .adline{
     background: var(--card);
@@ -250,6 +254,7 @@
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="insBtn">Страховка</button>
     <button class="chipbtn" id="statsBtn">Статистика</button>
+    <button class="chipbtn" id="chatFeedBtn">ЧАТ</button>
     <button class="chipbtn" id="starsBtn">Купить $</button>
     <button class="chipbtn" id="claimBtn" style="display:none">CLAIM</button>
   </div>
@@ -290,10 +295,6 @@
   </div>
   <div class="inputline">
     <input id="customAmt" type="number" min="50" step="1" placeholder="Другая сумма, $ (≥50)">
-  </div>
-  <div class="switchline">
-    <span>Ставить в 1 клик (без подтверждения)</span>
-    <label><input type="checkbox" id="oneClick"></label>
   </div>
   <div class="btnrow">
     <button class="btnsm cancel" data-close>Отмена</button>
@@ -384,6 +385,13 @@
   </div>
 </div>
 
+<!-- SHEET: history of paid chat -->
+<div class="sheet" id="sheetChatFeed">
+  <h3>Платный чат</h3>
+  <div id="chatFeed" class="feed"></div>
+  <div class="btnrow"><button class="btnsm cancel" data-close>Закрыть</button></div>
+</div>
+
 <script>
 const BOT_USERNAME = 'realpricebtc_bot';
 const CHANNEL_LINK = 'https://t.me/erc20coin';
@@ -445,6 +453,7 @@ const topupBtn= document.getElementById('topupBtn');
 const starsBtn= document.getElementById('starsBtn');
 const insBtn  = document.getElementById('insBtn');
 const statsBtn= document.getElementById('statsBtn');
+const chatFeedBtn = document.getElementById('chatFeedBtn');
 const cfgBtn  = document.getElementById('cfgBtn');
 const claimBtn   = document.getElementById('claimBtn');
 
@@ -457,13 +466,14 @@ const sheetIns    = document.getElementById('sheetIns');
 const sheetStats  = document.getElementById('sheetStats');
 const sheetAd     = document.getElementById('sheetAd');
 const sheetClaim  = document.getElementById('sheetClaim');
+const sheetChatFeed = document.getElementById('sheetChatFeed');
+const chatFeed      = document.getElementById('chatFeed');
 const claimVopEl  = document.getElementById('claimVop');
 const claimDo     = document.getElementById('claimDo');
 
 // stake controls
 const chipsBox  = document.getElementById('chips');
 const customAmt = document.getElementById('customAmt');
-const oneClick  = document.getElementById('oneClick');
 const cfgSave   = document.getElementById('cfgSave');
 
 // topup controls
@@ -485,7 +495,7 @@ const viewerHint   = document.getElementById('viewerHint');
 const viewerOpen   = document.getElementById('viewerOpen');
 
 if (IS_VIEWER) {
-  [buyBtn, sellBtn, cfgBtn, refBtn, topupBtn, insBtn, statsBtn, starsBtn, claimBtn, adWriteBtn, buyStars, buyIns, adSend, checkBonus, claimDo].forEach(b => b && (b.disabled = true));
+  [buyBtn, sellBtn, cfgBtn, refBtn, topupBtn, insBtn, statsBtn, chatFeedBtn, starsBtn, claimBtn, adWriteBtn, buyStars, buyIns, adSend, checkBonus, claimDo].forEach(b => b && (b.disabled = true));
   viewerBanner.style.display = 'block';
   viewerHint.style.display   = 'block';
   viewerOpen.onclick = (e)=>{ e.preventDefault(); const link = `https://t.me/${BOT_USERNAME}?startapp=go`; try{ if(window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(link); else window.location.href = link; } catch{ window.location.href = link; } };
@@ -601,7 +611,6 @@ adSend.onclick = async ()=>{
   closeAllSheets();
   playOnce(adLine, 'flash-win');
   hapticImpact('medium');
-  alert('Размещено за $' + Number(r.paid).toLocaleString());
 
   await adPoll();
   await refreshBalance();
@@ -659,9 +668,9 @@ function chip(h){
 }
 
 // sheet helpers
-function openSheet(el){ el.classList.add('open'); sheetBg.classList.add('show'); }
+function openSheet(el){ closeAllSheets(); el.classList.add('open'); sheetBg.classList.add('show'); }
 function closeAllSheets(){
-  [sheetStake, sheetTopup, sheetStars, sheetIns, sheetStats, sheetAd].forEach(s=>s.classList.remove('open'));
+  [sheetStake, sheetTopup, sheetStars, sheetIns, sheetStats, sheetAd, sheetClaim, sheetChatFeed].forEach(s=>s.classList.remove('open'));
   sheetBg.classList.remove('show');
   if (adPriceTimer) { clearInterval(adPriceTimer); adPriceTimer = null; }
 }
@@ -670,14 +679,10 @@ document.querySelectorAll('[data-close]').forEach(btn=>btn.addEventListener('cli
 
 // settings storage
 function getSettings(){
-  return {
-    amount: Math.max(50, Number(localStorage.getItem('bet_amount')||100) || 100),
-    oneClick: localStorage.getItem('bet_oneclick') === '1'
-  };
+  return { amount: Math.max(50, Number(localStorage.getItem('bet_amount')||50)) };
 }
 function setSettings(s){
-  localStorage.setItem('bet_amount', String(Math.max(50, s.amount||100)));
-  localStorage.setItem('bet_oneclick', s.oneClick ? '1' : '0');
+  localStorage.setItem('bet_amount', String(Math.max(50, s.amount||50)));
 }
 function highlightChips(val){
   document.querySelectorAll('#chips .chipopt').forEach(b=>{
@@ -865,16 +870,8 @@ async function place(side){
     return;
   }
 
-  const s = getSettings();
-  let amount = s.amount;
-
-  if (!s.oneClick){
-    const val = prompt('Сумма ставки ($):', String(amount));
-    if (val === null) return;
-    amount = parseInt(val,10);
-    if (!amount || amount<=0) return alert('Введи положительную сумму');
-  }
-  if (amount < 50){ alert('Минимальная ставка $50'); return; }
+  let amount = getSettings().amount || 50;
+  if (amount < 50) amount = 50;
 
   const r = await api('/api/bet', { side, amount }).catch(()=>({ok:false,error:'SERVER'}));
 
@@ -887,14 +884,14 @@ async function place(side){
     alert(msg);
     return;
   }
-  if (r.placed) setSettings({ amount: r.placed, oneClick: s.oneClick });
+  if (r.placed) setSettings({ amount: r.placed });
   await poll();
 }
 buyBtn.onclick  = () => { hapticLight(); place('BUY'); };
 sellBtn.onclick = () => { hapticLight(); place('SELL'); };
 
 // открыть листы
-cfgBtn.onclick   = ()=>{ highlightChips(getSettings().amount); customAmt.value=''; oneClick.checked=getSettings().oneClick; openSheet(sheetStake); };
+cfgBtn.onclick   = ()=>{ highlightChips(getSettings().amount); customAmt.value=''; openSheet(sheetStake); };
 topupBtn.onclick = ()=> openSheet(sheetTopup);
 insBtn.onclick  = ()=>{ insCountEl.textContent = 'Доступно: ' + INS_COUNT; openSheet(sheetIns); };
 starsBtn.onclick = ()=> openSheet(sheetStars);
@@ -919,10 +916,36 @@ cfgSave.onclick = ()=>{
     val = active ? Number(active.dataset.v) : getSettings().amount;
   }
   if (val < 50) { alert('Минимальная ставка $50'); return; }
-  setSettings({ amount: Math.floor(val), oneClick: oneClick.checked });
+  setSettings({ amount: Math.floor(val) });
   closeAllSheets();
-  alert('Сохранено: $' + Math.floor(val) + (oneClick.checked ? ' • 1-клик' : ''));
+  alert('Сохранено: $' + Math.floor(val));
 };
+
+chatFeedBtn.onclick = async ()=>{
+  await loadChatFeed();
+  openSheet(sheetChatFeed);
+};
+
+async function loadChatFeed(){
+  const r = await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
+  if(!r.ok) { chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>'; return; }
+  chatFeed.innerHTML = r.items.map(it=>(
+    `<div class="msg">
+       <div class="meta">@${(it.username||'anon').replace(/^@+/,'@')} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}
+       </div>
+       <div class="text">${escapeHtml(it.text||'')}</div>
+     </div>`
+  )).join('');
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":"&#39;"
+  }[m]));
+}
 
 // topup sheet handlers
 openChannel.onclick = ()=>{
