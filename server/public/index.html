@@ -145,6 +145,15 @@
     to{ opacity:1; transform:translateY(0); }
   }
 
+  .card.profile{background:#0b0b0b;border:1px solid var(--border);border-radius:16px;padding:12px 14px;margin-top:10px}
+  .card.profile .row{display:flex;align-items:center}
+  .card.profile .between{justify-content:space-between}
+  .card.profile .title{font-weight:800}
+  .card.profile .badge{background:#121212;border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-size:12px}
+  .xpbar{height:10px;background:#171717;border:1px solid #242424;border-radius:999px;overflow:hidden;margin:8px 0}
+  .xpbar .fill{height:100%;background:linear-gradient(90deg,#1fa36a,#45c987);width:0%;transition:width .35s ease}
+  .card.profile .muted{color:#b9b9b9;font-size:12px}
+
   /* ===== accessibility ===== */
   @media (prefers-reduced-motion: reduce) {
     .flash-win, .shake-outbid, .crown-bounce, .ad-shimmer::before {
@@ -284,6 +293,17 @@
       <div class="ad-price" id="adPrice">Цена: $100</div>
       <button class="chipbtn ad-write" id="adWrite">✍️ Написать</button>
     </div>
+  </div>
+
+  <div class="card profile" id="profileCard">
+    <div class="row between">
+      <div class="title">Уровень <span id="lvl">1</span></div>
+      <div class="badge" id="nextReward">+ $10 000</div>
+    </div>
+    <div class="xpbar">
+      <div class="fill" id="xpFill" style="width:0%"></div>
+    </div>
+    <div class="muted" id="xpText">0 / 5 000 XP</div>
   </div>
 
   <div class="history" id="hist"></div>
@@ -633,6 +653,14 @@ function floatAmount(parent, text, plus /*true for +, false for -*/) {
 
 // helpers
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
+function renderProfile(p){
+  if (!p) return;
+  document.getElementById('lvl').textContent = p.level;
+  const prog = Math.max(0, Math.min(1, p.progress || (p.xp / p.next_xp)));
+  document.getElementById('xpFill').style.width = (prog*100).toFixed(1)+'%';
+  document.getElementById('xpText').textContent = `${Number(p.xp).toLocaleString()} / ${Number(p.next_xp).toLocaleString()} XP`;
+  document.getElementById('nextReward').textContent = '+ ' + fmt(p.next_reward || 0);
+}
 function phaseText(p){
   if (p==='betting') return 'Ставки открыты';
   if (p==='locked')  return 'Ставки закрыты';
@@ -851,6 +879,7 @@ async function auth(){
     if (typeof r.user.ref_count === 'number') {
       claimBtn.style.display = r.user.ref_count >= 30 ? 'inline-block' : 'none';
     }
+    renderProfile(r.profile);
   }
 }
 async function refreshBalance(){
@@ -937,6 +966,7 @@ async function maybeCelebrateWin(){
 async function poll(){
   const r = await fetch(`/api/round?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>null);
   if (!r) return;
+  renderProfile(r.profile);
 
   if (r.price){
     priceEl.textContent = fmt(r.price);
