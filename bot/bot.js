@@ -6,6 +6,7 @@ import express from 'express';
 import { Telegraf, Markup } from 'telegraf';
 import pg from 'pg';
 import { grantXpOnce, XP } from '../xp.mjs';
+import { creditBalance } from '../lib/accounting.js';
 
 const { BOT_TOKEN, WEBAPP_URL, DATABASE_URL, PORT = 8081 } = process.env;
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN missing');
@@ -132,7 +133,7 @@ async function grantReferral(referrerTgId, referredTgId) {
       'INSERT INTO referrals(referrer_user_id, referred_telegram_id) VALUES($1,$2)',
       [refUserId, referredTgId]
     );
-    await pool.query('UPDATE users SET balance=balance+$1 WHERE id=$2', [AMOUNTS.REFERRAL, refUserId]);
+    await creditBalance(pool, refUserId, AMOUNTS.REFERRAL);
     try {
       await bot.telegram.sendMessage(
         referrerTgId,
@@ -148,8 +149,9 @@ function todayUTC() {
 }
 
 async function grantDailyIfNeeded(telegramId) {
-  const r = await pool.query('SELECT last_daily_bonus FROM users WHERE telegram_id=$1', [telegramId]);
-  const last = r.rows[0]?.last_daily_bonus ? new Date(r.rows[0].last_daily_bonus) : null;
+  const r = await pool.query('SELECT id, last_daily_bonus FROM users WHERE telegram_id=$1', [telegramId]);
+  const row = r.rows[0];
+  const last = row?.last_daily_bonus ? new Date(row.last_daily_bonus) : null;
   const today = todayUTC();
   const isSameDay =
     last &&
@@ -158,9 +160,10 @@ async function grantDailyIfNeeded(telegramId) {
     last.getUTCDate() === today.getUTCDate();
 
   if (!isSameDay) {
+    await creditBalance(pool, row.id, AMOUNTS.DAILY);
     await pool.query(
-      'UPDATE users SET balance=balance+$1, last_daily_bonus=$2 WHERE telegram_id=$3',
-      [AMOUNTS.DAILY, today.toISOString().slice(0, 10), telegramId]
+      'UPDATE users SET last_daily_bonus=$1 WHERE telegram_id=$2',
+      [today.toISOString().slice(0, 10), telegramId]
     );
     return true;
   }
@@ -190,10 +193,9 @@ async function checkAndGrantChannelBonus(ctx) {
 
   // разовый бонус за канал
   if (!user.channel_bonus_claimed) {
-    await pool.query(
-      'UPDATE users SET balance=balance+$1, channel_bonus_claimed=TRUE WHERE telegram_id=$2',
-      [AMOUNTS.SUBSCRIBE, uid]
-    );
+    const r2 = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
+    await creditBalance(pool, r2.rows[0].id, AMOUNTS.SUBSCRIBE);
+    await pool.query('UPDATE users SET channel_bonus_claimed=TRUE WHERE telegram_id=$1', [uid]);
     await ctx.reply(`✅ Подписка подтверждена! Бонус $${AMOUNTS.SUBSCRIBE} начислён.`);
   } else {
     await ctx.reply('Бонус за подписку уже начислялся ранее ✅');
@@ -283,9 +285,11 @@ bot.on('message', async (ctx) => {
       const pack = token.replace('pack_', '');
       if (uid && STARS_PACKS[pack]) {
         const credit = STARS_PACKS[pack].credit;
-        await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credit, uid]);
         const { rows:[u] } = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
-        if (u) await grantXpOnce(pool, u.id, 'stars', sp.telegram_payment_charge_id, XP.STARS);
+        if (u) {
+          await creditBalance(pool, u.id, credit);
+          await grantXpOnce(pool, u.id, 'stars', sp.telegram_payment_charge_id, XP.STARS);
+        }
         await ctx.reply(`💫 Платёж принят: пакет ${pack}⭐ → +$${credit.toLocaleString()} на баланс.`);
         return;
       }
@@ -305,9 +309,11 @@ bot.on('message', async (ctx) => {
     const creditPerStar = 30;                       // линейная оценка (подстраховка)
     const credited = Math.round(stars * creditPerStar);
 
-    await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credited, ctx.from.id]);
     const { rows:[u] } = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [ctx.from.id]);
-    if (u) await grantXpOnce(pool, u.id, 'stars', sp.telegram_payment_charge_id, XP.STARS);
+    if (u) {
+      await creditBalance(pool, u.id, credited);
+      await grantXpOnce(pool, u.id, 'stars', sp.telegram_payment_charge_id, XP.STARS);
+    }
     await ctx.reply(`💫 Платёж принят: ${stars}⭐ → +$${credited.toLocaleString()}`);
   } catch (e) {
     console.error('successful_payment handler:', e);

@@ -6,6 +6,7 @@ import { WebSocket } from 'ws';
 import pg from 'pg';
 import crypto from 'crypto';
 import { grantXpOnce, levelThreshold, xpSpentBeforeLevel, XP } from '../xp.mjs';
+import { creditBalance } from '../lib/accounting.js';
 
 function verifyInitData(initData, botToken) {
   try {
@@ -55,6 +56,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
+
+app.use((req, res, next) => {
+  req._deltaBalance = 0;
+  req._deltaXp = 0;
+  res.on('finish', () => {
+    if (req._deltaBalance !== 0 && req._deltaXp !== 0) {
+      console.warn('[ECONOMY WARNING]', req.method, req.url, {
+        balance: req._deltaBalance,
+        xp: req._deltaXp,
+      });
+    }
+  });
+  next();
+});
 
 const PORT = process.env.PORT || 8080;
 const BINANCE_WS =
@@ -329,11 +344,12 @@ async function tryBotBet(botUserId) {
   const amount = pickAmount(u.balance, allowed, state.bankBuy, state.bankSell);
 
   // атомарное списание, чтобы не уйти в минус
-  const upd = await pool.query(
-    `UPDATE users SET balance=balance-$1 WHERE id=$2 AND balance >= $1 RETURNING id`,
-    [amount, u.id]
-  );
-  if (upd.rowCount === 0) { if (DEBUG_BOTS) console.log('[bots] fail debit', botUserId, amount); return; }
+  const newBal = await creditBalance(pool, u.id, -amount);
+  if (newBal < 0) {
+    await creditBalance(pool, u.id, amount);
+    if (DEBUG_BOTS) console.log('[bots] fail debit', botUserId, amount);
+    return;
+  }
 
   await pool.query(
     `INSERT INTO bets(user_id, round_id, side, amount, is_bot) VALUES ($1,$2,$3,$4,TRUE)`,
@@ -525,8 +541,9 @@ function todayUTC() {
 }
 
 async function grantDailyIfNeeded(telegramId) {
-  const r = await pool.query('SELECT last_daily_bonus FROM users WHERE telegram_id=$1', [telegramId]);
-  const last = r.rows[0]?.last_daily_bonus ? new Date(r.rows[0].last_daily_bonus) : null;
+  const r = await pool.query('SELECT id, last_daily_bonus FROM users WHERE telegram_id=$1', [telegramId]);
+  const row = r.rows[0];
+  const last = row?.last_daily_bonus ? new Date(row.last_daily_bonus) : null;
   const today = todayUTC();
   const isSameDay =
     last &&
@@ -535,9 +552,10 @@ async function grantDailyIfNeeded(telegramId) {
     last.getUTCDate() === today.getUTCDate();
 
   if (!isSameDay) {
+    await creditBalance(pool, row.id, DAILY_BONUS);
     await pool.query(
-      'UPDATE users SET balance=balance+$1, last_daily_bonus=$2 WHERE telegram_id=$3',
-      [DAILY_BONUS, today.toISOString().slice(0, 10), telegramId]
+      'UPDATE users SET last_daily_bonus=$1 WHERE telegram_id=$2',
+      [today.toISOString().slice(0, 10), telegramId]
     );
     return DAILY_BONUS;
   }
@@ -643,10 +661,7 @@ async function settle() {
           'INSERT INTO payouts(user_id, round_id, amount) VALUES ($1,$2,$3)',
           [w.user_id, state.currentRoundId, share]
         );
-        await pool.query(
-          'UPDATE users SET balance=balance+$1 WHERE id=$2',
-          [share, w.user_id]
-        );
+        await creditBalance(pool, w.user_id, share);
         const cur = byUser.get(w.user_id);
         cur.payout += share;
         byUser.set(w.user_id, cur);
@@ -661,7 +676,7 @@ async function settle() {
     if (l.insured) {
       const refund = Math.floor(l.amount / 2);
       if (refund > 0) {
-        await pool.query('UPDATE users SET balance=balance+$1 WHERE id=$2', [refund, l.user_id]);
+        await creditBalance(pool, l.user_id, refund);
       }
     }
   }
@@ -796,7 +811,7 @@ app.post('/api/bet', requireTgAuth, async (req, res) => {
       await pool.query('UPDATE users SET insurance_count=insurance_count-1 WHERE id=$1', [u.id]);
     }
 
-    await pool.query('UPDATE users SET balance=balance-$1 WHERE id=$2', [amt, u.id]);
+    await creditBalance(pool, u.id, -amt, req);
     const ins = await pool.query(
       'INSERT INTO bets(user_id, round_id, side, amount, insured) VALUES ($1,$2,$3,$4,$5) RETURNING id',
       [u.id, state.currentRoundId, side, amt, insured]
@@ -1027,7 +1042,8 @@ app.post('/api/shout/bid', requireTgAuth, async (req, res) => {
       return res.status(400).json({ ok:false, error:'INSUFFICIENT_BALANCE' });
     }
 
-    await client.query('UPDATE users SET balance=balance-$1, banner_spent=banner_spent+$1 WHERE id=$2', [nextPrice, user.id]);
+    await creditBalance(client, user.id, -nextPrice, req);
+    await client.query('UPDATE users SET banner_spent=banner_spent+$1 WHERE id=$2', [nextPrice, user.id]);
 
     const holderName = user.username ? '@' + String(user.username).replace(/^@+/, '') : '@anon';
     await client.query(
@@ -1141,9 +1157,11 @@ app.post('/api/bonus/check', requireTgAuth, async (req, res) => {
       const q = await pool.query('SELECT channel_bonus_claimed FROM users WHERE telegram_id=$1', [uid]);
       const claimed = q.rows[0]?.channel_bonus_claimed;
       if (!claimed) {
+        const r2 = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
+        await creditBalance(pool, r2.rows[0].id, SUBSCRIBE_BONUS);
         await pool.query(
-          'UPDATE users SET balance=balance+$1, channel_bonus_claimed=TRUE WHERE telegram_id=$2',
-          [SUBSCRIBE_BONUS, uid]
+          'UPDATE users SET channel_bonus_claimed=TRUE WHERE telegram_id=$1',
+          [uid]
         );
         added += SUBSCRIBE_BONUS;
       }
