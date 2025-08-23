@@ -79,13 +79,20 @@
   .rank{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
   .rank .left{display:flex;gap:8px;align-items:center}
   .badge{width:24px;height:24px;border-radius:999px;background:#222;display:flex;align-items:center;justify-content:center;font-weight:800}
+  
+  /* блокируем фон */
+  body.noscroll{overflow:hidden}
 
   /* bottom sheets */
-  .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:.2s;z-index:900}
+  .sheet{position:fixed;left:0;right:0;bottom:0;background:#0b0b0b;border-top:1px solid var(--border);
+         border-radius:16px 16px 0 0;transform:translateY(100%);transition:transform .25s ease;
+         padding:14px 14px calc(18px + env(safe-area-inset-bottom));z-index:1000}
+  .sheet.open{transform:translateY(0)}
+  .sheet.kb{padding-bottom:calc(18px + var(--kb,0px) + env(safe-area-inset-bottom))}
+
+  /* бэкдроп */
+  .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:opacity .2s;z-index:900}
   .sheet-backdrop.show{opacity:1;pointer-events:auto}
-  .sheet{position:fixed;left:0;right:0;bottom:-60%;background:#0b0b0b;border-top:1px solid var(--border);
-         border-radius:16px 16px 0 0;padding:14px 14px 18px;transition:.25s;z-index:1000}
-  .sheet.open{bottom:0}
   .sheet h3{margin:6px 0 10px;font-size:16px}
   .rowchips{display:flex;gap:8px;flex-wrap:wrap}
   .chipopt{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-size:13px;cursor:pointer}
@@ -428,6 +435,7 @@ let adState = {
 
 let prevAd = null;
 let adPriceTimer = null;
+let selectedPack = null;
 
 // elements
 const priceEl = document.getElementById('price');
@@ -577,44 +585,7 @@ function renderAdLine() {
   prevAd = { user: newUser, nextPrice, text: newText };
 }
 renderAdLine();
-
-// модалка «написать»
-adWriteBtn.onclick = async ()=>{
-  hapticImpact('light');
-  adInput.value = '';
-  adCount.textContent = '0/50';
-  adSend.disabled = true;
-  await adPoll();
-  openSheet(sheetAd);
-  adInput.focus();
-  adPriceTimer = setInterval(adPoll, 1000);
-};
-
-adInput.addEventListener('input', () => {
-  adInput.value = adInput.value.slice(0,50);
-  const len = adInput.value.length;
-  adCount.textContent = len + '/50';
-  adSend.disabled = len === 0;
-});
-
-adSend.onclick = async ()=>{
-  const text = adInput.value.trim().replace(/\n/g,' ').slice(0,50);
-  if (!text) return;
-  const r = await api('/api/shout/bid', { message:text }).catch(()=>({ ok:false }));
-
-  if (!r.ok) {
-    alert(r.error==='INSUFFICIENT_BALANCE' ? 'Недостаточно средств' : 'Цена изменилась, попробуйте снова');
-    await adPoll();
-    return;
-  }
-
-  closeAllSheets();
-  playOnce(adLine, 'flash-win');
-  hapticImpact('medium');
-
-  await adPoll();
-  await refreshBalance();
-};
+// модалка «написать» обработана в bindOnce()
 
 const CIRC = 2*Math.PI*140;
 ring.setAttribute('stroke-dasharray', CIRC);
@@ -668,14 +639,22 @@ function chip(h){
 }
 
 // sheet helpers
-function openSheet(el){ closeAllSheets(); el.classList.add('open'); sheetBg.classList.add('show'); }
-function closeAllSheets(){
-  [sheetStake, sheetTopup, sheetStars, sheetIns, sheetStats, sheetAd, sheetClaim, sheetChatFeed].forEach(s=>s.classList.remove('open'));
-  sheetBg.classList.remove('show');
-  if (adPriceTimer) { clearInterval(adPriceTimer); adPriceTimer = null; }
+let openedSheet = null;
+function openSheet(el){
+  if (!el || openedSheet === el) return;
+  closeAllSheets();
+  el.classList.add('open');
+  sheetBg.classList.add('show');
+  document.body.classList.add('noscroll');
+  openedSheet = el;
 }
-sheetBg.addEventListener('click', closeAllSheets);
-document.querySelectorAll('[data-close]').forEach(btn=>btn.addEventListener('click', closeAllSheets));
+function closeAllSheets(){
+  document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open'));
+  sheetBg.classList.remove('show');
+  document.body.classList.remove('noscroll');
+  if (adPriceTimer) { clearInterval(adPriceTimer); adPriceTimer = null; }
+  openedSheet = null;
+}
 
 // settings storage
 function getSettings(){
@@ -688,6 +667,167 @@ function highlightChips(val){
   document.querySelectorAll('#chips .chipopt').forEach(b=>{
     b.classList.toggle('active', Number(b.dataset.v)===Number(val));
   });
+}
+
+function applyViewportPadding(){
+  const vv = window.visualViewport;
+  const kb = vv ? Math.max(0, window.innerHeight - vv.height) : 0;
+  document.documentElement.style.setProperty('--kb', kb + 'px');
+}
+if (window.visualViewport){
+  visualViewport.addEventListener('resize', applyViewportPadding);
+  visualViewport.addEventListener('scroll', applyViewportPadding);
+  applyViewportPadding();
+}
+document.addEventListener('focusin', e=>{
+  const s = e.target.closest('.sheet');
+  if (s) s.classList.add('kb');
+});
+document.addEventListener('focusout', e=>{
+  const s = e.target.closest('.sheet');
+  if (s) s.classList.remove('kb');
+});
+
+let bindingsDone = false;
+function bindOnce(){
+  if (bindingsDone) return;
+  bindingsDone = true;
+
+  sheetBg.addEventListener('click', closeAllSheets);
+  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeAllSheets));
+
+  buyBtn.onclick  = () => { hapticLight(); place('BUY'); };
+  sellBtn.onclick = () => { hapticLight(); place('SELL'); };
+  cfgBtn.onclick   = ()=>{ highlightChips(getSettings().amount); customAmt.value=''; openSheet(sheetStake); };
+  topupBtn.onclick = ()=> openSheet(sheetTopup);
+  insBtn.onclick   = ()=>{ insCountEl.textContent = 'Доступно: ' + INS_COUNT; openSheet(sheetIns); };
+  starsBtn.onclick = ()=> openSheet(sheetStars);
+  statsBtn.onclick = ()=>{ loadStats(); openSheet(sheetStats); };
+  claimBtn.onclick = async ()=>{
+    openSheet(sheetClaim);
+    claimVopEl.textContent = '… VOP';
+    claimDo.disabled = true;
+    await fetchClaimInfo();
+  };
+  chatFeedBtn.onclick = async ()=>{
+    await loadChatFeed();
+    openSheet(sheetChatFeed);
+  };
+  chipsBox.addEventListener('click', e=>{
+    const b = e.target.closest('.chipopt'); if (!b) return;
+    document.querySelectorAll('#chips .chipopt').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active'); customAmt.value='';
+  });
+  cfgSave.onclick = ()=>{
+    let val = Number(customAmt.value || 0);
+    if (!val){
+      const active = document.querySelector('#chips .chipopt.active');
+      val = active ? Number(active.dataset.v) : getSettings().amount;
+    }
+    if (val < 50) { alert('Минимальная ставка $50'); return; }
+    setSettings({ amount: Math.floor(val) });
+    closeAllSheets();
+    alert('Сохранено: $' + Math.floor(val));
+  };
+  openChannel.onclick = ()=>{
+    try{
+      if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK);
+      else window.location.href = CHANNEL_LINK;
+    }catch(e){ window.location.href = CHANNEL_LINK; }
+  };
+  checkBonus.onclick = async ()=>{
+    const r = await api('/api/bonus/check').catch(()=>({ ok:false }));
+
+    if (!r.ok) { alert('Не удалось проверить бонус.'); return; }
+
+    if (r.added > 0) {
+      await refreshBalance();
+      alert('Начислено: $' + Number(r.added).toLocaleString());
+    } else {
+      alert(r.msg || 'Пока ничего не начислено.');
+    }
+    closeAllSheets();
+  };
+  refBtn.onclick = ()=>{
+    const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
+    if (navigator.share){
+      navigator.share({ title:'BTC Game', text:'Залетай в игру!', url:link }).catch(()=>{});
+    } else {
+      alert('Твоя реф-ссылка:\n' + link + '\nЗа каждого друга +$500 после его первого входа.');
+    }
+  };
+  starsPacks.addEventListener('click', e=>{
+    const b = e.target.closest('.chipopt'); if (!b) return;
+    document.querySelectorAll('#starsPacks .chipopt').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    selectedPack = b.dataset.pack;
+  });
+  buyStars.onclick = async ()=>{
+    const pack = selectedPack || '100';
+    const resp = await api('/api/stars/create', { pack }).catch(()=>({ ok:false }));
+    if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
+
+    const open = Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
+      if (status === 'paid') {
+        await refreshBalance();
+        alert('Оплата успешна! Баланс обновлён.');
+      } else if (status === 'cancelled') {
+        alert('Платёж отменён');
+      } else if (status === 'failed') {
+        alert('Платёж не прошёл');
+      }
+    });
+    try { await open; await refreshBalance(); } catch {}
+    closeAllSheets();
+  };
+  buyIns.onclick = async ()=>{
+    const resp = await api('/api/insurance/create').catch(()=>({ ok:false }));
+    if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
+
+    const open = Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
+      if (status === 'paid') {
+        await refreshBalance();
+        alert('Покупка успешна!');
+      } else if (status === 'cancelled') {
+        alert('Платёж отменён');
+      } else if (status === 'failed') {
+        alert('Платёж не прошёл');
+      }
+    });
+    try { await open; await refreshBalance(); } catch {}
+    closeAllSheets();
+  };
+  adWriteBtn.onclick = async ()=>{
+    hapticImpact('light');
+    adInput.value = '';
+    adCount.textContent = '0/50';
+    adSend.disabled = true;
+    await adPoll();
+    openSheet(sheetAd);
+    adInput.focus();
+    adPriceTimer = setInterval(adPoll, 1000);
+  };
+  adInput.addEventListener('input', ()=>{
+    adInput.value = adInput.value.slice(0,50);
+    const len = adInput.value.length;
+    adCount.textContent = len + '/50';
+    adSend.disabled = len === 0;
+  });
+  adSend.onclick = async ()=>{
+    const text = adInput.value.trim().replace(/\n/g,' ').slice(0,50);
+    if (!text) return;
+    const r = await api('/api/shout/bid', { message:text }).catch(()=>({ ok:false }));
+    if (!r.ok) {
+      alert(r.error==='INSUFFICIENT_BALANCE' ? 'Недостаточно средств' : 'Цена изменилась, попробуйте снова');
+      await adPoll();
+      return;
+    }
+    closeAllSheets();
+    playOnce(adLine, 'flash-win');
+    hapticImpact('medium');
+    await adPoll();
+    await refreshBalance();
+  };
 }
 
 // api
@@ -887,45 +1027,6 @@ async function place(side){
   if (r.placed) setSettings({ amount: r.placed });
   await poll();
 }
-buyBtn.onclick  = () => { hapticLight(); place('BUY'); };
-sellBtn.onclick = () => { hapticLight(); place('SELL'); };
-
-// открыть листы
-cfgBtn.onclick   = ()=>{ highlightChips(getSettings().amount); customAmt.value=''; openSheet(sheetStake); };
-topupBtn.onclick = ()=> openSheet(sheetTopup);
-insBtn.onclick  = ()=>{ insCountEl.textContent = 'Доступно: ' + INS_COUNT; openSheet(sheetIns); };
-starsBtn.onclick = ()=> openSheet(sheetStars);
-statsBtn.onclick = () => { loadStats(); openSheet(sheetStats); };
-claimBtn.onclick = async ()=>{
-  openSheet(sheetClaim);
-  claimVopEl.textContent = '… VOP';
-  claimDo.disabled = true;
-  await fetchClaimInfo();
-};
-
-// stake sheet handlers
-chipsBox.addEventListener('click', (e)=>{
-  const b = e.target.closest('.chipopt'); if (!b) return;
-  document.querySelectorAll('#chips .chipopt').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active'); customAmt.value='';
-});
-cfgSave.onclick = ()=>{
-  let val = Number(customAmt.value || 0);
-  if (!val){
-    const active = document.querySelector('#chips .chipopt.active');
-    val = active ? Number(active.dataset.v) : getSettings().amount;
-  }
-  if (val < 50) { alert('Минимальная ставка $50'); return; }
-  setSettings({ amount: Math.floor(val) });
-  closeAllSheets();
-  alert('Сохранено: $' + Math.floor(val));
-};
-
-chatFeedBtn.onclick = async ()=>{
-  await loadChatFeed();
-  openSheet(sheetChatFeed);
-};
-
 async function loadChatFeed(){
   const r = await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
   if(!r.ok) { chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>'; return; }
@@ -947,85 +1048,8 @@ function escapeHtml(s){
   }[m]));
 }
 
-// topup sheet handlers
-openChannel.onclick = ()=>{
-  try{
-    if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK);
-    else window.location.href = CHANNEL_LINK;
-  }catch(e){ window.location.href = CHANNEL_LINK; }
-};
-// новая проверка без редиректа — дергаем ваш API
-checkBonus.onclick = async ()=>{
-  const r = await api('/api/bonus/check').catch(()=>({ ok:false }));
-
-  if (!r.ok) { alert('Не удалось проверить бонус.'); return; }
-
-  if (r.added > 0) {
-    await refreshBalance();
-    alert('Начислено: $' + Number(r.added).toLocaleString());
-  } else {
-    alert(r.msg || 'Пока ничего не начислено.');
-  }
-  closeAllSheets();
-};
-
-
-// рефералы
-refBtn.onclick = ()=>{
-  const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
-  if (navigator.share){
-    navigator.share({ title:'BTC Game', text:'Залетай в игру!', url:link }).catch(()=>{});
-  } else {
-    alert('Твоя реф-ссылка:\n' + link + '\nЗа каждого друга +$500 после его первого входа.');
-  }
-};
-
-// Stars: выбор пакета и оплата
-let selectedPack = null;
-starsPacks.addEventListener('click', (e)=>{
-  const b = e.target.closest('.chipopt'); if (!b) return;
-  document.querySelectorAll('#starsPacks .chipopt').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');
-  selectedPack = b.dataset.pack;
-});
-buyStars.onclick = async ()=>{
-  const pack = selectedPack || '100';
-  const resp = await api('/api/stars/create', { pack }).catch(()=>({ ok:false }));
-  if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
-
-  const open = Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
-    if (status === 'paid') {
-      await refreshBalance();
-      alert('Оплата успешна! Баланс обновлён.');
-    } else if (status === 'cancelled') {
-      alert('Платёж отменён');
-    } else if (status === 'failed') {
-      alert('Платёж не прошёл');
-    }
-  });
-  try { await open; await refreshBalance(); } catch {}
-  closeAllSheets();
-};
-
-buyIns.onclick = async ()=>{
-  const resp = await api('/api/insurance/create').catch(()=>({ ok:false }));
-  if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
-
-  const open = Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
-    if (status === 'paid') {
-      await refreshBalance();
-      alert('Покупка успешна!');
-    } else if (status === 'cancelled') {
-      alert('Платёж отменён');
-    } else if (status === 'failed') {
-      alert('Платёж не прошёл');
-    }
-  });
-  try { await open; await refreshBalance(); } catch {}
-  closeAllSheets();
-};
-
 // init
+bindOnce();
 if (!IS_VIEWER) await auth();
 poll();
 setInterval(poll, 1000);
