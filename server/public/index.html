@@ -97,6 +97,7 @@
   .sheet .btnrow{display:flex;gap:10px;margin-top:10px}
   .sheet .btnrow .btnsm{flex:1;background:var(--green);border:none;border-radius:12px;color:#fff;padding:10px 0;font-weight:700}
   .sheet .btnrow .btnsm.cancel{background:#333}
+  .btnsm[disabled]{ background:#333 !important; opacity:0.8; cursor:not-allowed; }
   .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
 
   .adline{
@@ -250,6 +251,7 @@
     <button class="chipbtn" id="insBtn">Страховка</button>
     <button class="chipbtn" id="statsBtn">Статистика</button>
     <button class="chipbtn" id="starsBtn">Купить $</button>
+    <button class="chipbtn" id="claimBtn" style="display:none">CLAIM</button>
   </div>
   <div id="viewerHint" style="display:none;text-align:center;color:var(--muted);font-size:13px;margin:6px 0 10px;">Зайдите через Telegram WebApp, чтобы играть.</div>
 
@@ -371,6 +373,17 @@
   </div>
 </div>
 
+<!-- SHEET: CLAIM -->
+<div class="sheet" id="sheetClaim">
+  <h3>CLAIM</h3>
+  <p style="margin-top:6px;">Ты можешь склеймить</p>
+  <div id="claimVop" style="font-size:22px;font-weight:800;margin:4px 0 10px;">— VOP</div>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Закрыть</button>
+    <button class="btnsm" id="claimDo" disabled>CLAIM</button>
+  </div>
+</div>
+
 <script>
 const BOT_USERNAME = 'realpricebtc_bot';
 const CHANNEL_LINK = 'https://t.me/erc20coin';
@@ -433,6 +446,7 @@ const starsBtn= document.getElementById('starsBtn');
 const insBtn  = document.getElementById('insBtn');
 const statsBtn= document.getElementById('statsBtn');
 const cfgBtn  = document.getElementById('cfgBtn');
+const claimBtn   = document.getElementById('claimBtn');
 
 // sheets
 const sheetBg     = document.getElementById('sheetBg');
@@ -442,6 +456,9 @@ const sheetStars  = document.getElementById('sheetStars');
 const sheetIns    = document.getElementById('sheetIns');
 const sheetStats  = document.getElementById('sheetStats');
 const sheetAd     = document.getElementById('sheetAd');
+const sheetClaim  = document.getElementById('sheetClaim');
+const claimVopEl  = document.getElementById('claimVop');
+const claimDo     = document.getElementById('claimDo');
 
 // stake controls
 const chipsBox  = document.getElementById('chips');
@@ -468,7 +485,7 @@ const viewerHint   = document.getElementById('viewerHint');
 const viewerOpen   = document.getElementById('viewerOpen');
 
 if (IS_VIEWER) {
-  [buyBtn, sellBtn, cfgBtn, refBtn, topupBtn, insBtn, statsBtn, starsBtn, adWriteBtn, buyStars, buyIns, adSend, checkBonus].forEach(b => b && (b.disabled = true));
+  [buyBtn, sellBtn, cfgBtn, refBtn, topupBtn, insBtn, statsBtn, starsBtn, claimBtn, adWriteBtn, buyStars, buyIns, adSend, checkBonus, claimDo].forEach(b => b && (b.disabled = true));
   viewerBanner.style.display = 'block';
   viewerHint.style.display   = 'block';
   viewerOpen.onclick = (e)=>{ e.preventDefault(); const link = `https://t.me/${BOT_USERNAME}?startapp=go`; try{ if(window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(link); else window.location.href = link; } catch{ window.location.href = link; } };
@@ -670,20 +687,48 @@ function highlightChips(val){
 
 // api
 async function auth(){
-  const r = await api('/api/auth', { username }).catch(()=>({ok:false}));
+  const r = await fetch('/api/auth', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ uid, username })
+  }).then(r=>r.json()).catch(()=>({ok:false}));
   if (r.ok) {
     balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
     INS_COUNT = Number(r.user.insurance || 0);
     if (insCountEl) insCountEl.textContent = 'Доступно: ' + INS_COUNT;
+    if (typeof r.user.ref_count === 'number') {
+      claimBtn.style.display = r.user.ref_count >= 30 ? 'inline-block' : 'none';
+    }
   }
 }
 async function refreshBalance(){
-  const r = await api('/api/auth', { username }).catch(()=>({ok:false}));
+  const r = await fetch('/api/auth', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ uid, username })
+  }).then(r=>r.json()).catch(()=>({ok:false}));
   if (r.ok) {
     balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
     INS_COUNT = Number(r.user.insurance || 0);
     if (insCountEl) insCountEl.textContent = 'Доступно: ' + INS_COUNT;
+    if (typeof r.user.ref_count === 'number') {
+      claimBtn.style.display = r.user.ref_count >= 30 ? 'inline-block' : 'none';
+    }
   }
+}
+
+async function fetchClaimInfo(){
+  const r = await fetch('/api/claim/info', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ uid })
+  }).then(r=>r.json()).catch(()=>({ ok:false }));
+
+  if (!r.ok) { claimVopEl.textContent = '— VOP'; return; }
+
+  // текст: "<число> VOP"
+  claimVopEl.textContent = (Number(r.claimable_vop)||0).toLocaleString() + ' VOP';
+
+  // Кнопка по ТЗ остаётся серой/disabled (боевой клейм добавим потом)
+  claimDo.disabled = true;
 }
 async function leaderboard(){
   const r = await fetch(`/api/leaderboard?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>({ok:false}));
@@ -854,6 +899,12 @@ topupBtn.onclick = ()=> openSheet(sheetTopup);
 insBtn.onclick  = ()=>{ insCountEl.textContent = 'Доступно: ' + INS_COUNT; openSheet(sheetIns); };
 starsBtn.onclick = ()=> openSheet(sheetStars);
 statsBtn.onclick = () => { loadStats(); openSheet(sheetStats); };
+claimBtn.onclick = async ()=>{
+  openSheet(sheetClaim);
+  claimVopEl.textContent = '… VOP';
+  claimDo.disabled = true;
+  await fetchClaimInfo();
+};
 
 // stake sheet handlers
 chipsBox.addEventListener('click', (e)=>{

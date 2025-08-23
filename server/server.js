@@ -630,23 +630,61 @@ async function settle() {
 
 /* ========= API ========= */
 
-// Регистрация/пинг (сохранение username)
-app.post('/api/auth', requireTgAuth, async (req, res) => {
+// Регистрация/пинг (сохранение username + кол-во рефералов)
+app.post('/api/auth', async (req, res) => {
   try {
-    const tgId = req.tgUser.id;
-    const uname = req.tgUser.username ? '@' + req.tgUser.username : null;
-    const u = await ensureUser(tgId, uname);
+    const { uid, username } = req.body || {};
+    if (!uid) return res.status(400).json({ ok: false, error: 'NO_UID' });
+
+    const u = await ensureUser(uid, username);
+
+    // считаем рефералов
+    const { rows: [ref] } = await pool.query(
+      'SELECT COUNT(*)::int AS c FROM referrals WHERE referrer_user_id=$1',
+      [u.id]
+    );
+
     res.json({
       ok: true,
       user: {
-        id: u.id, telegram_id: tgId, username: u.username,
+        id: u.id,
+        telegram_id: uid,
+        username: u.username,
         balance: Number(u.balance),
-        insurance: Number(u.insurance_count)
+        ref_count: ref?.c ?? 0,
       }
     });
   } catch (e) {
     console.error(e);
     res.status(500).json({ ok: false, error: 'SERVER' });
+  }
+});
+
+// Возвращает клейм-доступ и число VOP
+app.post('/api/claim/info', async (req, res) => {
+  try {
+    const { uid } = req.body || {};
+    if (!uid) return res.json({ ok:false, error:'NO_UID' });
+
+    const u = await ensureUser(uid, null);
+    // кол-во рефералов
+    const { rows:[ref] } = await pool.query(
+      'SELECT COUNT(*)::int AS c FROM referrals WHERE referrer_user_id=$1',
+      [u.id]
+    );
+    const refCount = ref?.c ?? 0;
+
+    // что показывать в sheet
+    const claimable_vop = Math.max(0, Math.floor(Number(u.balance) || 0));
+
+    res.json({
+      ok: true,
+      eligible: refCount >= 30,
+      claimable_vop
+    });
+  } catch (e) {
+    console.error('claim/info', e);
+    res.json({ ok:false, error:'SERVER' });
   }
 });
 
