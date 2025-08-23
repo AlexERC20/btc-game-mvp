@@ -89,6 +89,7 @@ await pool.query(`
     channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE,
     last_daily_bonus DATE,
     last_active_at TIMESTAMPTZ DEFAULT now(),
+    last_seen TIMESTAMPTZ DEFAULT now(),
     created_at TIMESTAMPTZ DEFAULT now()
   );
 
@@ -145,6 +146,7 @@ await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claim
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_daily_bonus DATE`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS insurance_count BIGINT NOT NULL DEFAULT 0`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ DEFAULT now()`);
+await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ DEFAULT now()`);
 await pool.query(`ALTER TABLE bets ADD COLUMN IF NOT EXISTS insured BOOLEAN NOT NULL DEFAULT FALSE`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS banner_spent BIGINT NOT NULL DEFAULT 0`);
 
@@ -649,6 +651,8 @@ app.post('/api/auth', async (req, res) => {
 
     const u = await ensureUser(uid, username);
 
+    await pool.query('UPDATE users SET last_seen=now() WHERE telegram_id=$1', [uid]);
+
     // считаем рефералов
     const { rows: [ref] } = await pool.query(
       'SELECT COUNT(*)::int AS c FROM referrals WHERE referrer_user_id=$1',
@@ -805,6 +809,96 @@ app.post('/api/stats', requireTgAuth, async (req, res) => {
   } catch (e) {
     console.error('/api/stats', e);
     res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+// GET /api/my/stats?uid=123
+app.get('/api/my/stats', async (req, res) => {
+  try {
+    const uid = Number(req.query.uid);
+    if (!uid) return res.json({ ok:false, error:'NO_UID' });
+
+    const u = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
+    if (u.rowCount === 0) return res.json({ ok:false, error:'NO_USER' });
+    const userId = u.rows[0].id;
+
+    // Победы = кол-во выплат > 0
+    const wins = await pool.query(
+      'SELECT COUNT(*)::int AS c FROM payouts WHERE user_id=$1 AND amount>0',
+      [userId]
+    );
+
+    // Поражения = кол-во ставок без выплаты в том же раунде
+    const losses = await pool.query(`
+      SELECT COUNT(*)::int AS c
+      FROM bets b
+      WHERE b.user_id=$1
+        AND NOT EXISTS (
+          SELECT 1 FROM payouts p
+          WHERE p.user_id=b.user_id AND p.round_id=b.round_id
+        )
+    `, [userId]);
+
+    // Приглашений = рефералы, где он referrer_user_id
+    const invites = await pool.query(`
+      SELECT COUNT(*)::int AS c
+      FROM referrals r
+      WHERE r.referrer_user_id = $1
+    `, [userId]);
+
+    // Онлайн (за последние 60 сек)
+    const online = await pool.query(`
+      SELECT COUNT(*)::int AS c
+      FROM users
+      WHERE last_seen >= now() - interval '60 seconds'
+    `);
+
+    // Последние 10 исходов пользователя (+/-$)
+    const recent = await pool.query(`
+      WITH w AS (
+        SELECT p.round_id, '+'||p.amount::text AS delta, r.winner_side AS side, r.id
+        FROM payouts p
+        JOIN rounds r ON r.id=p.round_id
+        WHERE p.user_id=$1
+      ),
+      l AS (
+        SELECT b.round_id, '-'||b.amount::text AS delta, r.winner_side AS side, r.id
+        FROM bets b
+        JOIN rounds r ON r.id=b.round_id
+        WHERE b.user_id=$1
+          AND NOT EXISTS (
+            SELECT 1 FROM payouts p WHERE p.user_id=b.user_id AND p.round_id=b.round_id
+          )
+      )
+      SELECT * FROM (
+        SELECT round_id, side, delta, id FROM w
+        UNION ALL
+        SELECT round_id, side, delta, id FROM l
+      ) t
+      ORDER BY id DESC
+      LIMIT 10
+    `, [userId]);
+
+    // последний победный раунд — для триггера салюта на фронте
+    const lastWin = await pool.query(
+      `SELECT MAX(round_id)::int AS last_win_round FROM payouts WHERE user_id=$1 AND amount>0`,
+      [userId]
+    );
+
+    res.json({
+      ok: true,
+      stats: {
+        wins: wins.rows[0].c,
+        losses: losses.rows[0].c,
+        invites: invites.rows[0].c,
+        online: online.rows[0].c,
+        recent: recent.rows,              // [{round_id, side, delta, id}]
+        last_win_round: lastWin.rows[0].last_win_round || 0
+      }
+    });
+  } catch (e) {
+    console.error('/api/my/stats', e);
+    res.json({ ok:false, error:'SERVER' });
   }
 });
 
