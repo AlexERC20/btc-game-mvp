@@ -5,7 +5,7 @@ import 'dotenv/config';
 import express from 'express';
 import { Telegraf, Markup } from 'telegraf';
 import pg from 'pg';
-import { grantXP } from '../xp.mjs';
+import { grantXpOnce, XP } from '../xp.mjs';
 
 const { BOT_TOKEN, WEBAPP_URL, DATABASE_URL, PORT = 8081 } = process.env;
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN missing');
@@ -49,7 +49,6 @@ await pool.query(`
     created_at TIMESTAMPTZ DEFAULT now(),
     level INT NOT NULL DEFAULT 1,
     xp BIGINT NOT NULL DEFAULT 0,
-    next_xp BIGINT NOT NULL DEFAULT 5000,
     last_chat_xp_at TIMESTAMPTZ,
     streak_wins INT NOT NULL DEFAULT 0,
     last_result_at TIMESTAMPTZ
@@ -62,13 +61,14 @@ await pool.query(`
     created_at TIMESTAMPTZ DEFAULT now()
   );
 
-  CREATE TABLE IF NOT EXISTS xp_events(
+  CREATE TABLE IF NOT EXISTS xp_log(
     id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id),
     source TEXT NOT NULL,
+    source_id BIGINT,
     amount BIGINT NOT NULL,
-    meta JSONB,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(user_id, source, source_id)
   );
 `);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS channel_bonus_claimed BOOLEAN NOT NULL DEFAULT FALSE;`);
@@ -77,7 +77,6 @@ await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS insurance_count BIGINT NOT NULL DEFAULT 0;`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS level INT NOT NULL DEFAULT 1;`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS xp BIGINT NOT NULL DEFAULT 0;`);
-await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS next_xp BIGINT NOT NULL DEFAULT 5000;`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_chat_xp_at TIMESTAMPTZ;`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_wins INT NOT NULL DEFAULT 0;`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_result_at TIMESTAMPTZ;`);
@@ -286,7 +285,7 @@ bot.on('message', async (ctx) => {
         const credit = STARS_PACKS[pack].credit;
         await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credit, uid]);
         const { rows:[u] } = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
-        if (u) await grantXP(pool, u.id, 1000, 'STARS', { stars: sp.total_amount });
+        if (u) await grantXpOnce(pool, u.id, 'stars', sp.telegram_payment_charge_id, XP.STARS);
         await ctx.reply(`💫 Платёж принят: пакет ${pack}⭐ → +$${credit.toLocaleString()} на баланс.`);
         return;
       }
@@ -295,7 +294,7 @@ bot.on('message', async (ctx) => {
       if (uid && cnt > 0) {
         await pool.query('UPDATE users SET insurance_count = insurance_count + $1 WHERE telegram_id=$2', [cnt, uid]);
         const { rows:[u] } = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
-        if (u) await grantXP(pool, u.id, 1000, 'INSURANCE', { pack: cnt });
+        if (u) await grantXpOnce(pool, u.id, 'insurance', sp.telegram_payment_charge_id, XP.INSURANCE);
         await ctx.reply(`🛡️ Страховки зачислены: +${cnt}.`);
         return;
       }
@@ -308,7 +307,7 @@ bot.on('message', async (ctx) => {
 
     await pool.query('UPDATE users SET balance = balance + $1 WHERE telegram_id=$2', [credited, ctx.from.id]);
     const { rows:[u] } = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [ctx.from.id]);
-    if (u) await grantXP(pool, u.id, 1000, 'STARS', { stars });
+    if (u) await grantXpOnce(pool, u.id, 'stars', sp.telegram_payment_charge_id, XP.STARS);
     await ctx.reply(`💫 Платёж принят: ${stars}⭐ → +$${credited.toLocaleString()}`);
   } catch (e) {
     console.error('successful_payment handler:', e);

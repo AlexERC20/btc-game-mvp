@@ -5,7 +5,7 @@ import cors from 'cors';
 import { WebSocket } from 'ws';
 import pg from 'pg';
 import crypto from 'crypto';
-import { grantXP, levelUpReward, isHappyHour, streakMultiplier } from '../xp.mjs';
+import { grantXpOnce, levelThreshold, xpSpentBeforeLevel, XP } from '../xp.mjs';
 
 function verifyInitData(initData, botToken) {
   try {
@@ -93,7 +93,6 @@ await pool.query(`
     last_seen TIMESTAMPTZ DEFAULT now(),
     level INT NOT NULL DEFAULT 1,
     xp BIGINT NOT NULL DEFAULT 0,
-    next_xp BIGINT NOT NULL DEFAULT 5000,
     last_chat_xp_at TIMESTAMPTZ,
     streak_wins INT NOT NULL DEFAULT 0,
     last_result_at TIMESTAMPTZ,
@@ -135,13 +134,14 @@ await pool.query(`
     created_at TIMESTAMPTZ DEFAULT now()
   );
 
-  CREATE TABLE IF NOT EXISTS xp_events(
+  CREATE TABLE IF NOT EXISTS xp_log(
     id SERIAL PRIMARY KEY,
     user_id INT REFERENCES users(id),
     source TEXT NOT NULL,
+    source_id BIGINT,
     amount BIGINT NOT NULL,
-    meta JSONB,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(user_id, source, source_id)
   );
 `);
 
@@ -165,20 +165,20 @@ await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIME
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ DEFAULT now()`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS level INT NOT NULL DEFAULT 1`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS xp BIGINT NOT NULL DEFAULT 0`);
-await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS next_xp BIGINT NOT NULL DEFAULT 5000`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_chat_xp_at TIMESTAMPTZ`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_wins INT NOT NULL DEFAULT 0`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_result_at TIMESTAMPTZ`);
 await pool.query(`ALTER TABLE bets ADD COLUMN IF NOT EXISTS insured BOOLEAN NOT NULL DEFAULT FALSE`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS banner_spent BIGINT NOT NULL DEFAULT 0`);
 
-await pool.query(`CREATE TABLE IF NOT EXISTS xp_events(
+await pool.query(`CREATE TABLE IF NOT EXISTS xp_log(
   id SERIAL PRIMARY KEY,
   user_id INT REFERENCES users(id),
   source TEXT NOT NULL,
+  source_id BIGINT,
   amount BIGINT NOT NULL,
-  meta JSONB,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(user_id, source, source_id)
 )`);
 
 await pool.query(`DROP TABLE IF EXISTS shout_state; DROP TABLE IF EXISTS shout_history;`);
@@ -513,7 +513,7 @@ async function ensureUser(telegramId, username) {
     );
   }
   const r = await pool.query(
-    'SELECT id, balance, username, insurance_count, level, xp, next_xp, streak_wins FROM users WHERE telegram_id=$1',
+    'SELECT id, balance, username, insurance_count, level, xp, streak_wins FROM users WHERE telegram_id=$1',
     [telegramId]
   );
   return r.rows[0];
@@ -628,6 +628,13 @@ async function settle() {
     [state.price, side, fee, distributable, state.currentRoundId]
   );
 
+  const byUser = new Map();
+  for (const w of winners) {
+    const cur = byUser.get(w.user_id) || { stake: 0, payout: 0 };
+    cur.stake += w.amount;
+    byUser.set(w.user_id, cur);
+  }
+
   if (totalWin > 0 && winners.length) {
     for (const w of winners) {
       const share = Math.round((w.amount / totalWin) * distributable);
@@ -640,7 +647,9 @@ async function settle() {
           'UPDATE users SET balance=balance+$1 WHERE id=$2',
           [share, w.user_id]
         );
-        await grantXP(pool, w.user_id, share, 'WIN', { round_id: state.currentRoundId, payout: share });
+        const cur = byUser.get(w.user_id);
+        cur.payout += share;
+        byUser.set(w.user_id, cur);
         if (w.insured) {
           await pool.query('UPDATE users SET insurance_count=insurance_count+1 WHERE id=$1', [w.user_id]);
         }
@@ -665,6 +674,12 @@ async function settle() {
   }
   for (const id of loseUsers) {
     await pool.query('UPDATE users SET streak_wins=0, last_result_at=now() WHERE id=$1', [id]);
+  }
+
+  for (const [userId, agg] of byUser.entries()) {
+    const profit = Math.max(0, Math.floor(agg.payout - agg.stake));
+    const xpGain = profit * XP.WIN_PER_DOLLAR;
+    await grantXpOnce(pool, userId, 'win', state.currentRoundId, xpGain);
   }
 
   state.history.unshift({
@@ -701,18 +716,8 @@ app.post('/api/auth', async (req, res) => {
       [u.id]
     );
 
-    const streakMult = streakMultiplier(u.streak_wins || 0);
-    const happyMult = isHappyHour(new Date()) ? 2 : 1;
-    const profile = {
-      level: Number(u.level),
-      xp: Number(u.xp),
-      next_xp: Number(u.next_xp),
-      progress: Number(u.next_xp) ? Number(u.xp) / Number(u.next_xp) : 0,
-      next_reward: levelUpReward(Number(u.level) + 1),
-      streak_wins: Number(u.streak_wins || 0),
-      xp_boosts: { streak: streakMult, happy_hour: happyMult }
-    };
-
+    const lvl = Number(u.level);
+    const xp = Number(u.xp);
     res.json({
       ok: true,
       user: {
@@ -721,8 +726,12 @@ app.post('/api/auth', async (req, res) => {
         username: u.username,
         balance: Number(u.balance),
         ref_count: ref?.c ?? 0,
+        insurance: Number(u.insurance_count || 0),
+        level: lvl,
+        xp,
+        level_threshold: levelThreshold(lvl),
+        level_progress: xp - xpSpentBeforeLevel(lvl),
       },
-      profile
     });
   } catch (e) {
     console.error(e);
@@ -781,9 +790,6 @@ app.post('/api/bet', requireTgAuth, async (req, res) => {
       return res.status(400).json({ ok:false, error:'INSUFFICIENT_BALANCE' });
     }
 
-    const prev = await pool.query('SELECT 1 FROM bets WHERE user_id=$1 AND round_id=$2 LIMIT 1', [u.id, state.currentRoundId]);
-    const firstBetInRound = prev.rowCount === 0;
-
     let insured = false;
     if (Number(u.insurance_count) > 0) {
       insured = true;
@@ -791,8 +797,8 @@ app.post('/api/bet', requireTgAuth, async (req, res) => {
     }
 
     await pool.query('UPDATE users SET balance=balance-$1 WHERE id=$2', [amt, u.id]);
-    await pool.query(
-      'INSERT INTO bets(user_id, round_id, side, amount, insured) VALUES ($1,$2,$3,$4,$5)',
+    const ins = await pool.query(
+      'INSERT INTO bets(user_id, round_id, side, amount, insured) VALUES ($1,$2,$3,$4,$5) RETURNING id',
       [u.id, state.currentRoundId, side, amt, insured]
     );
 
@@ -801,7 +807,7 @@ app.post('/api/bet', requireTgAuth, async (req, res) => {
     else if (side === 'SELL'){ state.betsSell.push(bet); state.bankSell += amt; }
     else return res.status(400).json({ ok:false, error:'BAD_SIDE' });
 
-    if (firstBetInRound) await grantXP(pool, u.id, 50, 'BET', { round_id: state.currentRoundId, amount: amt });
+    await grantXpOnce(pool, u.id, 'bet', ins.rows[0].id, XP.BET);
 
     res.json({ ok:true, placed: amt });
   } catch (e) {
@@ -814,22 +820,19 @@ app.post('/api/bet', requireTgAuth, async (req, res) => {
 app.get('/api/round', async (req, res) => {
   const initData = req.query?.initData || '';
   const v = verifyInitData(initData, process.env.BOT_TOKEN);
-  let profile = null;
+  let user = null;
   if (v.ok && v.uid) {
     pool.query('UPDATE users SET last_active_at=now() WHERE telegram_id=$1', [v.uid]).catch(()=>{});
-    const ures = await pool.query('SELECT level, xp, next_xp, streak_wins FROM users WHERE telegram_id=$1', [v.uid]);
+    const ures = await pool.query('SELECT level, xp FROM users WHERE telegram_id=$1', [v.uid]);
     const u = ures.rows[0];
     if (u) {
-      const streakMult = streakMultiplier(u.streak_wins || 0);
-      const happyMult = isHappyHour(new Date()) ? 2 : 1;
-      profile = {
-        level: Number(u.level),
-        xp: Number(u.xp),
-        next_xp: Number(u.next_xp),
-        progress: Number(u.next_xp) ? Number(u.xp) / Number(u.next_xp) : 0,
-        next_reward: levelUpReward(Number(u.level) + 1),
-        streak_wins: Number(u.streak_wins || 0),
-        xp_boosts: { streak: streakMult, happy_hour: happyMult }
+      const lvl = Number(u.level);
+      const xp = Number(u.xp);
+      user = {
+        level: lvl,
+        xp,
+        level_threshold: levelThreshold(lvl),
+        level_progress: xp - xpSpentBeforeLevel(lvl),
       };
     }
   }
@@ -841,7 +844,7 @@ app.get('/api/round', async (req, res) => {
     bankBuy: state.bankBuy, bankSell: state.bankSell,
     betsBuy: state.betsBuy, betsSell: state.betsSell,
     lastSettlement: state.lastSettlement,
-    profile
+    user
   });
 });
 app.get('/api/history', (req, res) => res.json({ history: state.history }));
@@ -1032,7 +1035,7 @@ app.post('/api/shout/bid', requireTgAuth, async (req, res) => {
       [user.id, uid, holderName, text, nextPrice, SHOUT_STEP]
     );
     await client.query('INSERT INTO shout_bids(user_id, telegram_id, username, message, paid) VALUES ($1,$2,$3,$4,$5)', [user.id, uid, holderName, text, nextPrice]);
-    await client.query('INSERT INTO shout_messages(user_id, username, text, price) VALUES ($1,$2,$3,$4)', [user.id, holderName, text, nextPrice]);
+    const insMsg = await client.query('INSERT INTO shout_messages(user_id, username, text, price) VALUES ($1,$2,$3,$4) RETURNING id', [user.id, holderName, text, nextPrice]);
 
     await client.query('COMMIT');
 
@@ -1040,7 +1043,7 @@ app.post('/api/shout/bid', requireTgAuth, async (req, res) => {
     const last = user.last_chat_xp_at ? new Date(user.last_chat_xp_at).getTime() : 0;
     const cooldownOk = !last || now - last >= 10*60*1000;
     if (cooldownOk) {
-      await grantXP(pool, user.id, 300, 'CHAT', { price: nextPrice, textLen: text.length });
+      await grantXpOnce(pool, user.id, 'chat', insMsg.rows[0].id, XP.CHAT);
       await pool.query('UPDATE users SET last_chat_xp_at = now() WHERE id=$1', [user.id]);
     }
 
