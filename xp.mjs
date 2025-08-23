@@ -1,5 +1,3 @@
-import { grantXp } from './lib/accounting.js';
-
 export const XP = {
   BET: 50,
   WIN_PER_DOLLAR: 1,
@@ -51,7 +49,15 @@ export async function grantXpOnce(pool, userId, source, sourceId, amount) {
        VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
       [userId, source, sourceId || null, amount]
     );
-    await grantXp(pool, userId, amount);
+    const r = await pool.query(
+      `UPDATE users SET xp = xp + $1 WHERE id=$2 RETURNING xp, level`,
+      [amount, userId]
+    );
+    const { xp, level } = r.rows[0];
+    const newLevel = calcLevelFromXp(xp);
+    if (newLevel !== level) {
+      await pool.query(`UPDATE users SET level=$1 WHERE id=$2`, [newLevel, userId]);
+    }
   } catch (e) {
     console.error('grantXpOnce', e);
   }
