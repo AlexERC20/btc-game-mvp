@@ -91,8 +91,6 @@
   /* скрываем старые дубли */
   #tleft{ display:none !important; }
   #phase{ display:none !important; }
-  #price{ display:none !important; }
-  #sub{ display:none !important; }
   #timerUnder{ display:none !important; }
   .bank{text-align:center;color:#fff;font-size:18px;margin-top:6px}
   .row{display:flex;gap:14px;justify-content:center;margin:12px 0}
@@ -266,6 +264,26 @@
     100% { color:#fff; text-shadow: 0 0 0 rgba(255,255,255,0); }
   }
 
+  /* скрыть старый верхний баланс */
+  #bal { display: none; }
+
+  /* карточка уровня — выравнивание заголовка и баланса */
+  .levelcard { background: var(--card); border:1px solid var(--border); border-radius:16px; padding:14px; margin:12px 0; }
+  .level-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .level-title { font-weight:800; font-size:18px; }
+  .level-balance { color:#ddd; font-size:14px; white-space:nowrap; }
+
+  .level-bar { height:10px; background:#151515; border-radius:999px; overflow:hidden; margin:10px 0 6px; }
+  .level-fill { height:100%; width:0%; background:var(--green); }
+
+  .level-xp { color:#aaa; font-size:12px; }
+
+  /* меню — компактнее и под уровнем */
+  .menu { margin-top:8px; }
+
+  /* цена BTC внутри круга — уменьшить на 5% */
+  #price { transform: scale(0.95); transform-origin:center; }
+
   #fwCanvas{
     position:fixed; inset:0; z-index:9999; pointer-events:none; display:none;
     backdrop-filter:brightness(0.9);
@@ -274,8 +292,6 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="price" id="price">00:60</div>
-  <div class="sub"   id="sub">Старт: —</div>
   <div class="balance flash-target" id="bal">Баланс: $—</div>
   <div id="viewerBanner" style="display:none;text-align:center;margin:6px 0 10px;">
     <div style="margin-bottom:6px">Открой в Telegram, чтобы играть</div>
@@ -296,7 +312,7 @@
       <!-- ЕДИНЫЙ стек внутри круга -->
       <div class="inring-stack">
         <div class="inring-start" id="startInRing">Старт: —</div>
-        <div class="inring-price" id="priceInRing">$—</div>
+        <div class="inring-price" id="price">$—</div>
         <div class="inring-bottom">
           <span class="inring-timer" id="ringTimer">00:60</span>
           <span class="inring-dot">•</span>
@@ -312,20 +328,6 @@
     <button class="btn buy" id="buy">↑ BUY</button>
     <button class="btn sell" id="sell">↓ SELL</button>
   </div>
-
-  <!-- меню: БЕЗ кнопки "Проверить" -->
-  <div class="menu">
-    <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
-    <button class="chipbtn" id="refBtn">+500$</button>
-    <button class="chipbtn" id="topupBtn">Пополнение</button>
-    <button class="chipbtn" id="insBtn">Страховка</button>
-    <button class="chipbtn" id="statsBtn">Статистика</button>
-    <button class="chipbtn" id="chatFeedBtn">ЧАТ</button>
-    <button class="chipbtn" id="starsBtn">Купить $</button>
-    <button class="chipbtn" id="claimBtn" style="display:none">CLAIM</button>
-  </div>
-  <div id="viewerHint" style="display:none;text-align:center;color:var(--muted);font-size:13px;margin:6px 0 10px;">Зайдите через Telegram WebApp, чтобы играть.</div>
-
   <div class="adline ad-shimmer" id="adLine">
     <div class="ad-left">
       <div class="ad-top">
@@ -340,21 +342,33 @@
     </div>
   </div>
 
-  <div class="card profile" id="profileCard">
-    <div class="row between">
-      <div class="title">Уровень <span id="lvl">1</span></div>
-      <div class="badge" id="nextReward">+ $10 000</div>
+  <div class="levelcard" id="levelCard">
+    <div class="level-head">
+      <div class="level-title">Уровень <span id="lvlNum">1</span></div>
+      <div class="level-balance">Баланс: <span id="balInline">$—</span></div>
     </div>
-    <div class="xpbar">
-      <div class="fill" id="xpFill" style="width:0%"></div>
+    <div class="level-bar">
+      <div class="level-fill" id="xpFill"></div>
     </div>
-    <div class="muted" id="xpText">0 / 5 000 XP</div>
+    <div class="level-xp" id="xpText">0 / 5 000 XP</div>
   </div>
 
-  <div class="history" id="hist"></div>
+  <!-- меню: БЕЗ кнопки "Проверить" -->
+  <div class="menu">
+    <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
+    <button class="chipbtn" id="refBtn">+500$</button>
+    <button class="chipbtn" id="topupBtn">Пополнение</button>
+    <button class="chipbtn" id="insBtn">Страховка</button>
+    <button class="chipbtn" id="statsBtn">Статистика</button>
+    <button class="chipbtn" id="chatFeedBtn">ЧАТ</button>
+    <button class="chipbtn" id="starsBtn">Купить $</button>
+    <button class="chipbtn" id="claimBtn" style="display:none">CLAIM</button>
+  </div>
+  <div id="viewerHint" style="display:none;text-align:center;color:var(--muted);font-size:13px;margin:6px 0 10px;">Зайдите через Telegram WebApp, чтобы играть.</div>
 
   <div class="head">Топ победителей за час</div>
   <div class="lb" id="lb"></div>
+  <div class="history" id="hist"></div>
 </div>
 
 <canvas id="fwCanvas"></canvas>
@@ -511,11 +525,12 @@ let adPriceTimer = null;
 let selectedPack = null;
 
 // elements
-const priceInRing = document.getElementById('priceInRing');
+const priceEl = document.getElementById('price');
 const startInRing = document.getElementById('startInRing');
 const ringTimer   = document.getElementById('ringTimer');
 const ringPhase   = document.getElementById('ringPhase');
 const balEl   = document.getElementById('bal');
+const balInline = document.getElementById('balInline');
 const ring    = document.getElementById('ring');
 const betArc  = document.getElementById('betArc');
 const bankEl  = document.getElementById('bank');
@@ -575,6 +590,14 @@ const adEnter    = document.getElementById('adEnter');
 const viewerBanner = document.getElementById('viewerBanner');
 const viewerHint   = document.getElementById('viewerHint');
 const viewerOpen   = document.getElementById('viewerOpen');
+
+document.addEventListener('DOMContentLoaded', () => {
+  const hist = document.getElementById('hist');
+  const lb   = document.getElementById('lb');
+  if (hist && lb && lb.parentNode) {
+    lb.parentNode.insertBefore(hist, lb.nextSibling);
+  }
+});
 
 if (IS_VIEWER) {
   [buyBtn, sellBtn, cfgBtn, refBtn, topupBtn, insBtn, statsBtn, chatFeedBtn, starsBtn, claimBtn, adWriteBtn, buyStars, buyIns, adSend, checkBonus, claimDo].forEach(b => b && (b.disabled = true));
@@ -700,13 +723,20 @@ function floatAmount(parent, text, plus /*true for +, false for -*/) {
 
 // helpers
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
+function setBalanceVal(amount){
+  const txt = 'Баланс: ' + fmt(amount);
+  if (balEl) balEl.textContent = txt;
+  if (balInline) balInline.textContent = fmt(amount);
+}
 function renderProfile(p){
   if (!p) return;
-  document.getElementById('lvl').textContent = p.level;
+  const lvlEl = document.getElementById('lvlNum');
+  if (lvlEl) lvlEl.textContent = p.level;
   const prog = Math.max(0, Math.min(1, (p.level_progress || 0) / (p.level_threshold || 1)));
-  document.getElementById('xpFill').style.width = (prog*100).toFixed(1)+'%';
-  document.getElementById('xpText').textContent = `${Number(p.level_progress || 0).toLocaleString()} / ${Number(p.level_threshold || 0).toLocaleString()} XP`;
-  document.getElementById('nextReward').textContent = '';
+  const xpFillEl = document.getElementById('xpFill');
+  if (xpFillEl) xpFillEl.style.width = (prog*100).toFixed(1)+'%';
+  const xpTextEl = document.getElementById('xpText');
+  if (xpTextEl) xpTextEl.textContent = `${Number(p.level_progress || 0).toLocaleString()} / ${Number(p.level_threshold || 0).toLocaleString()} XP`;
 }
 function phaseText(p){
   if (p==='betting') return 'Ставки открыты';
@@ -920,7 +950,7 @@ async function auth(){
     body: JSON.stringify({ uid, username })
   }).then(r=>r.json()).catch(()=>({ok:false}));
   if (r.ok) {
-    balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
+    setBalanceVal(r.user.balance);
     INS_COUNT = Number(r.user.insurance || 0);
     if (insCountEl) insCountEl.textContent = 'Доступно: ' + INS_COUNT;
     if (typeof r.user.ref_count === 'number') {
@@ -935,7 +965,7 @@ async function refreshBalance(){
     body: JSON.stringify({ uid, username })
   }).then(r=>r.json()).catch(()=>({ok:false}));
   if (r.ok) {
-    balEl.textContent = 'Баланс: ' + fmt(r.user.balance);
+    setBalanceVal(r.user.balance);
     INS_COUNT = Number(r.user.insurance || 0);
     if (insCountEl) insCountEl.textContent = 'Доступно: ' + INS_COUNT;
     if (typeof r.user.ref_count === 'number') {
@@ -1023,9 +1053,9 @@ async function poll(){
   betArc.setAttribute('stroke-dashoffset', 0);
 
   if (r.price){
-    if (priceInRing){
-      priceInRing.textContent = fmt(r.price);
-      priceInRing.style.color = r.startPrice
+    if (priceEl){
+      priceEl.textContent = fmt(r.price);
+      priceEl.style.color = r.startPrice
         ? (r.price > r.startPrice ? '#1fa36a' : (r.price < r.startPrice ? '#c6423a' : '#fff'))
         : '#fff';
     }
