@@ -59,6 +59,8 @@
   .timer{position:relative;width:300px;height:300px}
   .timer svg{width:100%;height:100%;display:block;transform:rotate(-90deg)}
   .t{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:800}
+  .inring{font-size:42px;font-weight:800;letter-spacing:0.5px}
+  @media (max-width:380px){ .inring{font-size:36px} }
   .phase{text-align:center;color:var(--muted);margin-top:10px}
   .bank{text-align:center;color:#fff;font-size:18px;margin-top:6px}
   .row{display:flex;gap:14px;justify-content:center;margin:12px 0}
@@ -240,7 +242,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="price" id="price">$—</div>
+  <div class="price" id="price">00:60</div>
   <div class="sub"   id="sub">Старт: —</div>
   <div class="balance flash-target" id="bal">Баланс: $—</div>
   <div id="viewerBanner" style="display:none;text-align:center;margin:6px 0 10px;">
@@ -252,10 +254,13 @@
     <div class="timer">
       <svg viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet">
         <circle cx="160" cy="160" r="140" stroke="#1f1f1f" stroke-width="14" fill="none"/>
+        <circle id="betArc" cx="160" cy="160" r="140"
+                stroke="#1fa36a" stroke-width="6" fill="none"
+                stroke-linecap="round" stroke-dasharray="879.645" stroke-dashoffset="0" opacity="0.35"/>
         <circle id="ring" cx="160" cy="160" r="140" stroke="var(--ring)" stroke-width="14" fill="none"
                 stroke-linecap="round" stroke-dasharray="879.645" stroke-dashoffset="0"/>
       </svg>
-      <div class="t" id="tleft">00:60</div>
+      <div class="t inring" id="priceInRing">$—</div>
     </div>
   </div>
 
@@ -466,11 +471,12 @@ let adPriceTimer = null;
 let selectedPack = null;
 
 // elements
-const priceEl = document.getElementById('price');
+const priceInRing = document.getElementById('priceInRing'); // новая цена внутри круга
+const priceEl = document.getElementById('price'); // старый элемент теперь показывает таймер
 const subEl   = document.getElementById('sub');
 const balEl   = document.getElementById('bal');
 const ring    = document.getElementById('ring');
-const tleft   = document.getElementById('tleft');
+const betArc  = document.getElementById('betArc');
 const phaseEl = document.getElementById('phase');
 const bankEl  = document.getElementById('bank');
 const myBetEl = document.getElementById('myBet');
@@ -616,6 +622,7 @@ renderAdLine();
 // модалка «написать» обработана в bindOnce()
 
 const CIRC = 2*Math.PI*140;
+const RLEN = CIRC;
 ring.setAttribute('stroke-dasharray', CIRC);
 
 // --- Haptic helpers (Telegram + fallback vibration)
@@ -969,19 +976,29 @@ async function poll(){
   if (!r) return;
   renderProfile(r.user);
 
+  const len  = r.roundLen || 60;
+  const win  = r.betWindow || 20;
+  const zone = RLEN * (win/len);
+  betArc.setAttribute('stroke-dasharray', `${zone} ${RLEN-zone}`);
+  betArc.setAttribute('stroke-dashoffset', 0);
+
   if (r.price){
-    priceEl.textContent = fmt(r.price);
+    priceInRing.textContent = fmt(r.price);
     if (r.startPrice){
-      priceEl.style.color = r.price>r.startPrice?'#1fa36a':(r.price<r.startPrice?'#c6423a':'#fff');
+      priceInRing.style.color = r.price>r.startPrice?'#1fa36a':(r.price<r.startPrice?'#c6423a':'#fff');
       subEl.textContent = 'Старт: ' + Math.round(r.startPrice);
     }
   }
 
-  tleft.textContent = '00:' + String(Math.max(r.secsLeft||0,0)).padStart(2,'0');
-  const len = r.roundLen||60;
-  const progress = Math.max(0, Math.min(1, (len - (r.secsLeft||0))/len));
+  const secs = Math.max(r.secsLeft||0,0);
+  priceEl.textContent = '00:' + String(secs).padStart(2,'0');
+
+  const progress = Math.max(0, Math.min(1, (len - secs)/len));
   ring.style.transition='stroke-dashoffset .5s linear';
-  ring.setAttribute('stroke-dashoffset', CIRC*progress);
+  ring.setAttribute('stroke-dashoffset', RLEN*progress);
+
+  const bettingOpen = r.phase==='betting';
+  ring.setAttribute('stroke', bettingOpen ? '#1fa36a' : 'var(--ring)');
 
   CURRENT_PHASE = r.phase || 'idle';         // фиксируем текущую фазу
   phaseEl.textContent = phaseText(CURRENT_PHASE);
