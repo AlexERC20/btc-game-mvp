@@ -58,17 +58,42 @@
   .center{display:flex;justify-content:center;align-items:center;margin:8px 0}
   .timer{position:relative;width:300px;height:300px}
   .timer svg{width:100%;height:100%;display:block;transform:rotate(-90deg)}
-  #tleft{display:none;}
-  .t{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:800}
-  .inring{font-size:40px;font-weight:800;letter-spacing:0.5px}
-  @media (max-width:380px){ .inring{font-size:34px} }
-  .timer-under{
-    text-align:center;
-    font-size:28px;
-    font-weight:800;
-    margin-top:8px;
+  /* стек контента внутри круга */
+  .inring-stack{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    pointer-events:none;
   }
-  .phase{text-align:center;color:var(--muted);margin-top:10px}
+
+  .inring-start{
+    font-size:14px; color:var(--muted);
+    margin-bottom:6px;
+  }
+
+  .inring-price{
+    font-size: var(--price-font, 40px);
+    font-weight:800;
+    letter-spacing:0.5px;
+    line-height:1;
+    color: currentColor;
+  }
+  @media (max-width:380px){ .inring-price{font-size:34px} }
+
+  .inring-bottom{
+    display:flex; align-items:center; gap:8px;
+    margin-top:8px;
+    font-size:16px; font-weight:800; color:#ddd;
+  }
+
+  .inring-dot{ opacity:.5 }
+
+  /* скрываем старые дубли */
+  #tleft{ display:none !important; }
+  #phase{ display:none !important; }
+  #price{ display:none !important; }
+  #sub{ display:none !important; }
+  #timerUnder{ display:none !important; }
   .bank{text-align:center;color:#fff;font-size:18px;margin-top:6px}
   .row{display:flex;gap:14px;justify-content:center;margin:12px 0}
   .btn{flex:1;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer}
@@ -267,13 +292,19 @@
         <circle id="ring" cx="160" cy="160" r="140" stroke="var(--ring)" stroke-width="14" fill="none"
                 stroke-linecap="round" stroke-dasharray="879.645" stroke-dashoffset="0"/>
       </svg>
-      <div class="t inring" id="priceInRing">$—</div>
+
+      <!-- ЕДИНЫЙ стек внутри круга -->
+      <div class="inring-stack">
+        <div class="inring-start" id="startInRing">Старт: —</div>
+        <div class="inring-price" id="priceInRing">$—</div>
+        <div class="inring-bottom">
+          <span class="inring-timer" id="ringTimer">00:60</span>
+          <span class="inring-dot">•</span>
+          <span class="inring-phase" id="ringPhase">Ставки открыты</span>
+        </div>
+      </div>
     </div>
   </div>
-
-  <div class="timer-under" id="timerUnder">00:60</div>
-
-  <div class="phase" id="phase">Ставки открыты</div>
   <div class="bank" id="bank">Банк: $0</div>
   <div class="bank" id="myBet"></div>
 
@@ -480,14 +511,13 @@ let adPriceTimer = null;
 let selectedPack = null;
 
 // elements
-const priceInRing = document.getElementById('priceInRing'); // новая цена внутри круга
-const priceEl = document.getElementById('price'); // старый элемент таймера
-const timerUnder = document.getElementById('timerUnder');
-const subEl   = document.getElementById('sub');
+const priceInRing = document.getElementById('priceInRing');
+const startInRing = document.getElementById('startInRing');
+const ringTimer   = document.getElementById('ringTimer');
+const ringPhase   = document.getElementById('ringPhase');
 const balEl   = document.getElementById('bal');
 const ring    = document.getElementById('ring');
 const betArc  = document.getElementById('betArc');
-const phaseEl = document.getElementById('phase');
 const bankEl  = document.getElementById('bank');
 const myBetEl = document.getElementById('myBet');
 const buyBtn  = document.getElementById('buy');
@@ -993,17 +1023,19 @@ async function poll(){
   betArc.setAttribute('stroke-dashoffset', 0);
 
   if (r.price){
-    priceInRing.textContent = fmt(r.price);
-    if (r.startPrice){
-      priceInRing.style.color = r.price>r.startPrice?'#1fa36a':(r.price<r.startPrice?'#c6423a':'#fff');
-      subEl.textContent = 'Старт: ' + Math.round(r.startPrice);
+    if (priceInRing){
+      priceInRing.textContent = fmt(r.price);
+      priceInRing.style.color = r.startPrice
+        ? (r.price > r.startPrice ? '#1fa36a' : (r.price < r.startPrice ? '#c6423a' : '#fff'))
+        : '#fff';
+    }
+    if (startInRing && r.startPrice){
+      startInRing.textContent = 'Старт: ' + Math.round(r.startPrice);
     }
   }
 
   const secs = Math.max(r.secsLeft||0,0);
-  const mm = '00';
-  const ss = String(secs).padStart(2,'0');
-  if (timerUnder) timerUnder.textContent = `${mm}:${ss}`;
+  if (ringTimer) ringTimer.textContent = '00:' + String(secs).padStart(2,'0');
 
   const progress = Math.max(0, Math.min(1, (len - secs)/len));
   ring.style.transition='stroke-dashoffset .5s linear';
@@ -1013,7 +1045,7 @@ async function poll(){
   ring.setAttribute('stroke', bettingOpen ? '#1fa36a' : 'var(--ring)');
 
   CURRENT_PHASE = r.phase || 'idle';         // фиксируем текущую фазу
-  phaseEl.textContent = phaseText(CURRENT_PHASE);
+  if (ringPhase) ringPhase.textContent = phaseText(CURRENT_PHASE);
   bankEl.textContent  = 'Банк: ' + fmt(r.bank);
 
   if (!IS_VIEWER) {
