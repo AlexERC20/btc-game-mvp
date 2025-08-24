@@ -58,9 +58,16 @@
   .center{display:flex;justify-content:center;align-items:center;margin:8px 0}
   .timer{position:relative;width:300px;height:300px}
   .timer svg{width:100%;height:100%;display:block;transform:rotate(-90deg)}
+  #tleft{display:none;}
   .t{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:800}
-  .inring{font-size:42px;font-weight:800;letter-spacing:0.5px}
-  @media (max-width:380px){ .inring{font-size:36px} }
+  .inring{font-size:40px;font-weight:800;letter-spacing:0.5px}
+  @media (max-width:380px){ .inring{font-size:34px} }
+  .timer-under{
+    text-align:center;
+    font-size:28px;
+    font-weight:800;
+    margin-top:8px;
+  }
   .phase{text-align:center;color:var(--muted);margin-top:10px}
   .bank{text-align:center;color:#fff;font-size:18px;margin-top:6px}
   .row{display:flex;gap:14px;justify-content:center;margin:12px 0}
@@ -263,6 +270,8 @@
       <div class="t inring" id="priceInRing">$—</div>
     </div>
   </div>
+
+  <div class="timer-under" id="timerUnder">00:60</div>
 
   <div class="phase" id="phase">Ставки открыты</div>
   <div class="bank" id="bank">Банк: $0</div>
@@ -472,7 +481,8 @@ let selectedPack = null;
 
 // elements
 const priceInRing = document.getElementById('priceInRing'); // новая цена внутри круга
-const priceEl = document.getElementById('price'); // старый элемент теперь показывает таймер
+const priceEl = document.getElementById('price'); // старый элемент таймера
+const timerUnder = document.getElementById('timerUnder');
 const subEl   = document.getElementById('sub');
 const balEl   = document.getElementById('bal');
 const ring    = document.getElementById('ring');
@@ -991,7 +1001,9 @@ async function poll(){
   }
 
   const secs = Math.max(r.secsLeft||0,0);
-  priceEl.textContent = '00:' + String(secs).padStart(2,'0');
+  const mm = '00';
+  const ss = String(secs).padStart(2,'0');
+  if (timerUnder) timerUnder.textContent = `${mm}:${ss}`;
 
   const progress = Math.max(0, Math.min(1, (len - secs)/len));
   ring.style.transition='stroke-dashoffset .5s linear';
