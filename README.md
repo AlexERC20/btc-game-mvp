@@ -1,6 +1,6 @@
-# BTC Game — Final (Telegram WebApp + Bot)
+# ETH Game — Final (Telegram WebApp + Bot)
 
-- Реальная цена BTC (Binance WS)
+- Реальная цена ETH (Binance WS)
 - Раунды: 60c, окно ставок 10c, пауза 10c
 - Комиссия 10% только с проигравших
 - Регистрация через бота → сразу $10 000
@@ -12,7 +12,7 @@
 Web Service (server):
 - Root Directory: server
 - Start: node server.js
-- Env: DATABASE_URL, BINANCE_WS, BOTS_ENABLED (optional bot settings in .env)
+- Env: DATABASE_URL, ASSET, BINANCE_WS, BOTS_ENABLED (optional bot settings in .env)
 
 Background Worker/Web Service (bot):
 - Root Directory: bot
