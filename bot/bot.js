@@ -211,7 +211,7 @@ async function checkAndGrantChannelBonus(ctx) {
 
 function mainMenu(urlWithUid) {
   return Markup.keyboard([
-    [Markup.button.webApp('Открыть BTC Game', urlWithUid)],
+    [Markup.button.webApp('Открыть ETH Game', urlWithUid)],
     [{ text: 'Рефералы' }, { text: 'Проверить' }],
   ]).resize();
 }

@@ -57,9 +57,10 @@ app.use(express.json());
 app.use(express.static('public'));
 
 const PORT = process.env.PORT || 8080;
+const ASSET = process.env.ASSET || 'ETH';
 const BINANCE_WS =
   process.env.BINANCE_WS ||
-  'wss://stream.binance.com:9443/ws/btcusdt@miniTicker';
+  'wss://stream.binance.com:9443/ws/ethusdt@miniTicker';
 
 const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
 const MIN_BET = 50; // ✅ минимальная ставка ($)
@@ -844,6 +845,7 @@ app.get('/api/round', async (req, res) => {
     bankBuy: state.bankBuy, bankSell: state.bankSell,
     betsBuy: state.betsBuy, betsSell: state.betsSell,
     lastSettlement: state.lastSettlement,
+    asset: ASSET,
     user
   });
 });
