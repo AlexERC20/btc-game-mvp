@@ -209,9 +209,16 @@ await pool.query(`
     winner_user_id INT REFERENCES users(id),
     bank BIGINT NOT NULL DEFAULT 0,
     rake BIGINT NOT NULL DEFAULT 0,
-    paid BIGINT NOT NULL DEFAULT 0
+    paid BIGINT NOT NULL DEFAULT 0,
+    winner_tid BIGINT,
+    won_amount BIGINT,
+    settled_at TIMESTAMPTZ
   );
 `);
+
+await pool.query(`ALTER TABLE arena_rounds ADD COLUMN IF NOT EXISTS winner_tid BIGINT`);
+await pool.query(`ALTER TABLE arena_rounds ADD COLUMN IF NOT EXISTS won_amount BIGINT`);
+await pool.query(`ALTER TABLE arena_rounds ADD COLUMN IF NOT EXISTS settled_at TIMESTAMPTZ`);
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS arena_bids(
@@ -611,9 +618,10 @@ async function settleArenaRound() {
   await pool.query('UPDATE users SET balance = balance + $1, xp = xp + $1 WHERE id = $2', [paid, arena.leaderUserId]);
   await pool.query(`
       UPDATE arena_rounds
-      SET ended_at = now(), winner_user_id = $1, bank = $2, rake = $3, paid = $4
-      WHERE id = $5
-  `, [arena.leaderUserId, arena.bank, rake, paid, arena.roundId]);
+      SET ended_at = now(), winner_user_id = $1, bank = $2, rake = $3, paid = $4,
+          winner_tid = $5, won_amount = $4, settled_at = now()
+      WHERE id = $6
+  `, [arena.leaderUserId, arena.bank, rake, paid, arena.leaderTid, arena.roundId]);
   await pool.query('COMMIT');
 
   // в паузу
@@ -1218,6 +1226,7 @@ app.get('/api/arena/state', (req, res) => {
     currentBid: arena.currentBid,
     nextBid: arena.nextBid,
     leader: arena.leaderName ? { name: arena.leaderName } : null,
+    lastWinnerTid: arena.phase === 'pause' ? arena.leaderTid : null,
   });
 });
 
@@ -1276,6 +1285,32 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
     await pool.query('ROLLBACK').catch(()=>{});
     console.error('/api/arena/bid', e);
     res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+app.get('/api/arena/leaderboard', async (req, res) => {
+  const window = req.query.window || '24h';
+  try {
+    const r = await pool.query(`
+      SELECT u.username,
+             ar.winner_tid AS tid,
+             COALESCE(SUM(ar.won_amount),0) AS total_won,
+             COUNT(*) AS wins
+      FROM arena_rounds ar
+      LEFT JOIN users u ON u.id = ar.winner_user_id
+      WHERE ar.settled_at >= now() - $1::interval
+      GROUP BY ar.winner_tid, u.username
+      ORDER BY total_won DESC
+      LIMIT 25
+    `, [window]);
+    res.json({ ok:true, items: r.rows.map(row => ({
+      tid: row.tid ? Number(row.tid) : null,
+      username: row.username ? '@'+row.username : null,
+      total_won: Number(row.total_won || 0),
+      wins: Number(row.wins || 0)
+    })) });
+  } catch (e) {
+    res.json({ ok:false, error:'SERVER' });
   }
 });
 
