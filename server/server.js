@@ -75,13 +75,15 @@ const CHANNEL = process.env.CHANNEL || '@erc20coin';
 const SUBSCRIBE_BONUS = 5000; // разовый за подписку
 const DAILY_BONUS = 1000;     // ежедневный бонус
 
-// === Arena (auction) defaults ===
-const AUCTION_START_BANK = Number(process.env.AUCTION_START_BANK || 10000);
-const AUCTION_MIN_BID = Number(process.env.AUCTION_MIN_BID || 50);
-const AUCTION_STEP = Number(process.env.AUCTION_STEP || 10);
-const AUCTION_FEE_PCT = Number(process.env.AUCTION_FEE_PCT || 0.10);
-const AUCTION_ROUND_LEN = Number(process.env.AUCTION_ROUND_LEN || 60);
-const AUCTION_PAUSE_LEN = Number(process.env.AUCTION_PAUSE_LEN || 8);
+// Arena defaults
+const ARENA = {
+  startBank: 10_000,
+  minBid: 50,
+  step: 10,
+  roundLen: 60,
+  pauseLen: 10,
+  rakePct: 0.10,
+};
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
@@ -191,23 +193,21 @@ await pool.query(`CREATE TABLE IF NOT EXISTS xp_log(
 )`);
 
 await pool.query(`
-  CREATE TABLE IF NOT EXISTS auction_rounds(
+  CREATE TABLE IF NOT EXISTS arena_rounds(
     id SERIAL PRIMARY KEY,
     started_at TIMESTAMPTZ DEFAULT now(),
     ended_at TIMESTAMPTZ,
-    start_bank BIGINT NOT NULL DEFAULT 10000,
-    fee_pct NUMERIC NOT NULL DEFAULT 0.10,
     winner_user_id INT REFERENCES users(id),
     bank BIGINT NOT NULL DEFAULT 0,
-    fee BIGINT NOT NULL DEFAULT 0,
-    payout BIGINT NOT NULL DEFAULT 0
+    rake BIGINT NOT NULL DEFAULT 0,
+    paid BIGINT NOT NULL DEFAULT 0
   );
 `);
 
 await pool.query(`
-  CREATE TABLE IF NOT EXISTS auction_bids(
+  CREATE TABLE IF NOT EXISTS arena_bids(
     id SERIAL PRIMARY KEY,
-    round_id INT REFERENCES auction_rounds(id),
+    round_id INT REFERENCES arena_rounds(id),
     user_id INT REFERENCES users(id),
     amount BIGINT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
@@ -578,82 +578,57 @@ async function grantDailyIfNeeded(telegramId) {
 }
 
 /* ========= Auction subsystem ========= */
-function auctionNextBid() {
-  return Math.max(AUCTION_MIN_BID, auctionState.lastBid + AUCTION_STEP);
-}
-
-let auctionState = {
-  phase: 'idle',
+let arena = {
+  phase: 'idle',            // 'idle' | 'running' | 'pause'
   secsLeft: 0,
-  startBank: AUCTION_START_BANK,
-  feePct: AUCTION_FEE_PCT,
-  minBid: AUCTION_MIN_BID,
-  step: AUCTION_STEP,
-  bank: AUCTION_START_BANK,
-  lastBid: 0,
-  leader: null,
-  bids: [],
-  currentRoundId: null,
-  lastWinner: null,
-  lock: false,
+  bank: ARENA.startBank,
+  currentBid: 0,
+  nextBid: ARENA.minBid,
+  leaderUserId: null,
+  leaderTid: null,
+  leaderName: null,
+  roundId: null,
 };
 
-function resetAuctionState() {
-  auctionState.phase = 'idle';
-  auctionState.secsLeft = 0;
-  auctionState.bank = auctionState.startBank;
-  auctionState.lastBid = 0;
-  auctionState.leader = null;
-  auctionState.bids = [];
-  auctionState.currentRoundId = null;
-  auctionState.lastWinner = null;
+async function settleArenaRound() {
+  // если лидера нет — просто уходим в idle
+  if (!arena.leaderUserId) return toIdle();
+
+  const rake = Math.floor(arena.bank * ARENA.rakePct);
+  const paid = arena.bank - rake;
+
+  // payout + XP победителю, закрыть раунд
+  await pool.query('BEGIN');
+  await pool.query('UPDATE users SET balance = balance + $1, xp = xp + $1 WHERE id = $2', [paid, arena.leaderUserId]);
+  await pool.query(`
+      UPDATE arena_rounds
+      SET ended_at = now(), winner_user_id = $1, bank = $2, rake = $3, paid = $4
+      WHERE id = $5
+  `, [arena.leaderUserId, arena.bank, rake, paid, arena.roundId]);
+  await pool.query('COMMIT');
+
+  // в паузу
+  arena.phase = 'pause';
+  arena.secsLeft = ARENA.pauseLen;
 }
 
-async function settleAuction() {
-  if (auctionState.phase !== 'running' || auctionState.secsLeft > 0 || !auctionState.leader) return;
-  const fee = Math.floor(auctionState.bank * auctionState.feePct);
-  const payout = auctionState.bank - fee;
-  try {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query(
-        `UPDATE users SET balance=balance+$1 WHERE id=$2`,
-        [payout, auctionState.leader.user_id]
-      );
-      if (auctionState.currentRoundId) {
-        await client.query(
-          `UPDATE auction_rounds SET ended_at=now(), winner_user_id=$1, bank=$2, fee=$3, payout=$4 WHERE id=$5`,
-          [auctionState.leader.user_id, auctionState.bank, fee, payout, auctionState.currentRoundId]
-        );
-      }
-      await grantXpOnce(client, auctionState.leader.user_id, 'auction_win', auctionState.currentRoundId, payout);
-      await client.query('COMMIT');
-    } catch (e) {
-      await client.query('ROLLBACK');
-      throw e;
-    } finally {
-      client.release();
-    }
-    auctionState.lastWinner = {
-      name: auctionState.leader.username || '@' + auctionState.leader.tg_id,
-      payout,
-    };
-  } catch (e) {
-    console.error('settleAuction', e);
-  }
-  auctionState.phase = 'pause';
-  auctionState.secsLeft = AUCTION_PAUSE_LEN;
+function toIdle() {
+  arena.phase = 'idle';
+  arena.secsLeft = 0;
+  arena.bank = ARENA.startBank;
+  arena.currentBid = 0;
+  arena.nextBid = ARENA.minBid;
+  arena.leaderUserId = arena.leaderTid = arena.leaderName = null;
+  arena.roundId = null;
 }
 
 setInterval(async () => {
-  if (auctionState.phase === 'running' || auctionState.phase === 'pause') {
-    auctionState.secsLeft -= 1;
-    if (auctionState.phase === 'running' && auctionState.secsLeft <= 0) {
-      await settleAuction();
-    } else if (auctionState.phase === 'pause' && auctionState.secsLeft <= 0) {
-      resetAuctionState();
-    }
+  if (arena.phase === 'running') {
+    arena.secsLeft = Math.max(0, arena.secsLeft - 1);
+    if (arena.secsLeft === 0) await settleArenaRound();
+  } else if (arena.phase === 'pause') {
+    arena.secsLeft = Math.max(0, arena.secsLeft - 1);
+    if (arena.secsLeft === 0) toIdle();
   }
 }, 1000);
 
@@ -1224,100 +1199,64 @@ app.get('/api/leaderboard/xp', async (req, res) => {
   }
 });
 
-/* ========= Auction API ========= */
-function arenaStateHandler(req, res) {
-  const nextBid = auctionNextBid();
-  const leader = auctionState.leader
-    ? { name: auctionState.leader.username || '@' + auctionState.leader.tg_id, lastBid: auctionState.lastBid }
-    : null;
+/* ========= Arena API ========= */
+app.get('/api/arena/state', (req, res) => {
   res.json({
-    phase: auctionState.phase,
-    secsLeft: auctionState.secsLeft,
-    startBank: auctionState.startBank,
-    bank: auctionState.bank,
-    feePct: auctionState.feePct,
-    minBid: auctionState.minBid,
-    step: auctionState.step,
-    nextBid,
-    leader,
-    bidsCount: auctionState.bids.length,
-    lastWinner: auctionState.phase === 'pause' ? auctionState.lastWinner : null,
-    roundLen: AUCTION_ROUND_LEN,
-    pauseLen: AUCTION_PAUSE_LEN,
+    ok: true,
+    phase: arena.phase,
+    secsLeft: arena.secsLeft,
+    bank: arena.bank,
+    currentBid: arena.currentBid,
+    nextBid: arena.nextBid,
+    leader: arena.leaderName ? { name: arena.leaderName } : null,
   });
-}
+});
 
-async function arenaBidHandler(req, res) {
-  while (auctionState.lock) await new Promise(r => setTimeout(r, 5));
-  auctionState.lock = true;
+app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
   try {
-    if (auctionState.phase === 'pause') {
-      return res.status(409).json({ ok:false, error:'PAUSED' });
-    }
     const uid = req.tgUser.id;
-    const uname = req.tgUser.username ? '@' + req.tgUser.username : null;
-    const u = await ensureUser(uid, uname);
-    const required = auctionNextBid();
 
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      if (auctionState.phase === 'idle') {
-        const r = await client.query(
-          `INSERT INTO auction_rounds(start_bank, fee_pct) VALUES ($1,$2) RETURNING id`,
-          [auctionState.startBank, auctionState.feePct]
-        );
-        auctionState.currentRoundId = r.rows[0].id;
-        auctionState.bank = auctionState.startBank;
-      }
-
-      const debit = await client.query(
-        'UPDATE users SET balance=balance-$1 WHERE id=$2 AND balance >= $1 RETURNING id',
-        [required, u.id]
+    if (arena.phase === 'idle') {
+      const r = await pool.query(
+        'INSERT INTO arena_rounds(bank) VALUES($1) RETURNING id',
+        [arena.bank]
       );
-      if (debit.rowCount === 0) {
-        await client.query('ROLLBACK');
-        return res.status(400).json({ ok:false, error:'INSUFFICIENT_BALANCE' });
-      }
-
-      const ins = await client.query(
-        `INSERT INTO auction_bids(round_id, user_id, amount) VALUES ($1,$2,$3) RETURNING id`,
-        [auctionState.currentRoundId, u.id, required]
-      );
-      await grantXpOnce(client, u.id, 'auction_bid', ins.rows[0].id, XP.BET);
-
-      await client.query('COMMIT');
-    } catch (e) {
-      await client.query('ROLLBACK');
-      console.error('/api/auction/bid tx', e);
-      return res.status(503).json({ ok:false, error:'IDLE_START_FAILED' });
-    } finally {
-      client.release();
+      arena.roundId = r.rows[0].id;
+      arena.phase = 'running';
+      arena.secsLeft = ARENA.roundLen;
     }
 
-    auctionState.bank += required;
-    auctionState.lastBid = required;
-    auctionState.leader = { user_id: u.id, tg_id: uid, username: uname };
-    auctionState.bids.push({ user_id: u.id, amount: required, ts: Date.now() });
-    if (auctionState.bids.length > 20) auctionState.bids.shift();
-    auctionState.phase = 'running';
-    auctionState.secsLeft = AUCTION_ROUND_LEN;
+    await pool.query('BEGIN');
+    const u = await pool.query(
+      'SELECT id, balance, username FROM users WHERE telegram_id=$1 FOR UPDATE',
+      [uid]
+    );
+    const userId = u.rows[0]?.id;
+    if (!userId || u.rows[0].balance < arena.nextBid) {
+      await pool.query('ROLLBACK');
+      return res.json({ ok:false, error:'INSUFFICIENT' });
+    }
+    await pool.query('UPDATE users SET balance=balance-$1, xp=xp+50 WHERE id=$2',
+                     [arena.nextBid, userId]);
+    await pool.query('INSERT INTO arena_bids(round_id,user_id,amount) VALUES($1,$2,$3)',
+                     [arena.roundId, userId, arena.nextBid]);
+    await pool.query('COMMIT');
 
-    const nextBid = auctionNextBid();
-    res.json({ ok:true, placed: required, bank: auctionState.bank, secsLeft: auctionState.secsLeft, nextBid });
+    arena.bank += arena.nextBid;
+    arena.currentBid = arena.nextBid;
+    arena.nextBid += ARENA.step;
+    arena.leaderUserId = userId;
+    arena.leaderTid = uid;
+    arena.leaderName = u.rows[0].username || ('id' + userId);
+    arena.secsLeft = ARENA.roundLen;
+
+    return res.json({ ok:true, bank:arena.bank, nextBid:arena.nextBid, secsLeft:arena.secsLeft });
   } catch (e) {
-    console.error('/api/auction/bid', e);
+    await pool.query('ROLLBACK').catch(()=>{});
+    console.error('/api/arena/bid', e);
     res.status(500).json({ ok:false, error:'SERVER' });
-  } finally {
-    auctionState.lock = false;
   }
-}
-
-app.get('/api/auction/state', arenaStateHandler);
-app.get('/api/arena/state', arenaStateHandler);
-app.post('/api/auction/bid', requireTgAuth, arenaBidHandler);
-app.post('/api/arena/bid', requireTgAuth, arenaBidHandler);
+});
 
 
 /* ========= Проверка бонусов (подписка + ежедневка) ========= */

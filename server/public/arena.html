@@ -23,6 +23,23 @@
   #bidBtn{width:100%;margin-top:16px;background:var(--green);border:none;border-radius:16px;padding:14px 0;font-size:20px;font-weight:800;color:#fff;cursor:pointer}
   #bidBtn[disabled]{opacity:.5;cursor:not-allowed}
   #leader{margin-top:16px;font-size:14px;color:var(--text)}
+  .levelcard{background:#0b0b0b;border:1px solid var(--border);border-radius:16px;padding:14px;margin:12px 0;text-align:left}
+  .level-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .level-title{font-weight:800;font-size:18px}
+  .level-balance{color:#ddd;font-size:14px;white-space:nowrap}
+  .level-bar{height:10px;background:#151515;border-radius:999px;overflow:hidden;margin:10px 0 6px}
+  .level-fill{height:100%;width:0%;background:var(--green)}
+  .level-xp{color:#aaa;font-size:12px}
+  .menu{display:flex;gap:10px;justify-content:center;margin:8px 0 10px;flex-wrap:wrap}
+  .chipbtn{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-size:13px;color:#fff;cursor:pointer}
+  .sheet{position:fixed;left:0;right:0;bottom:0;background:#0b0b0b;border-top:1px solid var(--border);border-radius:16px 16px 0 0;transform:translateY(100%);transition:transform .25s ease;padding:14px 14px calc(18px + env(safe-area-inset-bottom));z-index:1000}
+  .sheet.open{transform:translateY(0)}
+  .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:opacity .2s;z-index:900}
+  .sheet-backdrop.show{opacity:1;pointer-events:auto}
+  #sheetChatFeed .feed{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+  .msg{background:#121212;border:1px solid var(--border);border-radius:12px;padding:10px}
+  .msg .meta{color:#aaa;font-size:12px;margin-bottom:4px}
+  .msg .text{font-size:14px;line-height:1.3}
 </style>
 </head>
 <body>
@@ -41,18 +58,132 @@
   </div>
   <button id="bidBtn">Ставка</button>
   <div id="leader"></div>
+  <div class="levelcard" id="levelCard">
+    <div class="level-head">
+      <div class="level-title">Уровень <span id="lvlNum">1</span></div>
+      <div class="level-balance">Баланс: <span id="balInline">$—</span></div>
+    </div>
+    <div class="level-bar">
+      <div class="level-fill" id="xpFill"></div>
+    </div>
+    <div class="level-xp" id="xpText">0 / 5 000 XP</div>
+  </div>
+
+  <div class="menu">
+    <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
+    <button class="chipbtn" id="refBtn">+500$</button>
+    <button class="chipbtn" id="topupBtn">Пополнение</button>
+    <button class="chipbtn" id="insBtn">Страховка</button>
+    <button class="chipbtn" id="statsBtn">Статистика</button>
+    <button class="chipbtn" id="chatFeedBtn">ЧАТ</button>
+    <button class="chipbtn" id="arenaBtn">Арена</button>
+    <button class="chipbtn" id="starsBtn">Купить $</button>
+    <button class="chipbtn" id="claimBtn" style="display:none">CLAIM</button>
+  </div>
+</div>
+<div class="sheet-backdrop" id="sheetBg"></div>
+<div class="sheet" id="sheetChatFeed">
+  <h3>Чат</h3>
+  <div id="chatFeed" class="feed"></div>
 </div>
 <script>
 const tg = window.Telegram?.WebApp; tg?.expand();
-let current = null;
+const ARENA = { roundLen:60, pauseLen:10 };
 const ring = document.getElementById('ring');
 const bankEl = document.getElementById('bank');
-const timeEl = document.getElementById('time');
+const timerEl = document.getElementById('time');
 const statusEl = document.getElementById('status');
 const leaderEl = document.getElementById('leader');
-const btn = document.getElementById('bidBtn');
+const bidBtn = document.getElementById('bidBtn');
+const lvlNum = document.getElementById('lvlNum');
+const balInline = document.getElementById('balInline');
+const xpFill = document.getElementById('xpFill');
+const xpText = document.getElementById('xpText');
 const R = 45; const CIRC = 2 * Math.PI * R;
 const uid = new URLSearchParams(location.search).get('uid') || tg?.initDataUnsafe?.user?.id || '';
+
+const sheetBg = document.getElementById('sheetBg');
+const sheetChatFeed = document.getElementById('sheetChatFeed');
+const chatFeed = document.getElementById('chatFeed');
+const chatFeedBtn = document.getElementById('chatFeedBtn');
+const arenaBtn = document.getElementById('arenaBtn');
+
+function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
+function setBalanceVal(amount){ if(balInline) balInline.textContent = fmt(amount); }
+function renderProfile(p){
+  if(!p) return;
+  lvlNum.textContent = p.level;
+  const prog = Math.max(0, Math.min(1, (p.level_progress||0)/(p.level_threshold||1)));
+  xpFill.style.width = (prog*100).toFixed(1)+'%';
+  xpText.textContent = `${Number(p.level_progress||0).toLocaleString()} / ${Number(p.level_threshold||0).toLocaleString()} XP`;
+  setBalanceVal(p.balance);
+}
+
+async function loadProfile(){
+  if(!uid) return;
+  const r = await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>null);
+  if(r?.ok) renderProfile(r.user);
+}
+
+function renderArena(r){
+  bankEl.textContent = '$' + Number(r.bank).toLocaleString();
+  timerEl.textContent = '00:' + String(r.secsLeft).padStart(2,'0');
+  statusEl.textContent =
+    r.phase === 'idle' ? 'Ожидаем первую ставку' :
+    r.phase === 'pause' ? 'Пауза' : 'Идёт аукцион';
+  bidBtn.textContent = 'Ставка $' + Number(r.nextBid).toLocaleString();
+  bidBtn.disabled = (r.phase !== 'idle' && r.phase !== 'running');
+  leaderEl.textContent = r.leader ? 'Лидер: ' + r.leader.name : '';
+  const pct = r.phase === 'running' ? r.secsLeft / ARENA.roundLen : r.phase === 'pause' ? r.secsLeft / ARENA.pauseLen : 0;
+  ring.style.strokeDasharray = CIRC;
+  ring.style.strokeDashoffset = CIRC * (1 - pct);
+}
+
+async function pollArena(){
+  const r = await fetch('/api/arena/state').then(r=>r.json()).catch(()=>null);
+  if(!r?.ok) return;
+  renderArena(r);
+}
+
+bidBtn.addEventListener('click', async () => {
+  if(bidBtn.disabled) return;
+  const r = await fetch('/api/arena/bid', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ initData: tg?.initData || '' })
+  }).then(r=>r.json()).catch(()=>null);
+  if(r?.ok){ await loadProfile(); await pollArena(); }
+  else if(r?.error==='INSUFFICIENT'){ alert('Недостаточно средств'); }
+});
+
+function openSheet(el){ if(!el) return; sheetBg.classList.add('show'); el.classList.add('open'); }
+function closeAllSheets(){ document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open')); sheetBg.classList.remove('show'); }
+sheetBg.addEventListener('click', closeAllSheets);
+
+chatFeedBtn.onclick = async ()=>{ await loadChatFeed(); openSheet(sheetChatFeed); };
+arenaBtn.onclick = ()=>{ location.href = `/arena.html?uid=${encodeURIComponent(uid)}`; };
+['cfgBtn','refBtn','topupBtn','insBtn','statsBtn','starsBtn','claimBtn'].forEach(id=>{
+  const el = document.getElementById(id);
+  if(el) el.onclick = ()=>{ location.href = `/index.html?uid=${encodeURIComponent(uid)}`; };
+});
+
+async function loadChatFeed(){
+  const r = await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
+  if(!r.ok){ chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>'; return; }
+  chatFeed.innerHTML = r.items.map(it=>(
+    `<div class="msg">
+       <div class="meta">@${(it.username||'anon').replace(/^@+/,'@')} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}</div>
+       <div class="text">${escapeHtml(it.text||'')}</div>
+     </div>`
+  )).join('');
+}
+function escapeHtml(s){
+  const map = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+  return String(s).replace(/[&<>"']/g, m => map[m]);
+}
+
+setInterval(pollArena,1000);
+auth().then(()=>{ loadProfile(); pollArena(); });
 
 async function auth(){
   if(!uid) return;
@@ -61,52 +192,6 @@ async function auth(){
     body: JSON.stringify({ uid })
   }).catch(()=>({}));
 }
-
-function render(s){
-  current = s;
-  bankEl.textContent = '$' + Number(s.bank).toLocaleString();
-  timeEl.textContent = '00:' + String(s.secsLeft).padStart(2,'0');
-  statusEl.textContent = s.phase === 'idle' ? 'Ожидание' : (s.phase==='running' ? 'Идёт аукцион' : 'Пауза');
-  btn.textContent = 'Ставка $' + s.nextBid;
-  btn.disabled = s.phase === 'pause';
-  if(s.leader){ leaderEl.textContent = `Лидер: ${s.leader.name} — $${s.leader.lastBid}`; }
-  else { leaderEl.textContent = ''; }
-  const pct = s.phase==='running' ? s.secsLeft / s.roundLen : (s.phase==='pause'? s.secsLeft/s.pauseLen:0);
-  ring.style.strokeDasharray = CIRC;
-  ring.style.strokeDashoffset = CIRC * (1 - pct);
-}
-
-async function load(){
-  const r = await fetch('/api/arena/state');
-  const d = await r.json();
-  render(d);
-}
-
-btn.addEventListener('click', async () => {
-  if(btn.disabled) return;
-  btn.disabled = true;
-  try {
-    const r = await fetch('/api/arena/bid', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ initData: tg?.initData || '' })
-    });
-    const d = await r.json();
-    if(d.ok){ await load(); }
-    else if(d.error==='OUTBID'){ await load(); }
-    else if(d.error==='INSUFFICIENT_BALANCE'){ alert('Недостаточно средств'); }
-  } finally {
-    btn.disabled = false;
-  }
-});
-
-setInterval(()=>{
-  if(!current) return;
-  if((current.phase==='running' || current.phase==='pause') && current.secsLeft>0){
-    current.secsLeft--; render(current);
-  }
-},1000);
-
-auth().then(load);
 </script>
 </body>
 </html>
