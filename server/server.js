@@ -80,9 +80,18 @@ const ARENA = {
   startBank: 10_000,
   minBid: 50,
   step: 10,
-  roundLen: 60,
   pauseLen: 10,
   rakePct: 0.10,
+};
+
+const ARENA_TIMER = {
+  FIRST_BID_START: 300,      // 5 минут
+  THRESHOLD_LONG: 120,       // 2:00
+  THRESHOLD_SHORT: 30,       // 0:30
+  EXTENSION_LONG: 20,        // +20s
+  EXTENSION_MEDIUM: 10,      // +10s
+  OVERTIME_FLOOR: 15,        // не меньше 15s
+  // OPTIONAL: MAX_CAP: 900, // верхняя «крыша», если нужна (15 мин)
 };
 
 const pool = new pg.Pool({
@@ -579,7 +588,7 @@ async function grantDailyIfNeeded(telegramId) {
 
 /* ========= Auction subsystem ========= */
 let arena = {
-  phase: 'idle',            // 'idle' | 'running' | 'pause'
+  phase: 'idle',            // 'idle' | 'betting' | 'pause'
   secsLeft: 0,
   bank: ARENA.startBank,
   currentBid: 0,
@@ -623,7 +632,7 @@ function toIdle() {
 }
 
 setInterval(async () => {
-  if (arena.phase === 'running') {
+  if (arena.phase === 'betting') {
     arena.secsLeft = Math.max(0, arena.secsLeft - 1);
     if (arena.secsLeft === 0) await settleArenaRound();
   } else if (arena.phase === 'pause') {
@@ -1222,8 +1231,8 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
         [arena.bank]
       );
       arena.roundId = r.rows[0].id;
-      arena.phase = 'running';
-      arena.secsLeft = ARENA.roundLen;
+      arena.phase = 'betting';
+      arena.secsLeft = ARENA_TIMER.FIRST_BID_START;
     }
 
     await pool.query('BEGIN');
@@ -1248,7 +1257,19 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
     arena.leaderUserId = userId;
     arena.leaderTid = uid;
     arena.leaderName = u.rows[0].username || ('id' + userId);
-    arena.secsLeft = ARENA.roundLen;
+
+    if (arena.secsLeft > ARENA_TIMER.THRESHOLD_LONG) {
+      arena.secsLeft += ARENA_TIMER.EXTENSION_LONG;
+    } else if (arena.secsLeft >= ARENA_TIMER.THRESHOLD_SHORT) {
+      arena.secsLeft += ARENA_TIMER.EXTENSION_MEDIUM;
+    } else {
+      if (arena.secsLeft < ARENA_TIMER.OVERTIME_FLOOR) {
+        arena.secsLeft = ARENA_TIMER.OVERTIME_FLOOR;
+      }
+    }
+
+    // OPTIONAL cap
+    // arena.secsLeft = Math.min(arena.secsLeft, ARENA_TIMER.MAX_CAP || Infinity);
 
     return res.json({ ok:true, bank:arena.bank, nextBid:arena.nextBid, secsLeft:arena.secsLeft });
   } catch (e) {
