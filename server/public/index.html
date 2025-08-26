@@ -379,7 +379,6 @@
   <!-- меню: БЕЗ кнопки "Проверить" -->
   <div class="menu">
     <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
-    <button class="chipbtn" id="refBtn">+500$</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="insBtn">Страховка</button>
     <button class="chipbtn" id="statsBtn">Статистика</button>
@@ -428,7 +427,7 @@
   <p>• +$500 — за каждого друга по реф-ссылке</p>
   <div class="btnrow">
     <button class="btnsm" id="openChannel">Открыть канал</button>
-    <button class="btnsm" id="checkBonus">Проверить</button>
+    <button class="btnsm" id="refBtn">+500$</button>
   </div>
   <div class="btnrow">
     <button class="btnsm cancel" data-close>Закрыть</button>
@@ -691,7 +690,6 @@ const cfgSave   = document.getElementById('cfgSave');
 
 // topup controls
 const openChannel = document.getElementById('openChannel');
-const checkBonus  = document.getElementById('checkBonus');
 
 // stars controls
 const starsPacks = document.getElementById('starsPacks');
@@ -716,7 +714,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 if (IS_VIEWER) {
-  [buyBtn, sellBtn, cfgBtn, refBtn, topupBtn, insBtn, statsBtn, chatFeedBtn, arenaBtn, starsBtn, claimBtn, adWriteBtn, buyStars, buyIns, adSend, checkBonus, claimDo].forEach(b => b && (b.disabled = true));
+  [buyBtn, sellBtn, cfgBtn, refBtn, topupBtn, insBtn, statsBtn, chatFeedBtn, arenaBtn, starsBtn, claimBtn, adWriteBtn, buyStars, buyIns, adSend, claimDo].forEach(b => b && (b.disabled = true));
   viewerBanner.style.display = 'block';
   viewerHint.style.display   = 'block';
   viewerOpen.onclick = (e)=>{ e.preventDefault(); const link = `https://t.me/${BOT_USERNAME}?startapp=go`; try{ if(window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(link); else window.location.href = link; } catch{ window.location.href = link; } };
@@ -975,19 +973,6 @@ function bindOnce(){
       if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK);
       else window.location.href = CHANNEL_LINK;
     }catch(e){ window.location.href = CHANNEL_LINK; }
-  };
-  checkBonus.onclick = async ()=>{
-    const r = await api('/api/bonus/check').catch(()=>({ ok:false }));
-
-    if (!r.ok) { alert('Не удалось проверить бонус.'); return; }
-
-    if (r.added > 0) {
-      await refreshBalance();
-      alert('Начислено: $' + Number(r.added).toLocaleString());
-    } else {
-      alert(r.msg || 'Пока ничего не начислено.');
-    }
-    closeAllSheets();
   };
   refBtn.onclick = ()=>{
     const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
