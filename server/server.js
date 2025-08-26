@@ -1225,7 +1225,7 @@ app.get('/api/leaderboard/xp', async (req, res) => {
 });
 
 /* ========= Auction API ========= */
-app.get('/api/auction/state', (req, res) => {
+function arenaStateHandler(req, res) {
   const nextBid = auctionNextBid();
   const leader = auctionState.leader
     ? { name: auctionState.leader.username || '@' + auctionState.leader.tg_id, lastBid: auctionState.lastBid }
@@ -1245,9 +1245,9 @@ app.get('/api/auction/state', (req, res) => {
     roundLen: AUCTION_ROUND_LEN,
     pauseLen: AUCTION_PAUSE_LEN,
   });
-});
+}
 
-app.post('/api/auction/bid', requireTgAuth, async (req, res) => {
+async function arenaBidHandler(req, res) {
   while (auctionState.lock) await new Promise(r => setTimeout(r, 5));
   auctionState.lock = true;
   try {
@@ -1312,7 +1312,12 @@ app.post('/api/auction/bid', requireTgAuth, async (req, res) => {
   } finally {
     auctionState.lock = false;
   }
-});
+}
+
+app.get('/api/auction/state', arenaStateHandler);
+app.get('/api/arena/state', arenaStateHandler);
+app.post('/api/auction/bid', requireTgAuth, arenaBidHandler);
+app.post('/api/arena/bid', requireTgAuth, arenaBidHandler);
 
 
 /* ========= Проверка бонусов (подписка + ежедневка) ========= */
