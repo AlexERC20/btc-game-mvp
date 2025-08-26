@@ -524,6 +524,9 @@ let state = {
 };
 const MAX_HIST = 10;
 
+// one-time result notifications per user { tid -> {id,youWin,amount,ts} }
+const pendingResults = new Map();
+
 /* ========= Цена (Binance WS) ========= */
 let ws = null;
 function connectPrice() {
@@ -620,6 +623,23 @@ async function settleArenaRound() {
       WHERE id = $6
   `, [arena.leaderUserId, arena.bank, rake, paid, arena.leaderTid, arena.roundId]);
   await pool.query('COMMIT');
+
+  try {
+    const { rows:[sum] } = await pool.query(
+      'SELECT COALESCE(SUM(amount),0) AS spent FROM arena_bids WHERE round_id=$1 AND user_id=$2',
+      [arena.roundId, arena.leaderUserId]
+    );
+    const spent = Number(sum?.spent || 0);
+    const delta = paid - spent;
+    const res = { id: crypto.randomUUID(), youWin: true, amount: delta, ts: Date.now() };
+    pendingResults.set(String(arena.leaderTid), res);
+    setTimeout(() => {
+      const cur = pendingResults.get(String(arena.leaderTid));
+      if (cur && cur.id === res.id) pendingResults.delete(String(arena.leaderTid));
+    }, 5000);
+  } catch (e) {
+    console.error('arena result', e);
+  }
 
   // после завершения сразу в idle
   toIdle();
@@ -738,11 +758,12 @@ async function settle() {
     [state.price, side, fee, distributable, state.currentRoundId]
   );
 
+  const allBets = state.betsBuy.concat(state.betsSell);
   const byUser = new Map();
-  for (const w of winners) {
-    const cur = byUser.get(w.user_id) || { stake: 0, payout: 0 };
-    cur.stake += w.amount;
-    byUser.set(w.user_id, cur);
+  for (const b of allBets) {
+    const cur = byUser.get(b.user_id) || { stake: 0, payout: 0, tgId: b.user };
+    cur.stake += b.amount;
+    byUser.set(b.user_id, cur);
   }
 
   if (totalWin > 0 && winners.length) {
@@ -758,8 +779,10 @@ async function settle() {
           [share, w.user_id]
         );
         const cur = byUser.get(w.user_id);
-        cur.payout += share;
-        byUser.set(w.user_id, cur);
+        if (cur) {
+          cur.payout += share;
+          byUser.set(w.user_id, cur);
+        }
         if (w.insured) {
           await pool.query('UPDATE users SET insurance_count=insurance_count+1 WHERE id=$1', [w.user_id]);
         }
@@ -772,6 +795,11 @@ async function settle() {
       const refund = Math.floor(l.amount / 2);
       if (refund > 0) {
         await pool.query('UPDATE users SET balance=balance+$1 WHERE id=$2', [refund, l.user_id]);
+        const cur = byUser.get(l.user_id);
+        if (cur) {
+          cur.payout += refund;
+          byUser.set(l.user_id, cur);
+        }
       }
     }
   }
@@ -790,6 +818,21 @@ async function settle() {
     const profit = Math.max(0, Math.floor(agg.payout - agg.stake));
     const xpGain = profit * XP.WIN_PER_DOLLAR;
     await grantXpOnce(pool, userId, 'win', state.currentRoundId, xpGain);
+
+    const delta = Math.floor(agg.payout - agg.stake);
+    if (!String(agg.tgId || '').startsWith('bot:')) {
+      const res = {
+        id: crypto.randomUUID(),
+        youWin: delta > 0,
+        amount: delta,
+        ts: Date.now(),
+      };
+      pendingResults.set(String(agg.tgId), res);
+      setTimeout(() => {
+        const cur = pendingResults.get(String(agg.tgId));
+        if (cur && cur.id === res.id) pendingResults.delete(String(agg.tgId));
+      }, 5000);
+    }
   }
 
   state.history.unshift({
@@ -931,6 +974,7 @@ app.get('/api/round', async (req, res) => {
   const initData = req.query?.initData || '';
   const v = verifyInitData(initData, process.env.BOT_TOKEN);
   let user = null;
+  let result = null;
   if (v.ok && v.uid) {
     pool.query('UPDATE users SET last_active_at=now() WHERE telegram_id=$1', [v.uid]).catch(()=>{});
     const ures = await pool.query('SELECT level, xp FROM users WHERE telegram_id=$1', [v.uid]);
@@ -944,6 +988,7 @@ app.get('/api/round', async (req, res) => {
         level_threshold: levelThreshold(lvl),
         level_progress: xp - xpSpentBeforeLevel(lvl),
       };
+      result = pendingResults.get(String(v.uid)) || null;
     }
   }
   res.json({
@@ -955,7 +1000,8 @@ app.get('/api/round', async (req, res) => {
     betsBuy: state.betsBuy, betsSell: state.betsSell,
     lastSettlement: state.lastSettlement,
     asset: ASSET,
-    user
+    user,
+    result
   });
 });
 app.get('/api/history', (req, res) => res.json({ history: state.history }));
@@ -1223,6 +1269,11 @@ app.get('/api/leaderboard/xp', async (req, res) => {
 
 /* ========= Arena API ========= */
 app.get('/api/arena/state', (req, res) => {
+  const initData = req.query?.initData || '';
+  let result = null;
+  const v = verifyInitData(initData, process.env.BOT_TOKEN);
+  if (v.ok && v.uid) result = pendingResults.get(String(v.uid)) || null;
+
   res.json({
     ok: true,
     phase: arena.phase,
@@ -1231,6 +1282,7 @@ app.get('/api/arena/state', (req, res) => {
     leader: arena.leaderName ? { name: arena.leaderName } : null,
     bidStep: ARENA.step,
     minBid: ARENA.minBid,
+    result,
   });
 });
 
@@ -1314,6 +1366,15 @@ app.get('/api/arena/leaderboard', async (req, res) => {
   } catch (e) {
     res.json({ ok:false, error:'SERVER' });
   }
+});
+
+
+app.post('/api/result/ack', requireTgAuth, (req, res) => {
+  const { id } = req.body || {};
+  const uid = String(req.tgUser.id);
+  const cur = pendingResults.get(uid);
+  if (cur && cur.id === id) pendingResults.delete(uid);
+  res.json({ ok:true });
 });
 
 

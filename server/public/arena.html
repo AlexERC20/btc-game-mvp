@@ -172,6 +172,22 @@
 
   @keyframes ringPulse{0%{transform:scale(1);}50%{transform:scale(1.02);}100%{transform:scale(1);}}
   .timer.pulse{animation:ringPulse 0.5s ease;}
+
+  .result-banner{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:none; opacity:0; transform:scale(.9);
+    font-weight:900; letter-spacing:.5px; text-align:center;
+    text-shadow:0 6px 24px rgba(0,0,0,.45);
+    transition:opacity .25s ease, transform .25s ease;
+    font-size: clamp(32px, 8vw, 72px);
+  }
+  .result-banner.show{ opacity:1; transform:scale(1); }
+
+  .result-win{ color:#20d28a; }
+  .result-lose{ color:#ff6b6b; }
+
+  .ring-flash{ filter: drop-shadow(0 0 16px currentColor) brightness(1.25); }
 </style>
 </head>
 <body>
@@ -188,6 +204,7 @@
         <div class="inring-price" id="bank" data-v="0">$0</div>
         <div class="inring-bottom" id="ringStatus">00:00 • Ожидаем ставку</div>
       </div>
+      <div class="result-banner" id="resultBanner" aria-live="polite"></div>
     </div>
   </div>
   <button class="btn" id="bidBtn">Ставка $0</button>
@@ -302,6 +319,63 @@ const tg = window.Telegram?.WebApp; tg?.expand();
 const uid = tg?.initDataUnsafe?.user?.id || null;
 const username = tg?.initDataUnsafe?.user?.username ? '@'+tg.initDataUnsafe.user.username : null;
 
+let lastResultId = null;
+
+function vibSuccess(){
+  try{
+    Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+    Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('heavy');
+  }catch(_){ }
+  if (navigator.vibrate) navigator.vibrate([20,40,20]);
+}
+function vibError(){
+  try{
+    Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('error');
+    Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('heavy');
+  }catch(_){ }
+  if (navigator.vibrate) navigator.vibrate([60,40,60]);
+}
+
+function showResultBanner({ youWin, amount }){
+  const banner = document.getElementById('resultBanner');
+  if (!banner) return;
+  banner.className = 'result-banner show ' + (youWin ? 'result-win' : 'result-lose');
+  banner.textContent = youWin ? 'YOU WON!' : 'YOU LOSE!';
+  try{
+    const ring = document.getElementById('ring');
+    ring?.classList.add('ring-flash');
+    ring?.style?.setProperty('color', youWin ? '#20d28a' : '#ff6b6b');
+    setTimeout(()=> ring?.classList.remove('ring-flash'), 1200);
+  }catch(_){ }
+  youWin ? vibSuccess() : vibError();
+
+  if (typeof amount === 'number'){
+    flyAmountChip(amount, youWin);
+  }
+
+  setTimeout(()=> banner.classList.remove('show'), 1600);
+}
+
+function flyAmountChip(amount, youWin){
+  const chip = document.createElement('div');
+  chip.textContent = (youWin?'+$':'-$') + Math.abs(amount).toLocaleString();
+  chip.style.cssText = `
+    position:absolute; left:50%; top:52%;
+    transform:translate(-50%,-50%); padding:.35rem .6rem;
+    border-radius:999px; font-weight:800; font-size:14px;
+    background:rgba(0,0,0,.6); border:1px solid #2b2b2b;
+    color:${youWin?'#20d28a':'#ff6b6b'}; opacity:0;
+    transition: transform .9s cubic-bezier(.2,.8,.2,1), opacity .9s;
+  `;
+  const host = document.querySelector('.timer') || document.body;
+  host.appendChild(chip);
+  requestAnimationFrame(()=>{
+    chip.style.opacity='1';
+    chip.style.transform='translate(-50%,-160%)';
+  });
+  setTimeout(()=> chip.remove(), 1100);
+}
+
 if (window.Telegram?.WebApp?.BackButton) {
   Telegram.WebApp.BackButton.show();
   Telegram.WebApp.onEvent('backButtonClicked', () => { window.location.href = '/'; });
@@ -375,6 +449,7 @@ async function loadProfile(){
   const r = await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>null);
   if(r?.ok) renderProfile(r.user);
 }
+const refreshBalance = loadProfile;
 function calcNextBid(bank, minBid, step){
   const diff = Math.max(0, bank - START_BANK);
   const a = step;
@@ -411,7 +486,17 @@ function renderArena(st){
   arenaPhase = st.phase;
 }
 async function pollArena(){
-  const r = await fetch('/api/arena/state').then(r=>r.json()).catch(()=>null);
+  const r = await fetch(`/api/arena/state?initData=${encodeURIComponent(tg?.initData||'')}`).then(r=>r.json()).catch(()=>null);
+  if(r?.result && r.result.id !== lastResultId){
+    lastResultId = r.result.id;
+    showResultBanner({ youWin: r.result.youWin, amount: r.result.amount });
+    refreshBalance?.();
+    fetch('/api/result/ack', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id: r.result.id, initData: tg?.initData || '' })
+    }).catch(()=>{});
+  }
   if(r?.ok) renderArena(r);
 }
 async function pollAd(){
