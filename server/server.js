@@ -82,16 +82,12 @@ const ARENA = {
   step: 10,
   pauseLen: 10,
   rakePct: 0.10,
-};
 
-const ARENA_TIMER = {
-  FIRST_BID_START: 300,      // 5 минут
-  THRESHOLD_LONG: 120,       // 2:00
-  THRESHOLD_SHORT: 30,       // 0:30
-  EXTENSION_LONG: 20,        // +20s
-  EXTENSION_MEDIUM: 10,      // +10s
-  OVERTIME_FLOOR: 15,        // не меньше 15s
-  // OPTIONAL: MAX_CAP: 900, // верхняя «крыша», если нужна (15 мин)
+  // timer rules
+  start_after_first_bid_secs: 60, // старт таймера после первой ставки
+  extend_on_bid_secs: 10,         // продление при ставке до лимита
+  hard_cap_secs: 180,             // жёсткий лимит раунда — 3:00
+  hold_to_win_secs: 10,           // победа, если 10с без перебития
 };
 
 const pool = new pg.Pool({
@@ -604,6 +600,9 @@ let arena = {
   leaderTid: null,
   leaderName: null,
   roundId: null,
+  firstBidAt: null,
+  lastBidAt: null,
+  capReached: false,
 };
 
 async function settleArenaRound() {
@@ -627,6 +626,8 @@ async function settleArenaRound() {
   // в паузу
   arena.phase = 'pause';
   arena.secsLeft = ARENA.pauseLen;
+  arena.firstBidAt = arena.lastBidAt = null;
+  arena.capReached = false;
 }
 
 function toIdle() {
@@ -637,12 +638,30 @@ function toIdle() {
   arena.nextBid = ARENA.minBid;
   arena.leaderUserId = arena.leaderTid = arena.leaderName = null;
   arena.roundId = null;
+  arena.firstBidAt = arena.lastBidAt = null;
+  arena.capReached = false;
 }
 
 setInterval(async () => {
   if (arena.phase === 'betting') {
-    arena.secsLeft = Math.max(0, arena.secsLeft - 1);
-    if (arena.secsLeft === 0) await settleArenaRound();
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (arena.firstBidAt) {
+      const elapsed = nowSec - arena.firstBidAt;
+      if (elapsed >= ARENA.hard_cap_secs) {
+        arena.capReached = true;
+        arena.secsLeft = 0;
+      } else if (!arena.capReached && arena.secsLeft > 0) {
+        arena.secsLeft = Math.max(0, arena.secsLeft - 1);
+      }
+      if (
+        arena.secsLeft === 0 &&
+        arena.leaderUserId &&
+        arena.lastBidAt &&
+        nowSec - arena.lastBidAt >= ARENA.hold_to_win_secs
+      ) {
+        await settleArenaRound();
+      }
+    }
   } else if (arena.phase === 'pause') {
     arena.secsLeft = Math.max(0, arena.secsLeft - 1);
     if (arena.secsLeft === 0) toIdle();
@@ -1222,6 +1241,7 @@ app.get('/api/arena/state', (req, res) => {
     ok: true,
     phase: arena.phase,
     secsLeft: arena.secsLeft,
+    capReached: arena.capReached,
     bank: arena.bank,
     currentBid: arena.currentBid,
     nextBid: arena.nextBid,
@@ -1234,6 +1254,7 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
   try {
     const uid = req.tgUser.id;
 
+    const nowSec = Math.floor(Date.now()/1000);
     if (arena.phase === 'idle') {
       const r = await pool.query(
         'INSERT INTO arena_rounds(bank) VALUES($1) RETURNING id',
@@ -1241,7 +1262,10 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
       );
       arena.roundId = r.rows[0].id;
       arena.phase = 'betting';
-      arena.secsLeft = ARENA_TIMER.FIRST_BID_START;
+      arena.firstBidAt = nowSec;
+      arena.lastBidAt = nowSec;
+      arena.capReached = false;
+      arena.secsLeft = ARENA.start_after_first_bid_secs;
     }
 
     await pool.query('BEGIN');
@@ -1267,18 +1291,17 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
     arena.leaderTid = uid;
     arena.leaderName = u.rows[0].username || ('id' + userId);
 
-    if (arena.secsLeft > ARENA_TIMER.THRESHOLD_LONG) {
-      arena.secsLeft += ARENA_TIMER.EXTENSION_LONG;
-    } else if (arena.secsLeft >= ARENA_TIMER.THRESHOLD_SHORT) {
-      arena.secsLeft += ARENA_TIMER.EXTENSION_MEDIUM;
-    } else {
-      if (arena.secsLeft < ARENA_TIMER.OVERTIME_FLOOR) {
-        arena.secsLeft = ARENA_TIMER.OVERTIME_FLOOR;
-      }
+    arena.lastBidAt = nowSec;
+    const elapsed = arena.firstBidAt ? nowSec - arena.firstBidAt : 0;
+    if (!arena.capReached && elapsed < ARENA.hard_cap_secs) {
+      arena.secsLeft = Math.min(
+        arena.secsLeft + ARENA.extend_on_bid_secs,
+        ARENA.hard_cap_secs - elapsed
+      );
+    } else if (elapsed >= ARENA.hard_cap_secs) {
+      arena.capReached = true;
+      arena.secsLeft = 0;
     }
-
-    // OPTIONAL cap
-    // arena.secsLeft = Math.min(arena.secsLeft, ARENA_TIMER.MAX_CAP || Infinity);
 
     return res.json({ ok:true, bank:arena.bank, nextBid:arena.nextBid, secsLeft:arena.secsLeft });
   } catch (e) {
