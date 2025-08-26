@@ -2,684 +2,167 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Арена</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
-  :root{
-    --bg:#000; --text:#fff; --muted:#b9b9b9; --ring:#ff8c00;
-    --green:#1fa36a; --red:#c6423a; --card:#0b0b0b; --border:#1e1e1e; --chip:#121212;
-  }
-  *{box-sizing:border-box}
-  html,body{height:100%;margin:0}
-  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial}
-  .wrap{max-width:520px;margin:24px auto 0;padding:16px 14px 28px}
-  .back-text{background:none;border:none;color:#fff;font-size:14px;padding:0;margin-bottom:6px;cursor:pointer}
-  .page-title{font-size:28px;font-weight:800;text-align:center;margin:0 0 12px}
-  .price{font-size:24px;font-weight:800;text-align:center;margin-top:2px}
-  .sub{font-size:12px;color:var(--muted);text-align:center;margin:2px 0 8px}
-  .balance{text-align:center;font-size:16px;margin:4px 0 8px}
-
-  /* контейнер для вспышек */
-  .flash-target { position: relative; }
-
-  /* зелёная/красная вспышка рамки */
-  .flash-green, .flash-red {
-    box-shadow: 0 0 0 2px rgba(255,255,255,0);
-    animation-duration: 600ms;
-    animation-fill-mode: forwards;
-  }
-  @keyframes flashG {
-    0%   { box-shadow: 0 0 0 0 rgba(31,163,106,0.0); }
-    30%  { box-shadow: 0 0 0 4px rgba(31,163,106,0.9); }
-    100% { box-shadow: 0 0 0 0 rgba(31,163,106,0.0); }
-  }
-  @keyframes flashR {
-    0%   { box-shadow: 0 0 0 0 rgba(198,66,58,0.0); }
-    30%  { box-shadow: 0 0 0 4px rgba(198,66,58,0.9); }
-    100% { box-shadow: 0 0 0 0 rgba(198,66,58,0.0); }
-  }
-  .flash-green { animation-name: flashG; }
-  .flash-red   { animation-name: flashR;  }
-
-  /* всплывающие суммы */
-  .float-amount {
-    position: absolute; left: 50%; top: -8px; transform: translateX(-50%);
-    font-weight: 800; pointer-events: none; opacity: 0;
-    animation: floatUp 700ms ease-out forwards;
-    text-shadow: 0 1px 0 rgba(0,0,0,.6);
-  }
-  .float-plus  { color:#1fa36a; }
-  .float-minus { color:#c6423a; }
-
-  @keyframes floatUp {
-    0%   { transform: translate(-50%, 0);    opacity: 0; }
-    15%  { transform: translate(-50%, -6px); opacity: .95; }
-    100% { transform: translate(-50%, -28px); opacity: 0; }
-  }
-  .center{display:flex;justify-content:center;align-items:center;margin:8px 0}
-  .timer{position:relative;width:300px;height:300px}
-  .timer svg{width:100%;height:100%;display:block;transform:rotate(-90deg)}
-  /* стек контента внутри круга */
-  .inring-stack{
-    position:absolute; inset:0;
-    display:flex; flex-direction:column;
-    align-items:center; justify-content:center;
-    pointer-events:none;
-  }
-  .inring-price{
-    font-size: var(--price-font, 38px);
-    font-weight:800;
-    letter-spacing:0.5px;
-    line-height:1;
-    color: currentColor;
-  }
-  @media (max-width:380px){ .inring-price{font-size:34px} }
-
-  .inring-bottom{
-    width:70%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:8px;font-size:clamp(12px,2.8vw,16px);font-weight:800;color:#ddd;
-  }
-
-  .bank{text-align:center;color:#fff;font-size:18px;margin-top:6px}
-  .btn{width:100%;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer;background:var(--green);margin-top:16px}
-  .btn:active{transform:translateY(1px) scale(.99)}
-  .btn[disabled]{opacity:.5;cursor:not-allowed}
-
-  .head{color:var(--text);font-size:14px;margin:16px 0;text-align:center}
-
-  /* карточка уровня — выравнивание заголовка и баланса */
-  .levelcard { background: var(--card); border:1px solid var(--border); border-radius:16px; padding:14px; margin:12px 0; }
-  .level-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-  .level-title { font-weight:800; font-size:18px; }
-  .level-balance { color:#ddd; font-size:14px; white-space:nowrap; }
-  .level-bar { height:10px; background:#151515; border-radius:999px; overflow:hidden; margin:10px 0 6px; }
-  .level-fill { height:100%; width:0%; background:var(--green); }
-  .level-xp { color:#aaa; font-size:12px; }
-
-  .menu{display:flex;gap:10px;justify-content:center;margin:8px 0 10px;flex-wrap:wrap}
-  .chipbtn{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-size:13px;color:#fff;cursor:pointer}
-
-  .adline{
-    background: var(--card);
-    border:1px solid var(--border);
-    border-radius:16px;
-    padding:12px;
-    margin:8px 0 12px;
-    display:flex;
-    gap:12px;
-  }
-  .ad-left{ flex:1; }
-  .ad-top{ display:flex; align-items:center; gap:8px; margin-bottom:4px; }
-  .crown{ font-size:20px; line-height:1 }
-  .ad-user{ font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .ad-text{
-    color:#ddd;
-    font-size:14px;
-    line-height:1.3;
-    overflow:hidden;
-    display:-webkit-box;
-    -webkit-line-clamp:2;
-    -webkit-box-orient:vertical;
-  }
-  .ad-actions{ display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
-  .ad-price{ color:var(--muted); font-size:13px; text-align:right }
-  .ad-write{ padding:10px 14px }
-  .ad-info{ display:flex; justify-content:space-between; align-items:center; margin:6px 0 0; }
-  .ad-count{ color:var(--muted); font-size:13px }
-  .ad-enter{ color:var(--muted); font-size:13px }
-
-  .lb-head{color:var(--muted);font-size:13px;margin:10px 0 6px;text-align:center}
-  .podium{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
-  .pod{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px;text-align:center}
-  .pod1{order:2;transform:scale(1.05)}
-  .pod2{order:1}
-  .pod3{order:3}
-  .pod .name{font-weight:700}
-  .pod .wins{color:#ccc;font-size:12px}
-  .pod .sum{font-weight:700;margin-top:2px}
-  .lb{display:grid;grid-template-columns:1fr;gap:8px}
-  .rank{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
-  .rank .left{display:flex;gap:8px;align-items:center}
-  .badge{width:24px;height:24px;border-radius:999px;background:#222;display:flex;align-items:center;justify-content:center;font-weight:800}
-  .rank .wins{color:#aaa;font-size:12px;margin-left:4px}
-
-  /* bottom sheets */
-  .sheet{position:fixed;left:0;right:0;bottom:0;background:#0b0b0b;border-top:1px solid var(--border);border-radius:16px 16px 0 0;transform:translateY(100%);transition:transform .25s ease;padding:14px 14px calc(18px + env(safe-area-inset-bottom));z-index:1000}
-  .sheet.open{transform:translateY(0)}
-  .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:opacity .2s;z-index:900}
-  .sheet-backdrop.show{opacity:1;pointer-events:auto}
-  .sheet h3{margin:6px 0 10px;font-size:16px}
-  .rowchips{display:flex;gap:8px;flex-wrap:wrap}
-  .chipopt{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-size:13px;cursor:pointer}
-  .chipopt.active{outline:2px solid var(--ring)}
-  .inputline{display:flex;gap:8px;margin:10px 0}
-  .inputline input{flex:1;background:#121212;border:1px solid var(--border);border-radius:10px;padding:10px;color:#fff;font-size:14px}
-  .sheet .btnrow{display:flex;gap:10px;margin-top:10px}
-  .sheet .btnrow .btnsm{flex:1;background:var(--green);border:none;border-radius:12px;color:#fff;padding:10px 0;font-weight:700}
-  .sheet .btnrow .btnsm.cancel{background:#333}
-  .btnsm[disabled]{ background:#333 !important; opacity:0.8; cursor:not-allowed; }
-  .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
-
-  #sheetChatFeed .feed{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
-  .msg{background:#121212;border:1px solid var(--border);border-radius:12px;padding:10px}
-  .msg .meta{color:#aaa;font-size:12px;margin-bottom:4px}
-  .msg .text{font-size:14px;line-height:1.3}
-
-  #fwCanvas{
-    position:fixed; inset:0; z-index:9999; pointer-events:none; display:none;
-    backdrop-filter:brightness(0.9);
-  }
-
-  @keyframes ringPulse{0%{transform:scale(1);}50%{transform:scale(1.02);}100%{transform:scale(1);}}
-  .timer.pulse{animation:ringPulse 0.5s ease;}
-
-  .result-banner{
-    position:absolute; inset:0;
-    display:flex; align-items:center; justify-content:center;
-    pointer-events:none; opacity:0; transform:scale(.9);
-    font-weight:900; letter-spacing:.5px; text-align:center;
-    text-shadow:0 6px 24px rgba(0,0,0,.45);
-    transition:opacity .25s ease, transform .25s ease;
-    font-size: clamp(32px, 8vw, 72px);
-  }
-  .result-banner.show{ opacity:1; transform:scale(1); }
-
-  .result-win{ color:#20d28a; }
-  .result-lose{ color:#ff6b6b; }
-
-  .ring-flash{ filter: drop-shadow(0 0 16px currentColor) brightness(1.25); }
+  body{background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;margin:0;padding:16px;}
+  .arena-title{text-align:center;font-size:28px;font-weight:800;margin:0 0 20px;}
+  .ring{position:relative;margin:20px auto;width:260px;height:260px;border:4px solid var(--ring,#ff8c00);border-radius:50%;display:flex;flex-direction:column;justify-content:center;align-items:center;pointer-events:none;}
+  .bank{font-size:24px;font-weight:800;}
+  .phase{font-size:14px;color:#ccc;margin-top:8px;}
+  .bid-btn{width:100%;margin-top:24px;padding:14px 0;border:none;border-radius:16px;background:#1fa36a;color:#fff;font-size:20px;font-weight:800;cursor:pointer;position:relative;z-index:5;pointer-events:auto;}
+  .bid-btn.disabled{opacity:.5;cursor:not-allowed;}
+  .leader{text-align:center;margin-top:16px;font-size:16px;}
+  .chat-menu{display:flex;gap:12px;justify-content:center;margin-top:24px;}
+  .chat-menu button{background:#121212;border:1px solid #333;border-radius:12px;color:#fff;padding:10px 16px;font-size:14px;cursor:pointer;}
+  .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:opacity .2s;}
+  .sheet-backdrop.show{opacity:1;pointer-events:auto;}
+  .sheet{position:fixed;left:0;right:0;bottom:0;background:#0b0b0b;border-top:1px solid #1e1e1e;border-radius:16px 16px 0 0;transform:translateY(100%);transition:transform .25s ease;padding:16px;max-height:90vh;display:flex;flex-direction:column;z-index:1000;}
+  .sheet.open{transform:translateY(0);}
+  #chatFeed{flex:1;overflow:auto;margin-bottom:12px;}
+  .msg{margin-bottom:8px;font-size:14px;}
+  .msg .meta{color:#aaa;font-size:12px;}
+  .msg .text{white-space:pre-wrap;}
+  .sheet input{width:100%;padding:8px;border-radius:8px;border:1px solid #333;background:#121212;color:#fff;}
+  .sheet button{margin-top:8px;padding:10px;border:none;border-radius:8px;background:#1fa36a;color:#fff;font-weight:700;cursor:pointer;}
+  .ring, .decor, .overlays, .shadow { pointer-events: none; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <button class="back-text" id="backText">Назад</button>
-  <div class="page-title">Арена</div>
-  <div class="center">
-    <div class="timer" id="timerWrap">
-      <svg viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet">
-        <circle cx="160" cy="160" r="140" stroke="#1f1f1f" stroke-width="14" fill="none"/>
-        <circle id="ring" cx="160" cy="160" r="140" stroke="var(--ring)" stroke-width="14" fill="none" stroke-linecap="round" stroke-dasharray="879.645" stroke-dashoffset="0"/>
-      </svg>
-      <div class="inring-stack">
-        <div class="inring-price" id="bank" data-v="0">$0</div>
-        <div class="inring-bottom" id="ringStatus">00:00 • Ожидаем ставку</div>
-      </div>
-      <div class="result-banner" id="resultBanner" aria-live="polite"></div>
-    </div>
-  </div>
-  <button class="btn" id="bidBtn">Ставка $0</button>
-  <div class="head" id="leader">Лидер: —</div>
-  <div class="levelcard" id="levelCard">
-    <div class="level-head">
-      <div class="level-title">Уровень <span id="lvlNum">1</span></div>
-      <div class="level-balance">Баланс: <span id="balInline">$—</span></div>
-    </div>
-    <div class="level-bar">
-      <div class="level-fill" id="xpFill"></div>
-    </div>
-    <div class="level-xp" id="xpText">0 / 5 000 XP</div>
-  </div>
-  <div class="adline ad-shimmer" id="adLine">
-    <div class="ad-left">
-      <div class="ad-top">
-        <span class="crown">👑</span>
-        <span class="ad-user" id="adUser">@user</span>
-      </div>
-      <div class="ad-text" id="adText">Сообщение победителя…</div>
-    </div>
-    <div class="ad-actions">
-      <div class="ad-price" id="adPrice">Цена: $100</div>
-      <button class="chipbtn ad-write" id="adWrite">✍️ Написать</button>
-    </div>
-  </div>
-  <div class="menu">
-    <button class="chipbtn" id="refBtn">+500$</button>
-    <button class="chipbtn" id="topupBtn">Пополнение</button>
-    <button class="chipbtn" id="chatFeedBtn">ЧАТ</button>
-    <button class="chipbtn" id="starsBtn">Купить $</button>
-    <button class="chipbtn" id="claimBtn" style="display:none">CLAIM</button>
-  </div>
-  <div class="lb-head">Топ за 24 часа</div>
-  <div class="podium" id="lbPodium"></div>
-  <div class="lb" id="lbRest"></div>
+<h1 class="arena-title">Арена</h1>
+<div id="arenaRing" class="ring">
+  <div id="arenaBank" class="bank">$10 000</div>
+  <div id="arenaPhaseLine" class="phase">00:00 • Ожидаем ставку</div>
 </div>
-<canvas id="fwCanvas"></canvas>
+<button id="arenaBidBtn" class="bid-btn">
+  Ставка $<span id="arenaBidPrice">50</span>
+</button>
+<div class="leader">Лидер: <span id="arenaLeader">—</span></div>
+<div class="chat-menu">
+  <button id="openChatBtn">ЧАТ</button>
+  <button id="writeBtn">🖊️ Написать</button>
+</div>
 <div class="sheet-backdrop" id="sheetBg"></div>
-
-<!-- SHEET: Пополнение -->
-<div class="sheet" id="sheetTopup">
-  <h3>Пополнение баланса</h3>
-  <p>• +$5000 — за подписку на канал @erc20coin (один раз)</p>
-  <p>• +$1000 — за ежедневный вход</p>
-  <p>• +$500 — за каждого друга по реф-ссылке</p>
-  <div class="btnrow">
-    <button class="btnsm" id="openChannel">Открыть канал</button>
-    <button class="btnsm" id="checkBonus">Проверить</button>
-  </div>
-  <div class="btnrow">
-    <button class="btnsm cancel" data-close>Закрыть</button>
-  </div>
+<div class="sheet" id="chatSheet">
+  <div id="chatFeed"></div>
+  <input id="chatInput" placeholder="Ваш текст" maxlength="50" />
+  <button id="chatSend">Отправить</button>
 </div>
-
-<!-- SHEET: Покупка Stars -->
-<div class="sheet" id="sheetStars">
-  <h3>Купить звёзды ⭐</h3>
-  <p>Выбери пакет, оплати в Telegram Stars — баланс обновится автоматически.</p>
-  <div class="rowchips" id="starsPacks">
-    <button class="chipopt" data-pack="100">100⭐ → $3 000</button>
-    <button class="chipopt" data-pack="500">500⭐ → $16 000</button>
-    <button class="chipopt" data-pack="1000">1000⭐ → $35 000</button>
-    <button class="chipopt" data-pack="10000">10000⭐ → $400 000</button>
-    <button class="chipopt" data-pack="30000">30000⭐ → $1 500 000</button>
-  </div>
-  <div class="btnrow">
-    <button class="btnsm cancel" data-close>Отмена</button>
-    <button class="btnsm" id="buyStars">Оплатить</button>
-  </div>
-</div>
-
-<!-- SHEET: Сообщение -->
-<div class="sheet" id="sheetAd">
-  <h3>Ваше сообщение</h3>
-  <div class="inputline">
-    <input id="adInput" type="text" maxlength="50" placeholder="Сообщение (до 50 символов)">
-  </div>
-  <div class="ad-info">
-    <div class="ad-count" id="adCount">0/50</div>
-    <div class="ad-enter" id="adEnter">Цена сейчас: $100</div>
-  </div>
-  <div class="btnrow">
-    <button class="btnsm cancel" data-close>Отмена</button>
-    <button class="btnsm" id="adSend" disabled>Отправить</button>
-  </div>
-</div>
-
-<!-- SHEET: CLAIM -->
-<div class="sheet" id="sheetClaim">
-  <h3>CLAIM</h3>
-  <p style="margin-top:6px;">Ты можешь склеймить</p>
-  <div id="claimVop" style="font-size:22px;font-weight:800;margin:4px 0 10px;">— VOP</div>
-  <div class="btnrow">
-    <button class="btnsm cancel" data-close>Закрыть</button>
-    <button class="btnsm" id="claimDo" disabled>CLAIM</button>
-  </div>
-</div>
-
-<!-- SHEET: история чата -->
-<div class="sheet" id="sheetChatFeed">
-  <h3>история чата</h3>
-  <div id="chatFeed" class="feed"></div>
-  <div class="btnrow"><button class="btnsm cancel" data-close>Закрыть</button></div>
-</div>
-
 <script>
-const BOT_USERNAME = 'realpricebtc_bot';
-const CHANNEL_LINK = 'https://t.me/erc20coin';
-const tg = window.Telegram?.WebApp; tg?.expand();
-const uid = tg?.initDataUnsafe?.user?.id || null;
-const username = tg?.initDataUnsafe?.user?.username ? '@'+tg.initDataUnsafe.user.username : null;
+const tg = window.Telegram?.WebApp;
+let placing = false;
+let arenaState = null;
+let countdownTimer = null;
 
-let lastResultId = null;
-
-function vibSuccess(){
-  try{
-    Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
-    Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('heavy');
-  }catch(_){ }
-  if (navigator.vibrate) navigator.vibrate([20,40,20]);
+function formatMoney(n){ return '$' + Number(n).toLocaleString(); }
+function setBidEnabled(enabled){
+  const btn = document.getElementById('arenaBidBtn');
+  btn.disabled = !enabled;
+  btn.classList.toggle('disabled', !enabled);
 }
-function vibError(){
-  try{
-    Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('error');
-    Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('heavy');
-  }catch(_){ }
-  if (navigator.vibrate) navigator.vibrate([60,40,60]);
-}
-
-function showResultBanner({ youWin, amount }){
-  const banner = document.getElementById('resultBanner');
-  if (!banner) return;
-  banner.className = 'result-banner show ' + (youWin ? 'result-win' : 'result-lose');
-  banner.textContent = youWin ? 'YOU WON!' : 'YOU LOSE!';
-  try{
-    const ring = document.getElementById('ring');
-    ring?.classList.add('ring-flash');
-    ring?.style?.setProperty('color', youWin ? '#20d28a' : '#ff6b6b');
-    setTimeout(()=> ring?.classList.remove('ring-flash'), 1200);
-  }catch(_){ }
-  youWin ? vibSuccess() : vibError();
-
-  if (typeof amount === 'number'){
-    flyAmountChip(amount, youWin);
+function startCountdownTo(ts, cb){
+  stopCountdown();
+  function tick(){
+    const remain = Math.max(0, ts - Date.now());
+    const mm = Math.floor(remain/60000).toString().padStart(2,'0');
+    const ss = Math.floor((remain%60000)/1000).toString().padStart(2,'0');
+    cb(`${mm}:${ss}`);
+    if(remain<=0) stopCountdown();
   }
-
-  setTimeout(()=> banner.classList.remove('show'), 1600);
+  tick();
+  countdownTimer = setInterval(tick, 250);
 }
-
-function flyAmountChip(amount, youWin){
-  const chip = document.createElement('div');
-  chip.textContent = (youWin?'+$':'-$') + Math.abs(amount).toLocaleString();
-  chip.style.cssText = `
-    position:absolute; left:50%; top:52%;
-    transform:translate(-50%,-50%); padding:.35rem .6rem;
-    border-radius:999px; font-weight:800; font-size:14px;
-    background:rgba(0,0,0,.6); border:1px solid #2b2b2b;
-    color:${youWin?'#20d28a':'#ff6b6b'}; opacity:0;
-    transition: transform .9s cubic-bezier(.2,.8,.2,1), opacity .9s;
-  `;
-  const host = document.querySelector('.timer') || document.body;
-  host.appendChild(chip);
-  requestAnimationFrame(()=>{
-    chip.style.opacity='1';
-    chip.style.transform='translate(-50%,-160%)';
-  });
-  setTimeout(()=> chip.remove(), 1100);
+function stopCountdown(){ clearInterval(countdownTimer); countdownTimer=null; }
+function showBigBanner(text,color){
+  const div=document.createElement('div');
+  div.textContent=text;
+  div.style.position='fixed';
+  div.style.left='50%';div.style.top='40%';div.style.transform='translate(-50%,-50%)';
+  div.style.background=color==='green'?'#1fa36a':'#c6423a';
+  div.style.color='#fff';div.style.padding='20px 30px';div.style.fontSize='32px';div.style.fontWeight='800';div.style.borderRadius='16px';div.style.zIndex='999';
+  document.body.appendChild(div);
+  setTimeout(()=>div.remove(),1500);
 }
+function hapticsImpact(){ navigator.vibrate?.(30); }
+function hapticsSuccess(){ navigator.vibrate?.([60,80,60]); }
+function hapticsError(){ navigator.vibrate?.([80,100,80]); }
+function animateBankBump(){}
+function showToast(msg){ alert(msg); }
 
-if (window.Telegram?.WebApp?.BackButton) {
-  Telegram.WebApp.BackButton.show();
-  Telegram.WebApp.onEvent('backButtonClicked', () => { window.location.href = '/'; });
-}
-
-const ring = document.getElementById('ring');
-const timerWrap = document.getElementById('timerWrap');
-const bankEl = document.getElementById('bank');
-const ringStatus = document.getElementById('ringStatus');
-const backText = document.getElementById('backText');
-const lbPodium = document.getElementById('lbPodium');
-const lbRest = document.getElementById('lbRest');
-backText.onclick = () => { window.location.href = '/'; };
-const bidBtn = document.getElementById('bidBtn');
-const leaderEl = document.getElementById('leader');
-const lvlNum = document.getElementById('lvlNum');
-const balInline = document.getElementById('balInline');
-const xpFill = document.getElementById('xpFill');
-const xpText = document.getElementById('xpText');
-
-const adLine = document.getElementById('adLine');
-const adUserEl = document.getElementById('adUser');
-const adTextEl = document.getElementById('adText');
-const adPriceEl = document.getElementById('adPrice');
-const adWriteBtn = document.getElementById('adWrite');
-
-const refBtn = document.getElementById('refBtn');
-const topupBtn = document.getElementById('topupBtn');
-const chatFeedBtn = document.getElementById('chatFeedBtn');
-const starsBtn = document.getElementById('starsBtn');
-const claimBtn = document.getElementById('claimBtn');
-
-const sheetBg = document.getElementById('sheetBg');
-const sheetTopup = document.getElementById('sheetTopup');
-const sheetStars = document.getElementById('sheetStars');
-const sheetAd = document.getElementById('sheetAd');
-const sheetClaim = document.getElementById('sheetClaim');
-const sheetChatFeed = document.getElementById('sheetChatFeed');
-
-const openChannel = document.getElementById('openChannel');
-const checkBonus = document.getElementById('checkBonus');
-const starsPacks = document.getElementById('starsPacks');
-const buyStars = document.getElementById('buyStars');
-const adInput = document.getElementById('adInput');
-const adSend = document.getElementById('adSend');
-const adCount = document.getElementById('adCount');
-const adEnter = document.getElementById('adEnter');
-const chatFeed = document.getElementById('chatFeed');
-const claimVopEl = document.getElementById('claimVop');
-const claimDo = document.getElementById('claimDo');
-
-let selectedPack = null;
-let arenaPhase = 'idle';
-let arenaMax = 0;
-let adState = {};
-const START_BANK = 10000;
-
-function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
-function normUser(u){ return '@'+String(u||'anon').replace(/^@+/, ''); }
-function setBalanceVal(amount){ if(balInline) balInline.textContent = fmt(amount); }
-function renderProfile(p){
-  if(!p) return;
-  lvlNum.textContent = p.level;
-  const prog = Math.max(0, Math.min(1, (p.level_progress||0)/(p.level_threshold||1)));
-  xpFill.style.width = (prog*100).toFixed(1)+'%';
-  xpText.textContent = `${Number(p.level_progress||0).toLocaleString()} / ${Number(p.level_threshold||0).toLocaleString()} XP`;
-  setBalanceVal(p.balance);
-}
-async function loadProfile(){
-  if(!uid) return;
-  const r = await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>null);
-  if(r?.ok) renderProfile(r.user);
-}
-const refreshBalance = loadProfile;
-function calcNextBid(bank, minBid, step){
-  const diff = Math.max(0, bank - START_BANK);
-  const a = step;
-  const b = 2*minBid - step;
-  const c = -2*diff;
-  const disc = b*b - 4*a*c;
-  const n = Math.floor((-b + Math.sqrt(Math.max(0,disc))) / (2*a));
-  return minBid + n*step;
-}
-function renderArena(st){
-  const newBank = Number(st.bank||0);
-  bankEl.textContent = fmt(newBank);
-  bankEl.dataset.v = newBank;
-  const mm = Math.floor(st.secsLeft/60);
-  const ss = st.secsLeft % 60;
-  const phaseTxt = st.phase==='idle' ? 'Ожидаем ставку' : st.phase==='running' ? 'Идёт аукцион' : 'Завершаем…';
-  ringStatus.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} • ${phaseTxt}`;
-  const nb = st.nextBid!==undefined ? st.nextBid : calcNextBid(newBank, st.minBid, st.bidStep);
-  bidBtn.textContent = 'Ставка $' + Number(nb||0).toLocaleString();
-  bidBtn.disabled = st.phase !== 'running';
-  leaderEl.textContent = 'Лидер: ' + (st.leader?.name ? normUser(st.leader.name) : '—');
-
-  if(arenaPhase!==st.phase){
-    if(st.phase==='running') arenaMax = st.secsLeft;
-  } else {
-    if(st.phase==='running' && st.secsLeft>arenaMax) arenaMax = st.secsLeft;
+function applyArenaState(s){
+  arenaState = s;
+  document.getElementById('arenaBank').textContent = formatMoney(s.bank);
+  document.getElementById('arenaLeader').textContent = s.leader || '—';
+  document.getElementById('arenaBidPrice').textContent = s.nextBid;
+  const phaseLine = document.getElementById('arenaPhaseLine');
+  if(s.phase==='idle'){
+    phaseLine.textContent='00:00 • Ожидаем ставку';
+    stopCountdown();
+  }else{
+    startCountdownTo(s.endsAt, mmss=>{ phaseLine.textContent = mmss + ' • Идёт аукцион'; });
   }
-
-  const pct = st.phase==='running' ? (arenaMax? st.secsLeft/arenaMax : 0) : 0;
-  const CIRC = 2*Math.PI*140;
-  ring.setAttribute('stroke-dasharray', CIRC);
-  ring.setAttribute('stroke-dashoffset', CIRC*(1-pct));
-
-  arenaPhase = st.phase;
+  if(s.phase==='settling' || s.phase==='closed'){
+    stopCountdown();
+    if(s.youWin===true){ showBigBanner('YOU WON!','green'); hapticsSuccess(); }
+    else if(s.youWin===false){ showBigBanner('YOU LOSE!','red'); hapticsError(); }
+  }
+  setBidEnabled(['idle','open','overtime'].includes(s.phase));
 }
-async function pollArena(){
-  const r = await fetch(`/api/arena/state?initData=${encodeURIComponent(tg?.initData||'')}`).then(r=>r.json()).catch(()=>null);
-  if(r?.result && r.result.id !== lastResultId){
-    lastResultId = r.result.id;
-    showResultBanner({ youWin: r.result.youWin, amount: r.result.amount });
-    refreshBalance?.();
-    fetch('/api/result/ack', {
+
+document.getElementById('arenaBidBtn').onclick = async ()=>{
+  if(placing || !arenaState) return;
+  if(!['idle','open','overtime'].includes(arenaState.phase)) return;
+  placing = true; setBidEnabled(false);
+  try{
+    const res = await fetch('/api/arena/bid', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ id: r.result.id, initData: tg?.initData || '' })
-    }).catch(()=>{});
+      body: JSON.stringify({ roundId: arenaState.roundId, amount: arenaState.nextBid })
+    });
+    const data = await res.json().catch(()=>null);
+    if(!res.ok){ showToast(data?.error || 'Не удалось сделать ставку'); }
+    else{ applyArenaState(data); hapticsImpact(); animateBankBump(); }
+  } finally {
+    placing=false;
+    setBidEnabled(['idle','open','overtime'].includes(arenaState?.phase));
   }
-  if(r?.ok) renderArena(r);
-}
-async function pollAd(){
-  const r = await fetch('/api/shout').then(r=>r.json()).catch(()=>null);
-  if(!r?.ok) return;
-  const st = r.state||{};
-  adState = st;
-  adUserEl.textContent = normUser(st.holder?.name);
-  adTextEl.textContent = st.message || 'Пока пусто.';
-  adPriceEl.textContent = 'Цена: $' + Number(st.next_price||0).toLocaleString();
-  adEnter.textContent = 'Цена сейчас: $' + Number(st.next_price||0).toLocaleString();
-}
-async function loadChatHistory(){
-  const r = await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
-  if(!r.ok){ chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>'; return; }
-  chatFeed.innerHTML = r.items.map(it=>(
-    `<div class="msg"><div class="meta">${normUser(it.username)} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}</div><div class="text">${escapeHtml(it.text||'')}</div></div>`
-  )).join('');
-}
-function escapeHtml(s){return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));}
-function openSheet(el){ if(!el) return; sheetBg.classList.add('show'); el.classList.add('open'); }
-function closeAllSheets(){ document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open')); sheetBg.classList.remove('show'); }
-sheetBg.addEventListener('click', closeAllSheets);
-document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeAllSheets));
-
-bidBtn.addEventListener('click', async ()=>{
-  if(bidBtn.disabled) return;
-  const oldBank = Number(bankEl.dataset.v||0);
-  const r = await fetch('/api/arena/bid',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ initData: tg?.initData || '' })}).then(r=>r.json()).catch(()=>null);
-  if(r?.ok){
-    animateBank(oldBank, r.bank);
-    renderArena(r);
-    loadProfile();
-    try{ tg?.HapticFeedback?.impactOccurred('soft'); navigator?.vibrate?.(15); }catch{}
-  } else if(r?.error==='INSUFFICIENT'){ alert('Недостаточно средств'); }
-});
-function animateBank(from,to){
-  const start = performance.now();
-  function step(ts){
-    const p = Math.min(1,(ts-start)/400);
-    const val = from + (to-from)*p;
-    bankEl.textContent = fmt(val);
-    if(p<1) requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
-  timerWrap.classList.add('pulse');
-  timerWrap.addEventListener('animationend',()=>timerWrap.classList.remove('pulse'),{once:true});
-}
-
-refBtn.onclick = ()=>{
-  const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
-  if(navigator.share){ navigator.share({ title:'BTC Game', text:'Залетай в игру!', url:link }).catch(()=>{}); }
-  else { alert('Твоя реф-ссылка:\n'+link+'\nЗа каждого друга +$500 после его первого входа.'); }
 };
 
-topupBtn.onclick = ()=> openSheet(sheetTopup);
-chatFeedBtn.onclick = async ()=>{ await loadChatHistory(); openSheet(sheetChatFeed); };
-starsBtn.onclick = ()=> openSheet(sheetStars);
-claimBtn.onclick = async ()=>{ openSheet(sheetClaim); claimVopEl.textContent='… VOP'; await fetchClaimInfo(); };
-adWriteBtn.onclick = ()=>{ adInput.value=''; adCount.textContent='0/50'; adSend.disabled=true; openSheet(sheetAd); };
-
-adInput.addEventListener('input', ()=>{
-  const v = adInput.value.slice(0,50);
-  adInput.value = v;
-  adCount.textContent = v.length+'/50';
-  adSend.disabled = !v.trim();
-});
-
-adSend.onclick = async ()=>{
-  const text = adInput.value.trim();
-  if(!text) return;
-  const r = await fetch('/api/shout/bid',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ initData: tg?.initData || '', text })}).then(r=>r.json()).catch(()=>({ok:false}));
-  if(r.ok){ closeAllSheets(); pollAd(); loadProfile(); }
-  else if(r.error==='INSUFFICIENT'){ alert('Недостаточно средств'); }
-};
-
-async function loadLb24(){
-  const r = await fetch('/api/arena/leaderboard?window=24h').then(r=>r.json()).catch(()=>null);
-  if(!r?.ok) return;
-  const items = r.items || [];
-  const top3 = items.slice(0,3);
-  lbPodium.innerHTML = top3.map((it,i)=>`
-    <div class="pod pod${i+1}">
-      <div class="name">${normUser(it.username)}</div>
-      <div class="wins">${it.wins} побед</div>
-      <div class="sum">${fmt(it.total_won)}</div>
-    </div>`).join('');
-  lbRest.innerHTML = items.slice(3).map((it,i)=>`
-    <div class="rank">
-      <div class="left">
-        <div class="badge">${i+4}</div>
-        <div class="name">${normUser(it.username)}<span class="wins">(${it.wins})</span></div>
-      </div>
-      <div class="val">${fmt(it.total_won)}</div>
-    </div>`).join('');
+async function pollArena(){
+  const r = await fetch('/api/arena/state?initData='+encodeURIComponent(tg?.initData||''))
+              .then(r=>r.json()).catch(()=>null);
+  if(r) applyArenaState(r);
 }
-
-openChannel.onclick = ()=>{ try{ if(window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK); else window.open(CHANNEL_LINK); }catch{ window.open(CHANNEL_LINK); } };
-checkBonus.onclick = async ()=>{
-  checkBonus.disabled=true;
-  const r = await fetch('/api/bonus/check',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ initData: tg?.initData || '' })}).then(r=>r.json()).catch(()=>({ok:false}));
-  checkBonus.disabled=false;
-  if(r.ok){ await loadProfile(); alert('Бонус начислен!'); }
-  else { alert('Не удалось проверить.'); }
-};
-
-starsPacks.addEventListener('click', e=>{
-  const b = e.target.closest('.chipopt'); if(!b) return;
-  document.querySelectorAll('#starsPacks .chipopt').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active'); selectedPack = b.dataset.pack;
-});
-buyStars.onclick = async ()=>{
-  const pack = selectedPack || '100';
-  const resp = await fetch('/api/stars/create',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ pack, initData: tg?.initData || '' })}).then(r=>r.json()).catch(()=>({ok:false}));
-  if(!resp.ok){ alert('Не удалось создать платёж.'); return; }
-  Telegram?.WebApp?.openInvoice?.(resp.link, async status => { if(status==='paid'){ await loadProfile(); } });
-};
-
-async function fetchClaimInfo(){
-  const r = await fetch('/api/claim/info',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>({ok:false}));
-  if(r.ok){ claimVopEl.textContent = (Number(r.claimable_vop)||0).toLocaleString()+' VOP'; }
-  else { claimVopEl.textContent='— VOP'; }
-  claimDo.disabled = true;
-}
-
 setInterval(pollArena,1000);
-setInterval(pollAd,4000);
-setInterval(loadProfile,5000);
-setInterval(loadLb24,25000);
-loadProfile();
 pollArena();
-pollAd();
-loadLb24();
-</script>
 
-<script>
-const FW = (() => {
-  const cnv = document.getElementById('fwCanvas');
-  const ctx = cnv.getContext('2d');
-  let W=0,H=0, rafId=null, t0=0, duration=1800;
-  const sparks = [];
-  function onResize(){ W = cnv.width = innerWidth * devicePixelRatio; H = cnv.height = innerHeight * devicePixelRatio; }
-  addEventListener('resize', onResize); onResize();
-  function burst(x,y,count=60){
-    for(let i=0;i<count;i++){
-      const a = Math.random()*Math.PI*2;
-      const v = (0.8+Math.random()*1.2) * (H/900);
-      sparks.push({ x, y, vx:Math.cos(a)*v, vy:Math.sin(a)*v, life:600+Math.random()*600, age:0, size:2+Math.random()*2, hue:(Math.random()*60)+10 });
-    }
-  }
-  function step(ts){
-    const dt = ts - t0; t0 = ts;
-    ctx.clearRect(0,0,W,H);
-    for(let i=sparks.length-1;i>=0;i--){
-      const p=sparks[i];
-      p.age+=dt; p.vy += 0.0008*dt*(H/900);
-      p.x+=p.vx*dt/16; p.y+=p.vy*dt/16;
-      const alpha = Math.max(0,1-p.age/p.life);
-      if(alpha<=0){ sparks.splice(i,1); continue; }
-      ctx.globalAlpha=alpha;
-      ctx.fillStyle=`hsl(${p.hue},100%,60%)`;
-      ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,Math.PI*2); ctx.fill();
-    }
-    if(performance.now() - __fwStartTime < duration || sparks.length>0){
-      rafId=requestAnimationFrame(step);
-    } else {
-      cnv.style.display='none'; cancelAnimationFrame(rafId);
-    }
-  }
-  let __fwStartTime=0;
-  function start(ms=1800){
-    duration=ms;
-    cnv.style.display='block';
-    __fwStartTime=performance.now(); t0=performance.now();
-    burst(0.25*W,0.55*H,70);
-    burst(0.75*W,0.60*H,70);
-    burst(0.50*W,0.40*H,90);
-    cancelAnimationFrame(rafId);
-    rafId=requestAnimationFrame(step);
-    if(navigator.vibrate) navigator.vibrate([40,60,40,100]);
-  }
-  return { start };
-})();
+// chat sheet
+const sheetBg=document.getElementById('sheetBg');
+const chatSheet=document.getElementById('chatSheet');
+function openSheet(){ sheetBg.classList.add('show'); chatSheet.classList.add('open'); }
+function closeSheet(){ sheetBg.classList.remove('show'); chatSheet.classList.remove('open'); }
+sheetBg.onclick=closeSheet;
+async function refreshShoutState(){
+  const r=await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
+  const feed=document.getElementById('chatFeed');
+  if(!r.ok){ feed.innerHTML='<div class="msg"><div class="text">Не удалось загрузить.</div></div>'; return; }
+  feed.innerHTML=r.items.map(it=>`<div class="msg"><div class="meta">${it.user}</div><div class="text">${it.text}</div></div>`).join('');
+  feed.scrollTop=feed.scrollHeight;
+}
+async function sendShout(){
+  const inp=document.getElementById('chatInput');
+  const text=inp.value.trim();
+  if(!text) return;
+  await fetch('/api/shout/bid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ text, initData: tg?.initData || ''})}).catch(()=>{});
+  inp.value='';
+  await refreshShoutState();
+}
+function openShoutSheet(){ refreshShoutState(); openSheet(); }
+
+document.getElementById('openChatBtn').onclick=openShoutSheet;
+document.getElementById('writeBtn').onclick=openShoutSheet;
+document.getElementById('chatSend').onclick=sendShout;
 </script>
 </body>
 </html>
