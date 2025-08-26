@@ -215,6 +215,7 @@
     <button class="chipbtn" id="refBtn">+500$</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="chatFeedBtn">ЧАТ</button>
+    <button class="chipbtn" id="rulesBtn">Правила</button>
     <button class="chipbtn" id="starsBtn">Купить $</button>
     <button class="chipbtn" id="claimBtn" style="display:none">CLAIM</button>
   </div>
@@ -223,6 +224,14 @@
   <div class="lb" id="lbRest"></div>
 </div>
 <div class="sheet-backdrop" id="sheetBg"></div>
+
+<!-- SHEET: Правила -->
+<div class="sheet" id="sheetRules">
+  <h3>Правила</h3>
+  <p>Сделай ставку и удерживай лидерство до конца таймера.</p>
+  <p>Победитель забирает весь банк.</p>
+  <div class="btnrow"><button class="btnsm cancel" data-close>Закрыть</button></div>
+</div>
 
 <!-- SHEET: Пополнение -->
 <div class="sheet" id="sheetTopup">
@@ -326,10 +335,12 @@ const adWriteBtn = document.getElementById('adWrite');
 const refBtn = document.getElementById('refBtn');
 const topupBtn = document.getElementById('topupBtn');
 const chatFeedBtn = document.getElementById('chatFeedBtn');
+const rulesBtn = document.getElementById('rulesBtn');
 const starsBtn = document.getElementById('starsBtn');
 const claimBtn = document.getElementById('claimBtn');
 
 const sheetBg = document.getElementById('sheetBg');
+const sheetRules = document.getElementById('sheetRules');
 const sheetTopup = document.getElementById('sheetTopup');
 const sheetStars = document.getElementById('sheetStars');
 const sheetAd = document.getElementById('sheetAd');
@@ -474,6 +485,7 @@ refBtn.onclick = ()=>{
 
 topupBtn.onclick = ()=> openSheet(sheetTopup);
 chatFeedBtn.onclick = async ()=>{ await loadChatHistory(); openSheet(sheetChatFeed); };
+rulesBtn.onclick = ()=> openSheet(sheetRules);
 starsBtn.onclick = ()=> openSheet(sheetStars);
 claimBtn.onclick = async ()=>{ openSheet(sheetClaim); claimVopEl.textContent='… VOP'; await fetchClaimInfo(); };
 adWriteBtn.onclick = ()=>{ adInput.value=''; adCount.textContent='0/50'; adSend.disabled=true; openSheet(sheetAd); };
