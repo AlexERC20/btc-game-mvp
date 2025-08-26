@@ -589,8 +589,7 @@ async function grantDailyIfNeeded(telegramId) {
 
 /* ========= Auction subsystem ========= */
 let arena = {
-  phase: 'idle',            // 'idle' | 'running' | 'settling'
-  secsLeft: 0,
+  phase: 'idle',            // 'idle' | 'open' | 'overtime' | 'settling'
   bank: ARENA.startBank,
   currentBid: 0,
   nextBid: ARENA.minBid,
@@ -598,6 +597,8 @@ let arena = {
   leaderTid: null,
   leaderName: null,
   roundId: null,
+  startedAt: null,
+  endsAt: null,
 };
 
 async function settleArenaRound() {
@@ -605,7 +606,6 @@ async function settleArenaRound() {
   if (!arena.leaderUserId) return toIdle();
 
   arena.phase = 'settling';
-  arena.secsLeft = 0;
 
   const rake = Math.floor(arena.bank * ARENA.rakePct);
   const paid = arena.bank - rake;
@@ -627,28 +627,33 @@ async function settleArenaRound() {
 
 function toIdle() {
   arena.phase = 'idle';
-  arena.secsLeft = 0;
   arena.bank = ARENA.startBank;
   arena.currentBid = 0;
   arena.nextBid = ARENA.minBid;
   arena.leaderUserId = arena.leaderTid = arena.leaderName = null;
   arena.roundId = null;
+  arena.startedAt = null;
+  arena.endsAt = null;
 }
 
-function extendOnBid() {
-  if (arena.secsLeft >= 120) {
-    arena.secsLeft = Math.min(arena.secsLeft + 20, MAX_CAP_SECS);
-  } else if (arena.secsLeft > 30) {
-    arena.secsLeft = Math.min(arena.secsLeft + 10, MAX_CAP_SECS);
-  } else {
-    arena.secsLeft = Math.max(arena.secsLeft, OVERTIME_FLOOR);
-  }
+function extendOnBid(now) {
+  let endsAt = arena.endsAt || (now + ARENA_START_SECS * 1000);
+  const secsLeft = Math.max(0, Math.floor((endsAt - now) / 1000));
+  let extendMs;
+  if (secsLeft >= 120) extendMs = 20_000;
+  else if (secsLeft > 30) extendMs = 10_000;
+  else extendMs = OVERTIME_FLOOR * 1000;
+  endsAt = Math.max(endsAt, now + extendMs);
+  const cap = arena.startedAt + 180_000;
+  if (endsAt > cap) endsAt = cap;
+  arena.endsAt = endsAt;
+  const left = endsAt - now;
+  arena.phase = left/1000 <= OVERTIME_FLOOR ? 'overtime' : 'open';
 }
 
 setInterval(async () => {
-  if (arena.phase === 'running') {
-    arena.secsLeft = Math.max(0, arena.secsLeft - 1);
-    if (arena.secsLeft === 0) {
+  if (['open','overtime'].includes(arena.phase)) {
+    if (arena.endsAt && Date.now() >= arena.endsAt) {
       await settleArenaRound();
     }
   }
@@ -1226,17 +1231,23 @@ app.get('/api/arena/state', (req, res) => {
   res.json({
     ok: true,
     phase: arena.phase,
-    secsLeft: arena.secsLeft,
+    roundId: arena.roundId,
     bank: arena.bank,
     leader: arena.leaderName ? { name: arena.leaderName } : null,
-    bidStep: ARENA.step,
-    minBid: ARENA.minBid,
+    nextBid: arena.nextBid,
+    endsAt: arena.endsAt,
+    startedAt: arena.startedAt,
   });
 });
 
 app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
   try {
     const uid = req.tgUser.id;
+    const now = Date.now();
+
+    if (!['idle','open','overtime'].includes(arena.phase)) {
+      return res.status(409).json({ ok:false, error:'PHASE' });
+    }
 
     if (arena.phase === 'idle') {
       const r = await pool.query(
@@ -1244,44 +1255,48 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
         [arena.bank]
       );
       arena.roundId = r.rows[0].id;
-      arena.phase = 'running';
-      arena.secsLeft = ARENA_START_SECS;
+      arena.phase = 'open';
+      arena.startedAt = now;
+      arena.endsAt = now + 60_000;
     }
 
+    const amount = arena.nextBid;
     await pool.query('BEGIN');
     const u = await pool.query(
       'SELECT id, balance, username FROM users WHERE telegram_id=$1 FOR UPDATE',
       [uid]
     );
     const userId = u.rows[0]?.id;
-    if (!userId || u.rows[0].balance < arena.nextBid) {
+    if (!userId || u.rows[0].balance < amount) {
       await pool.query('ROLLBACK');
-      return res.json({ ok:false, error:'INSUFFICIENT' });
+      return res.status(402).json({ ok:false, error:'INSUFFICIENT' });
     }
     await pool.query('UPDATE users SET balance=balance-$1, xp=xp+50 WHERE id=$2',
-                     [arena.nextBid, userId]);
+                     [amount, userId]);
     await pool.query('INSERT INTO arena_bids(round_id,user_id,amount) VALUES($1,$2,$3)',
-                     [arena.roundId, userId, arena.nextBid]);
+                     [arena.roundId, userId, amount]);
     await pool.query('COMMIT');
 
-    arena.bank += arena.nextBid;
-    arena.currentBid = arena.nextBid;
+    arena.bank += amount;
+    arena.currentBid = amount;
     arena.nextBid += ARENA.step;
     arena.leaderUserId = userId;
     arena.leaderTid = uid;
     arena.leaderName = u.rows[0].username || ('id' + userId);
 
-    extendOnBid();
+    extendOnBid(now);
+
+    console.log('[ARENA BID]', userId, amount, arena.phase);
 
     return res.json({
       ok: true,
-      bank: arena.bank,
-      nextBid: arena.nextBid,
-      secsLeft: arena.secsLeft,
       phase: arena.phase,
+      roundId: arena.roundId,
+      bank: arena.bank,
       leader: arena.leaderName ? { name: arena.leaderName } : null,
-      bidStep: ARENA.step,
-      minBid: ARENA.minBid,
+      nextBid: arena.nextBid,
+      endsAt: arena.endsAt,
+      startedAt: arena.startedAt,
     });
   } catch (e) {
     await pool.query('ROLLBACK').catch(()=>{});

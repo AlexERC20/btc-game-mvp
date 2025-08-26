@@ -81,9 +81,13 @@
   }
 
   .bank{text-align:center;color:#fff;font-size:18px;margin-top:6px}
-  .btn{width:100%;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer;background:var(--green);margin-top:16px}
-  .btn:active{transform:translateY(1px) scale(.99)}
-  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .bid-btn{
+    width:100%;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer;background:var(--green);margin-top:16px;
+    position:relative;z-index:5;pointer-events:auto;
+  }
+  .bid-btn:active{transform:translateY(1px) scale(.99)}
+  .bid-btn.disabled{opacity:.5;cursor:not-allowed}
+  .arena-overlay, .ring, .decor { pointer-events:none; }
 
   .head{color:var(--text);font-size:14px;margin:16px 0;text-align:center}
 
@@ -190,7 +194,7 @@
       </div>
     </div>
   </div>
-  <button class="btn" id="bidBtn">Ставка $0</button>
+  <button id="arenaBidBtn" class="bid-btn">Ставка $<span id="arenaBidPrice">50</span></button>
   <div class="head" id="leader">Лидер: —</div>
   <div class="levelcard" id="levelCard">
     <div class="level-head">
@@ -315,7 +319,8 @@ const backText = document.getElementById('backText');
 const lbPodium = document.getElementById('lbPodium');
 const lbRest = document.getElementById('lbRest');
 backText.onclick = () => { window.location.href = '/'; };
-const bidBtn = document.getElementById('bidBtn');
+const arenaBidBtn = document.getElementById('arenaBidBtn');
+const arenaBidPrice = document.getElementById('arenaBidPrice');
 const leaderEl = document.getElementById('leader');
 const lvlNum = document.getElementById('lvlNum');
 const balInline = document.getElementById('balInline');
@@ -354,8 +359,6 @@ const claimVopEl = document.getElementById('claimVop');
 const claimDo = document.getElementById('claimDo');
 
 let selectedPack = null;
-let arenaPhase = 'idle';
-let arenaMax = 0;
 let adState = {};
 const START_BANK = 10000;
 
@@ -384,35 +387,39 @@ function calcNextBid(bank, minBid, step){
   const n = Math.floor((-b + Math.sqrt(Math.max(0,disc))) / (2*a));
   return minBid + n*step;
 }
-function renderArena(st){
+function applyArenaState(st){
+  window.arenaState = st;
   const newBank = Number(st.bank||0);
   bankEl.textContent = fmt(newBank);
   bankEl.dataset.v = newBank;
-  const mm = Math.floor(st.secsLeft/60);
-  const ss = st.secsLeft % 60;
-  const phaseTxt = st.phase==='idle' ? 'Ожидаем ставку' : st.phase==='running' ? 'Идёт аукцион' : 'Завершаем…';
-  ringStatus.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} • ${phaseTxt}`;
-  const nb = st.nextBid!==undefined ? st.nextBid : calcNextBid(newBank, st.minBid, st.bidStep);
-  bidBtn.textContent = 'Ставка $' + Number(nb||0).toLocaleString();
-  bidBtn.disabled = st.phase !== 'running';
+  arenaBidPrice.textContent = Number(st.nextBid||0).toLocaleString();
   leaderEl.textContent = 'Лидер: ' + (st.leader?.name ? normUser(st.leader.name) : '—');
-
-  if(arenaPhase!==st.phase){
-    if(st.phase==='running') arenaMax = st.secsLeft;
-  } else {
-    if(st.phase==='running' && st.secsLeft>arenaMax) arenaMax = st.secsLeft;
+  drawTimer(st);
+  setBidEnabled(['idle','open','overtime'].includes(st.phase));
+}
+function drawTimer(st){
+  if(st.phase==='idle'){
+    ringStatus.textContent='00:00 • Ожидаем ставку';
+    const CIRC=2*Math.PI*140;
+    ring.setAttribute('stroke-dasharray', CIRC);
+    ring.setAttribute('stroke-dashoffset', 0);
+    return;
   }
-
-  const pct = st.phase==='running' ? (arenaMax? st.secsLeft/arenaMax : 0) : 0;
-  const CIRC = 2*Math.PI*140;
+  const now = Date.now();
+  const secsLeft = Math.max(0, Math.floor((st.endsAt - now)/1000));
+  const mm = Math.floor(secsLeft/60);
+  const ss = secsLeft % 60;
+  const phaseTxt = st.phase==='open' ? 'Идёт аукцион' : st.phase==='overtime' ? 'Овертайм' : 'Завершаем…';
+  ringStatus.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} • ${phaseTxt}`;
+  const total = Math.max(1, Math.floor((st.endsAt - st.startedAt)/1000));
+  const pct = secsLeft/total;
+  const CIRC=2*Math.PI*140;
   ring.setAttribute('stroke-dasharray', CIRC);
   ring.setAttribute('stroke-dashoffset', CIRC*(1-pct));
-
-  arenaPhase = st.phase;
 }
-async function pollArena(){
+async function refreshArena(){
   const r = await fetch('/api/arena/state').then(r=>r.json()).catch(()=>null);
-  if(r?.ok) renderArena(r);
+  if(r?.ok) applyArenaState(r);
 }
 async function pollAd(){
   const r = await fetch('/api/shout').then(r=>r.json()).catch(()=>null);
@@ -437,26 +444,71 @@ function closeAllSheets(){ document.querySelectorAll('.sheet.open').forEach(s=>s
 sheetBg.addEventListener('click', closeAllSheets);
 document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeAllSheets));
 
-bidBtn.addEventListener('click', async ()=>{
-  if(bidBtn.disabled) return;
-  const oldBank = Number(bankEl.dataset.v||0);
-  const r = await fetch('/api/arena/bid',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ initData: tg?.initData || '' })}).then(r=>r.json()).catch(()=>null);
-  if(r?.ok){
-    animateBank(oldBank, r.bank);
-    renderArena(r);
-    loadProfile();
-    try{ tg?.HapticFeedback?.impactOccurred('soft'); navigator?.vibrate?.(15); }catch{}
-  } else if(r?.error==='INSUFFICIENT'){ alert('Недостаточно средств'); }
-});
-function animateBank(from,to){
-  const start = performance.now();
-  function step(ts){
-    const p = Math.min(1,(ts-start)/400);
-    const val = from + (to-from)*p;
-    bankEl.textContent = fmt(val);
-    if(p<1) requestAnimationFrame(step);
+function setBidEnabled(enabled){
+  arenaBidBtn.disabled = !enabled;
+  arenaBidBtn.classList.toggle('disabled', !enabled);
+}
+
+let placing = false;
+
+arenaBidBtn.onclick = async () => {
+  if (placing) return;
+  const s = window.arenaState;
+  if (!s) return;
+  if (!['idle','open','overtime'].includes(s.phase)) return;
+  console.debug('[arena] click bid', arenaState?.phase, arenaState?.nextBid);
+
+  placing = true;
+  setBidEnabled(false);
+  try{
+    const res = await fetch('/api/arena/bid', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        roundId: s.roundId,
+        amount: s.nextBid,
+        initData: tg?.initData || ''
+      })
+    });
+    if(!res.ok){
+      const j = await res.json().catch(()=>({}));
+      console.warn('bid failed', res.status, j?.error);
+      showToast(j?.error || 'Не удалось сделать ставку');
+    }else{
+      const j = await res.json();
+      applyArenaState(j);
+      hapticsImpact();
+      animateBankBump();
+      loadProfile();
+    }
+  } finally {
+    placing = false;
+    setBidEnabled(['idle','open','overtime'].includes(window.arenaState?.phase));
   }
-  requestAnimationFrame(step);
+};
+
+function showToast(msg){
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.position='fixed';
+  t.style.left='50%';
+  t.style.bottom='20px';
+  t.style.transform='translateX(-50%)';
+  t.style.background='#333';
+  t.style.color='#fff';
+  t.style.padding='8px 16px';
+  t.style.borderRadius='12px';
+  t.style.zIndex='10000';
+  document.body.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .3s'; },2000);
+  setTimeout(()=>{ t.remove(); },2600);
+}
+
+function hapticsImpact(){
+  try{ tg?.HapticFeedback?.impactOccurred('soft'); navigator?.vibrate?.(15); }catch{}
+}
+
+function animateBankBump(){
   timerWrap.classList.add('pulse');
   timerWrap.addEventListener('animationend',()=>timerWrap.classList.remove('pulse'),{once:true});
 }
@@ -537,12 +589,12 @@ async function fetchClaimInfo(){
   claimDo.disabled = true;
 }
 
-setInterval(pollArena,1000);
+setInterval(refreshArena,1000);
 setInterval(pollAd,4000);
 setInterval(loadProfile,5000);
 setInterval(loadLb24,25000);
 loadProfile();
-pollArena();
+refreshArena();
 pollAd();
 loadLb24();
 </script>
