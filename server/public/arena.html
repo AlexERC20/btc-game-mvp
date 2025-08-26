@@ -172,6 +172,8 @@
 
   @keyframes ringPulse{0%{transform:scale(1);}50%{transform:scale(1.02);}100%{transform:scale(1);}}
   .timer.pulse{animation:ringPulse 0.5s ease;}
+  .timer-cap{position:absolute;top:8px;right:8px;font-size:12px;color:var(--muted);}
+  .limit-badge{background:#222;border:1px solid var(--border);border-radius:8px;padding:2px 6px;font-size:12px;}
 </style>
 </head>
 <body>
@@ -180,6 +182,7 @@
   <div class="page-title">Арена</div>
   <div class="center">
     <div class="timer" id="timerWrap">
+      <div class="timer-cap">⏱ max 3:00</div>
       <svg viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet">
         <circle cx="160" cy="160" r="140" stroke="#1f1f1f" stroke-width="14" fill="none"/>
         <circle id="ring" cx="160" cy="160" r="140" stroke="var(--ring)" stroke-width="14" fill="none" stroke-linecap="round" stroke-dasharray="879.645" stroke-dashoffset="0"/>
@@ -381,8 +384,16 @@ function renderArena(st){
   bankEl.dataset.v = newBank;
   const mm = Math.floor(st.secsLeft/60);
   const ss = st.secsLeft % 60;
-  const statusTxt = st.phase==='idle'?'Ожидание ставки':st.phase==='pause'?'Пауза':'Идёт аукцион';
-  ringStatus.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} · ${statusTxt}`;
+  if(st.phase==='betting'){
+    if(st.secsLeft>0){
+      ringStatus.textContent = `до лимита: ${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} • Идёт аукцион`;
+    } else {
+      ringStatus.innerHTML = '<span class="limit-badge">Лимит 3:00 — продления отключены</span>';
+    }
+  } else {
+    const statusTxt = st.phase==='idle'?'Ожидание ставки':'Пауза';
+    ringStatus.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} · ${statusTxt}`;
+  }
   bidBtn.textContent = 'Ставка $' + Number(st.nextBid||0).toLocaleString();
   bidBtn.disabled = st.phase === 'pause';
   leaderEl.textContent = 'Лидер: ' + (st.leader?.name ? normUser(st.leader.name) : '—');
