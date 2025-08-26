@@ -85,13 +85,13 @@ const ARENA = {
 };
 
 const ARENA_TIMER = {
-  FIRST_BID_START: 300,      // 5 минут
+  FIRST_BID_START: 180,      // 3 минуты
   THRESHOLD_LONG: 120,       // 2:00
   THRESHOLD_SHORT: 30,       // 0:30
   EXTENSION_LONG: 20,        // +20s
   EXTENSION_MEDIUM: 10,      // +10s
   OVERTIME_FLOOR: 15,        // не меньше 15s
-  // OPTIONAL: MAX_CAP: 900, // верхняя «крыша», если нужна (15 мин)
+  MAX_CAP: 180,              // верхняя «крыша» (3 мин)
 };
 
 const pool = new pg.Pool({
@@ -1277,8 +1277,8 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
       }
     }
 
-    // OPTIONAL cap
-    // arena.secsLeft = Math.min(arena.secsLeft, ARENA_TIMER.MAX_CAP || Infinity);
+    // enforce maximum timer duration
+    arena.secsLeft = Math.min(arena.secsLeft, ARENA_TIMER.MAX_CAP || Infinity);
 
     return res.json({ ok:true, bank:arena.bank, nextBid:arena.nextBid, secsLeft:arena.secsLeft });
   } catch (e) {
