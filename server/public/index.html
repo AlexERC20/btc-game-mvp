@@ -303,7 +303,13 @@
   .result-win{ color:#20d28a; }
   .result-lose{ color:#ff6b6b; }
 
-  .ring-flash{ filter: drop-shadow(0 0 16px currentColor) brightness(1.25); }
+.ring-flash{ filter: drop-shadow(0 0 16px currentColor) brightness(1.25); }
+/* Shop sheet tabs */
+.tabs{display:flex;gap:8px;margin:6px 0 10px}
+.tab-btn{flex:1;background:#121212;border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;color:#fff;cursor:pointer}
+.tab-btn.active{outline:2px solid var(--ring)}
+.tab-pane{display:none}
+.tab-pane.show{display:block}
 </style>
 </head>
 <body>
@@ -380,6 +386,7 @@
     <button class="chipbtn" id="chatFeedBtn">ЧАТ</button>
     <button class="chipbtn" id="arenaBtn">Арена</button>
     <button class="chipbtn" id="starsBtn">Купить $</button>
+    <button class="chipbtn" id="shopBtn">Магазин</button>
     <button class="chipbtn" id="claimBtn" style="display:none">CLAIM</button>
   </div>
   <div id="viewerHint" style="display:none;text-align:center;color:var(--muted);font-size:13px;margin:6px 0 10px;">Зайдите через Telegram WebApp, чтобы играть.</div>
@@ -498,11 +505,40 @@
 </div>
 
 <!-- SHEET: history of paid chat -->
-<div class="sheet" id="sheetChatFeed">
-  <h3>история чата</h3>
-  <div id="chatFeed" class="feed"></div>
-  <div class="btnrow"><button class="btnsm cancel" data-close>Закрыть</button></div>
-</div>
+  <div class="sheet" id="sheetChatFeed">
+    <h3>история чата</h3>
+    <div id="chatFeed" class="feed"></div>
+    <div class="btnrow"><button class="btnsm cancel" data-close>Закрыть</button></div>
+  </div>
+
+  <!-- SHEET: Магазин -->
+  <div class="sheet" id="sheetShop">
+    <h3>Магазин</h3>
+
+    <div class="tabs" id="shopTabs">
+      <button class="tab-btn active" data-tab="boosts">Бусты</button>
+      <button class="tab-btn" data-tab="cosm">Косметика</button>
+      <button class="tab-btn" data-tab="events">События</button>
+      <button class="tab-btn" data-tab="clans">Кланы</button>
+    </div>
+
+    <div class="tab-pane show" id="tab-boosts">
+      <p>Скоро: x2 XP на 30/60 мин, комбо-бусты, сезонные задания.</p>
+    </div>
+    <div class="tab-pane" id="tab-cosm">
+      <p>Скоро: рамки профиля, цвет ника, салюты побед.</p>
+    </div>
+    <div class="tab-pane" id="tab-events">
+      <p>Скоро: мини-турниры, джекпоты недели, марафоны.</p>
+    </div>
+    <div class="tab-pane" id="tab-clans">
+      <p>Скоро: кланы, клановые бусты и рейтинги.</p>
+    </div>
+
+    <div class="btnrow">
+      <button class="btnsm cancel" data-close>Закрыть</button>
+    </div>
+  </div>
 
 <script>
 const BOT_USERNAME = 'realpricebtc_bot';
@@ -630,6 +666,7 @@ const chatFeedBtn = document.getElementById('chatFeedBtn');
 const arenaBtn = document.getElementById('arenaBtn');
 const cfgBtn  = document.getElementById('cfgBtn');
 const claimBtn   = document.getElementById('claimBtn');
+const shopBtn = document.getElementById('shopBtn');
 
 // sheets
 const sheetBg     = document.getElementById('sheetBg');
@@ -641,6 +678,8 @@ const sheetStats  = document.getElementById('sheetStats');
 const sheetAd     = document.getElementById('sheetAd');
 const sheetClaim  = document.getElementById('sheetClaim');
 const sheetChatFeed = document.getElementById('sheetChatFeed');
+const sheetShop  = document.getElementById('sheetShop');
+const shopTabs   = document.getElementById('shopTabs');
 const chatFeed      = document.getElementById('chatFeed');
 const claimVopEl  = document.getElementById('claimVop');
 const claimDo     = document.getElementById('claimDo');
@@ -899,13 +938,22 @@ function bindOnce(){
     claimDo.disabled = true;
     await fetchClaimInfo();
   };
-  chatFeedBtn.onclick = async ()=>{
-    await loadChatFeed();
-    openSheet(sheetChatFeed);
-  };
-  arenaBtn.onclick = ()=>{
-    location.href = `/arena.html?uid=${encodeURIComponent(uid)}`;
-  };
+    chatFeedBtn.onclick = async ()=>{
+      await loadChatFeed();
+      openSheet(sheetChatFeed);
+    };
+    shopBtn.onclick = ()=> openSheet(sheetShop);
+    shopTabs.addEventListener('click', (e)=>{
+      const b = e.target.closest('.tab-btn'); if(!b) return;
+      shopTabs.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      const tab = b.dataset.tab;
+      sheetShop.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('show'));
+      sheetShop.querySelector(`#tab-${tab}`)?.classList.add('show');
+    });
+    arenaBtn.onclick = ()=>{
+      location.href = `/arena.html?uid=${encodeURIComponent(uid)}`;
+    };
   chipsBox.addEventListener('click', e=>{
     const b = e.target.closest('.chipopt'); if (!b) return;
     document.querySelectorAll('#chips .chipopt').forEach(x=>x.classList.remove('active'));
