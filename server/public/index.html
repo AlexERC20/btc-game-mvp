@@ -138,7 +138,7 @@
   .btnsm[disabled]{ background:#333 !important; opacity:0.8; cursor:not-allowed; }
   .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
 
-  .sheet .feed{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+  #sheetChatFeed .feed{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
   .msg{background:#121212;border:1px solid var(--border);border-radius:12px;padding:10px}
   .msg .meta{color:#aaa;font-size:12px;margin-bottom:4px}
   .msg .text{font-size:14px;line-height:1.3}
@@ -453,10 +453,8 @@
   </div>
 </div>
 
-<!-- SHEET: аукцион сообщения + история -->
+<!-- SHEET: аукцион сообщения -->
 <div class="sheet" id="sheetAd">
-  <h3>история чата</h3>
-  <div id="chatFeed" class="feed"></div>
   <h3>Ваше сообщение</h3>
   <div class="inputline">
     <input id="adInput" type="text" maxlength="50" placeholder="Сообщение (до 50 символов)">
@@ -480,6 +478,13 @@
     <button class="btnsm cancel" data-close>Закрыть</button>
     <button class="btnsm" id="claimDo" disabled>CLAIM</button>
   </div>
+</div>
+
+<!-- SHEET: history of paid chat -->
+<div class="sheet" id="sheetChatFeed">
+  <h3>история чата</h3>
+  <div id="chatFeed" class="feed"></div>
+  <div class="btnrow"><button class="btnsm cancel" data-close>Закрыть</button></div>
 </div>
 
 <script>
@@ -517,7 +522,7 @@ let adState = {
 };
 
 let prevAd = null;
-let shoutTimer = null;
+let adPriceTimer = null;
 let selectedPack = null;
 
 // elements
@@ -560,6 +565,7 @@ const sheetIns    = document.getElementById('sheetIns');
 const sheetStats  = document.getElementById('sheetStats');
 const sheetAd     = document.getElementById('sheetAd');
 const sheetClaim  = document.getElementById('sheetClaim');
+const sheetChatFeed = document.getElementById('sheetChatFeed');
 const chatFeed      = document.getElementById('chatFeed');
 const claimVopEl  = document.getElementById('claimVop');
 const claimDo     = document.getElementById('claimDo');
@@ -680,41 +686,6 @@ function renderAdLine() {
 renderAdLine();
 // модалка «написать» обработана в bindOnce()
 
-async function openShoutSheet(){
-  hapticImpact('light');
-  adInput.value = '';
-  adCount.textContent = '0/50';
-  adSend.disabled = true;
-  await refreshShoutState(true);
-  openSheet(sheetAd);
-  adInput.focus();
-  if (shoutTimer) clearInterval(shoutTimer);
-  shoutTimer = setInterval(()=>refreshShoutState(true), 12000);
-}
-
-async function sendShout(){
-  const text = adInput.value.trim().replace(/\n/g,' ').slice(0,50);
-  if(!text) return;
-  adSend.disabled = true;
-  const r = await api('/api/shout/bid', { message:text }).catch(()=>({ ok:false }));
-  adSend.disabled = false;
-  if(!r.ok){
-    if(r.error==='INSUFFICIENT' || r.error==='INSUFFICIENT_BALANCE') alert('Недостаточно средств');
-    else if(r.error==='PRICE_CHANGED'){ if(r.next_price){ adState.nextPrice = Number(r.next_price); updateAdEnter(); } alert('Цена изменилась, попробуйте ещё раз'); }
-    else if(r.error==='TOO_LONG') alert('До 50 символов');
-    else if(r.error==='LOCKED') alert('Чат временно недоступен');
-    else alert('Ошибка, попробуйте ещё раз');
-    await refreshShoutState(true);
-    return;
-  }
-  closeAllSheets();
-  playOnce(adLine, 'flash-win');
-  hapticImpact('medium');
-  try{ navigator?.vibrate?.(15); }catch{}
-  await refreshShoutState();
-  await refreshBalance();
-}
-
 const CIRC = 2*Math.PI*140;
 const RLEN = CIRC;
 ring.setAttribute('stroke-dasharray', CIRC);
@@ -796,7 +767,7 @@ function closeAllSheets(){
   document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open'));
   sheetBg.classList.remove('show');
   document.body.classList.remove('noscroll');
-  if (shoutTimer) { clearInterval(shoutTimer); shoutTimer = null; }
+  if (adPriceTimer) { clearInterval(adPriceTimer); adPriceTimer = null; }
   openedSheet = null;
 }
 
@@ -853,7 +824,10 @@ function bindOnce(){
     claimDo.disabled = true;
     await fetchClaimInfo();
   };
-  chatFeedBtn.onclick = ()=>{ openShoutSheet(); };
+  chatFeedBtn.onclick = async ()=>{
+    await loadChatFeed();
+    openSheet(sheetChatFeed);
+  };
   arenaBtn.onclick = ()=>{
     location.href = `/arena.html?uid=${encodeURIComponent(uid)}`;
   };
@@ -941,14 +915,37 @@ function bindOnce(){
     try { await open; await refreshBalance(); } catch {}
     closeAllSheets();
   };
-  adWriteBtn.onclick = ()=>{ openShoutSheet(); };
+  adWriteBtn.onclick = async ()=>{
+    hapticImpact('light');
+    adInput.value = '';
+    adCount.textContent = '0/50';
+    adSend.disabled = true;
+    await adPoll();
+    openSheet(sheetAd);
+    adInput.focus();
+    adPriceTimer = setInterval(adPoll, 1000);
+  };
   adInput.addEventListener('input', ()=>{
     adInput.value = adInput.value.slice(0,50);
     const len = adInput.value.length;
     adCount.textContent = len + '/50';
     adSend.disabled = len === 0;
   });
-  adSend.onclick = async ()=>{ await sendShout(); };
+  adSend.onclick = async ()=>{
+    const text = adInput.value.trim().replace(/\n/g,' ').slice(0,50);
+    if (!text) return;
+    const r = await api('/api/shout/bid', { message:text }).catch(()=>({ ok:false }));
+    if (!r.ok) {
+      alert(r.error==='INSUFFICIENT_BALANCE' ? 'Недостаточно средств' : 'Цена изменилась, попробуйте снова');
+      await adPoll();
+      return;
+    }
+    closeAllSheets();
+    playOnce(adLine, 'flash-win');
+    hapticImpact('medium');
+    await adPoll();
+    await refreshBalance();
+  };
 }
 
 // api
@@ -1024,27 +1021,16 @@ async function loadMyStats(){
   window.__lastWinRoundFromServer = s.last_win_round;
 }
 
-async function refreshShoutState(includeHistory=false){
+async function adPoll(){
   const r = await fetch(`/api/shout?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>null);
-  if (r && r.ok) {
-    const st = r.state || {};
-    adState = {
-      user: st.holder?.name || '',
-      text: st.message || '',
-      nextPrice: Number(st.next_price || 0)
-    };
-    renderAdLine();
-  }
-  if (includeHistory) {
-    const h = await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
-    if (h.ok) {
-      chatFeed.innerHTML = h.items.map(it=>(
-        `<div class="msg"><div class="meta">@${(it.username||'anon').replace(/^@+/,'@')} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}</div><div class="text">${escapeHtml(it.text||'')}</div></div>`
-      )).join('');
-    } else {
-      chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>';
-    }
-  }
+  if (!r || !r.ok) return;
+  const st = r.state || {};
+  adState = {
+    user: st.holder?.name || '',
+    text: st.message || '',
+    nextPrice: Number(st.next_price || 0)
+  };
+  renderAdLine();
 }
 
 let lastCelebratedRound = Number(localStorage.getItem('lastCelebratedRound')||0);
@@ -1115,7 +1101,7 @@ async function poll(){
 
   if (!IS_VIEWER) await refreshBalance();
   await leaderboard();
-  await refreshShoutState();
+  await adPoll();
 
   // --- Result animation during pause
   if (!IS_VIEWER && r.phase === 'pause' && r.lastSettlement) {
@@ -1190,6 +1176,17 @@ async function place(side){
   }
   if (r.placed) setSettings({ amount: r.placed });
   await poll();
+}
+async function loadChatFeed(){
+  const r = await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
+  if(!r.ok) { chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>'; return; }
+  chatFeed.innerHTML = r.items.map(it=>(
+    `<div class="msg">
+       <div class="meta">@${(it.username||'anon').replace(/^@+/,'@')} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}
+       </div>
+       <div class="text">${escapeHtml(it.text||'')}</div>
+     </div>`
+  )).join('');
 }
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, m => ({
