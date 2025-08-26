@@ -14,6 +14,8 @@
   html,body{height:100%;margin:0}
   body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial}
   .wrap{max-width:520px;margin:24px auto 0;padding:16px 14px 28px}
+  .back-text{background:none;border:none;color:#fff;font-size:14px;padding:0;margin-bottom:6px;cursor:pointer}
+  .page-title{font-size:28px;font-weight:800;text-align:center;margin:0 0 12px}
   .price{font-size:24px;font-weight:800;text-align:center;margin-top:2px}
   .sub{font-size:12px;color:var(--muted);text-align:center;margin:2px 0 8px}
   .balance{text-align:center;font-size:16px;margin:4px 0 8px}
@@ -66,7 +68,7 @@
     pointer-events:none;
   }
   .inring-price{
-    font-size: var(--price-font, 40px);
+    font-size: var(--price-font, 38px);
     font-weight:800;
     letter-spacing:0.5px;
     line-height:1;
@@ -75,11 +77,9 @@
   @media (max-width:380px){ .inring-price{font-size:34px} }
 
   .inring-bottom{
-    display:flex; align-items:center; gap:8px;
-    margin-top:8px;
-    font-size:16px; font-weight:800; color:#ddd;
+    width:70%;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:8px;font-size:clamp(12px,2.8vw,16px);font-weight:800;color:#ddd;
   }
-  .inring-dot{ opacity:.5 }
+
   .bank{text-align:center;color:#fff;font-size:18px;margin-top:6px}
   .btn{width:100%;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer;background:var(--green);margin-top:16px}
   .btn:active{transform:translateY(1px) scale(.99)}
@@ -128,6 +128,21 @@
   .ad-count{ color:var(--muted); font-size:13px }
   .ad-enter{ color:var(--muted); font-size:13px }
 
+  .lb-head{color:var(--muted);font-size:13px;margin:10px 0 6px;text-align:center}
+  .podium{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+  .pod{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px;text-align:center}
+  .pod1{order:2;transform:scale(1.05)}
+  .pod2{order:1}
+  .pod3{order:3}
+  .pod .name{font-weight:700}
+  .pod .wins{color:#ccc;font-size:12px}
+  .pod .sum{font-weight:700;margin-top:2px}
+  .lb{display:grid;grid-template-columns:1fr;gap:8px}
+  .rank{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+  .rank .left{display:flex;gap:8px;align-items:center}
+  .badge{width:24px;height:24px;border-radius:999px;background:#222;display:flex;align-items:center;justify-content:center;font-weight:800}
+  .rank .wins{color:#aaa;font-size:12px;margin-left:4px}
+
   /* bottom sheets */
   .sheet{position:fixed;left:0;right:0;bottom:0;background:#0b0b0b;border-top:1px solid var(--border);border-radius:16px 16px 0 0;transform:translateY(100%);transition:transform .25s ease;padding:14px 14px calc(18px + env(safe-area-inset-bottom));z-index:1000}
   .sheet.open{transform:translateY(0)}
@@ -161,6 +176,8 @@
 </head>
 <body>
 <div class="wrap">
+  <button class="back-text" id="backText">Назад</button>
+  <div class="page-title">Арена</div>
   <div class="center">
     <div class="timer" id="timerWrap">
       <svg viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet">
@@ -169,11 +186,7 @@
       </svg>
       <div class="inring-stack">
         <div class="inring-price" id="bank" data-v="0">$0</div>
-        <div class="inring-bottom">
-          <span class="inring-timer" id="ringTimer">00:60</span>
-          <span class="inring-dot">•</span>
-          <span class="inring-phase" id="ringPhase">Ожидаем первую ставку</span>
-        </div>
+        <div class="inring-bottom" id="ringStatus">00:00 · Ожидание ставки</div>
       </div>
     </div>
   </div>
@@ -209,6 +222,9 @@
     <button class="chipbtn" id="starsBtn">Купить $</button>
     <button class="chipbtn" id="claimBtn" style="display:none">CLAIM</button>
   </div>
+  <div class="lb-head">Топ за 24 часа</div>
+  <div class="podium" id="lbPodium"></div>
+  <div class="lb" id="lbRest"></div>
 </div>
 <canvas id="fwCanvas"></canvas>
 <div class="sheet-backdrop" id="sheetBg"></div>
@@ -286,11 +302,19 @@ const tg = window.Telegram?.WebApp; tg?.expand();
 const uid = tg?.initDataUnsafe?.user?.id || null;
 const username = tg?.initDataUnsafe?.user?.username ? '@'+tg.initDataUnsafe.user.username : null;
 
+if (window.Telegram?.WebApp?.BackButton) {
+  Telegram.WebApp.BackButton.show();
+  Telegram.WebApp.onEvent('backButtonClicked', () => { window.location.href = '/'; });
+}
+
 const ring = document.getElementById('ring');
 const timerWrap = document.getElementById('timerWrap');
 const bankEl = document.getElementById('bank');
-const ringTimer = document.getElementById('ringTimer');
-const ringPhase = document.getElementById('ringPhase');
+const ringStatus = document.getElementById('ringStatus');
+const backText = document.getElementById('backText');
+const lbPodium = document.getElementById('lbPodium');
+const lbRest = document.getElementById('lbRest');
+backText.onclick = () => { window.location.href = '/'; };
 const bidBtn = document.getElementById('bidBtn');
 const leaderEl = document.getElementById('leader');
 const lvlNum = document.getElementById('lvlNum');
@@ -336,7 +360,7 @@ let pauseMax = 0;
 let adState = {};
 
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
-function normUser(u){ return '@'+String(u||'').replace(/^@+/, ''); }
+function normUser(u){ return '@'+String(u||'anon').replace(/^@+/, ''); }
 function setBalanceVal(amount){ if(balInline) balInline.textContent = fmt(amount); }
 function renderProfile(p){
   if(!p) return;
@@ -357,11 +381,11 @@ function renderArena(st){
   bankEl.dataset.v = newBank;
   const mm = Math.floor(st.secsLeft/60);
   const ss = st.secsLeft % 60;
-  ringTimer.textContent = String(mm).padStart(2,'0')+':' + String(ss).padStart(2,'0');
-  ringPhase.textContent = st.phase==='idle'?'Ожидаем первую ставку':st.phase==='pause'?'Пауза':'Идёт аукцион';
+  const statusTxt = st.phase==='idle'?'Ожидание ставки':st.phase==='pause'?'Пауза':'Идёт аукцион';
+  ringStatus.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} · ${statusTxt}`;
   bidBtn.textContent = 'Ставка $' + Number(st.nextBid||0).toLocaleString();
   bidBtn.disabled = st.phase === 'pause';
-  leaderEl.textContent = 'Лидер: ' + (st.leader?.name || '—');
+  leaderEl.textContent = 'Лидер: ' + (st.leader?.name ? normUser(st.leader.name) : '—');
 
   if(arenaPhase!==st.phase){
     if(st.phase==='betting') arenaMax = st.secsLeft;
@@ -375,9 +399,9 @@ function renderArena(st){
              : st.phase==='pause' ? (pauseMax? st.secsLeft/pauseMax : 0)
              : 0;
   const CIRC = 2*Math.PI*140; ring.setAttribute('stroke-dasharray', CIRC); ring.setAttribute('stroke-dashoffset', CIRC*(1-pct));
-  if(arenaPhase!=='pause' && st.phase==='pause' && normUser(st.leader?.name)===normUser(username||'')){
+  if(arenaPhase!=='pause' && st.phase==='pause' && st.lastWinnerTid && uid && st.lastWinnerTid===uid){
     FW.start();
-    try{ tg?.HapticFeedback?.notificationOccurred('success'); }catch{}
+    try{ tg?.HapticFeedback?.notificationOccurred('success'); navigator?.vibrate?.(70); }catch{}
   }
   arenaPhase = st.phase;
 }
@@ -416,7 +440,7 @@ bidBtn.addEventListener('click', async ()=>{
     animateBank(oldBank, r.bank);
     renderArena(r);
     loadProfile();
-    try{ tg?.HapticFeedback?.impactOccurred('soft'); }catch{}
+    try{ tg?.HapticFeedback?.impactOccurred('soft'); navigator?.vibrate?.(15); }catch{}
   } else if(r?.error==='INSUFFICIENT'){ alert('Недостаточно средств'); }
 });
 function animateBank(from,to){
@@ -459,6 +483,27 @@ adSend.onclick = async ()=>{
   else if(r.error==='INSUFFICIENT'){ alert('Недостаточно средств'); }
 };
 
+async function loadLb24(){
+  const r = await fetch('/api/arena/leaderboard?window=24h').then(r=>r.json()).catch(()=>null);
+  if(!r?.ok) return;
+  const items = r.items || [];
+  const top3 = items.slice(0,3);
+  lbPodium.innerHTML = top3.map((it,i)=>`
+    <div class="pod pod${i+1}">
+      <div class="name">${normUser(it.username)}</div>
+      <div class="wins">${it.wins} побед</div>
+      <div class="sum">${fmt(it.total_won)}</div>
+    </div>`).join('');
+  lbRest.innerHTML = items.slice(3).map((it,i)=>`
+    <div class="rank">
+      <div class="left">
+        <div class="badge">${i+4}</div>
+        <div class="name">${normUser(it.username)}<span class="wins">(${it.wins})</span></div>
+      </div>
+      <div class="val">${fmt(it.total_won)}</div>
+    </div>`).join('');
+}
+
 openChannel.onclick = ()=>{ try{ if(window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK); else window.open(CHANNEL_LINK); }catch{ window.open(CHANNEL_LINK); } };
 checkBonus.onclick = async ()=>{
   checkBonus.disabled=true;
@@ -490,9 +535,11 @@ async function fetchClaimInfo(){
 setInterval(pollArena,1000);
 setInterval(pollAd,4000);
 setInterval(loadProfile,5000);
+setInterval(loadLb24,25000);
 loadProfile();
 pollArena();
 pollAd();
+loadLb24();
 </script>
 
 <script>
