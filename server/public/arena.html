@@ -172,8 +172,6 @@
 
   @keyframes ringPulse{0%{transform:scale(1);}50%{transform:scale(1.02);}100%{transform:scale(1);}}
   .timer.pulse{animation:ringPulse 0.5s ease;}
-  .timer-cap{position:absolute;top:8px;right:8px;font-size:12px;color:var(--muted);}
-  .limit-badge{background:#222;border:1px solid var(--border);border-radius:8px;padding:2px 6px;font-size:12px;}
 </style>
 </head>
 <body>
@@ -182,14 +180,13 @@
   <div class="page-title">Арена</div>
   <div class="center">
     <div class="timer" id="timerWrap">
-      <div class="timer-cap">⏱ max 3:00</div>
       <svg viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet">
         <circle cx="160" cy="160" r="140" stroke="#1f1f1f" stroke-width="14" fill="none"/>
         <circle id="ring" cx="160" cy="160" r="140" stroke="var(--ring)" stroke-width="14" fill="none" stroke-linecap="round" stroke-dasharray="879.645" stroke-dashoffset="0"/>
       </svg>
       <div class="inring-stack">
         <div class="inring-price" id="bank" data-v="0">$0</div>
-        <div class="inring-bottom" id="ringStatus">00:00 · Ожидание ставки</div>
+        <div class="inring-bottom" id="ringStatus">00:00 • Ожидаем ставку</div>
       </div>
     </div>
   </div>
@@ -359,8 +356,8 @@ const claimDo = document.getElementById('claimDo');
 let selectedPack = null;
 let arenaPhase = 'idle';
 let arenaMax = 0;
-let pauseMax = 0;
 let adState = {};
+const START_BANK = 10000;
 
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
 function normUser(u){ return '@'+String(u||'anon').replace(/^@+/, ''); }
@@ -378,42 +375,39 @@ async function loadProfile(){
   const r = await fetch('/api/auth',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>null);
   if(r?.ok) renderProfile(r.user);
 }
+function calcNextBid(bank, minBid, step){
+  const diff = Math.max(0, bank - START_BANK);
+  const a = step;
+  const b = 2*minBid - step;
+  const c = -2*diff;
+  const disc = b*b - 4*a*c;
+  const n = Math.floor((-b + Math.sqrt(Math.max(0,disc))) / (2*a));
+  return minBid + n*step;
+}
 function renderArena(st){
   const newBank = Number(st.bank||0);
   bankEl.textContent = fmt(newBank);
   bankEl.dataset.v = newBank;
   const mm = Math.floor(st.secsLeft/60);
   const ss = st.secsLeft % 60;
-  if(st.phase==='betting'){
-    if(st.secsLeft>0){
-      ringStatus.textContent = `до лимита: ${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} • Идёт аукцион`;
-    } else {
-      ringStatus.innerHTML = '<span class="limit-badge">Лимит 3:00 — продления отключены</span>';
-    }
-  } else {
-    const statusTxt = st.phase==='idle'?'Ожидание ставки':'Пауза';
-    ringStatus.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} · ${statusTxt}`;
-  }
-  bidBtn.textContent = 'Ставка $' + Number(st.nextBid||0).toLocaleString();
-  bidBtn.disabled = st.phase === 'pause';
+  const phaseTxt = st.phase==='idle' ? 'Ожидаем ставку' : st.phase==='running' ? 'Идёт аукцион' : 'Завершаем…';
+  ringStatus.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} • ${phaseTxt}`;
+  const nb = st.nextBid!==undefined ? st.nextBid : calcNextBid(newBank, st.minBid, st.bidStep);
+  bidBtn.textContent = 'Ставка $' + Number(nb||0).toLocaleString();
+  bidBtn.disabled = st.phase !== 'running';
   leaderEl.textContent = 'Лидер: ' + (st.leader?.name ? normUser(st.leader.name) : '—');
 
   if(arenaPhase!==st.phase){
-    if(st.phase==='betting') arenaMax = st.secsLeft;
-    if(st.phase==='pause') pauseMax = st.secsLeft;
+    if(st.phase==='running') arenaMax = st.secsLeft;
   } else {
-    if(st.phase==='betting' && st.secsLeft>arenaMax) arenaMax = st.secsLeft;
-    if(st.phase==='pause' && st.secsLeft>pauseMax) pauseMax = st.secsLeft;
+    if(st.phase==='running' && st.secsLeft>arenaMax) arenaMax = st.secsLeft;
   }
 
-  const pct = st.phase==='betting' ? (arenaMax? st.secsLeft/arenaMax : 0)
-             : st.phase==='pause' ? (pauseMax? st.secsLeft/pauseMax : 0)
-             : 0;
-  const CIRC = 2*Math.PI*140; ring.setAttribute('stroke-dasharray', CIRC); ring.setAttribute('stroke-dashoffset', CIRC*(1-pct));
-  if(arenaPhase!=='pause' && st.phase==='pause' && st.lastWinnerTid && uid && st.lastWinnerTid===uid){
-    FW.start();
-    try{ tg?.HapticFeedback?.notificationOccurred('success'); navigator?.vibrate?.(70); }catch{}
-  }
+  const pct = st.phase==='running' ? (arenaMax? st.secsLeft/arenaMax : 0) : 0;
+  const CIRC = 2*Math.PI*140;
+  ring.setAttribute('stroke-dasharray', CIRC);
+  ring.setAttribute('stroke-dashoffset', CIRC*(1-pct));
+
   arenaPhase = st.phase;
 }
 async function pollArena(){

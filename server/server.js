@@ -80,15 +80,13 @@ const ARENA = {
   startBank: 10_000,
   minBid: 50,
   step: 10,
-  pauseLen: 10,
   rakePct: 0.10,
-
-  // timer rules
-  start_after_first_bid_secs: 60, // старт таймера после первой ставки
-  extend_on_bid_secs: 10,         // продление при ставке до лимита
-  hard_cap_secs: 180,             // жёсткий лимит раунда — 3:00
-  hold_to_win_secs: 10,           // победа, если 10с без перебития
 };
+
+// Arena timer constants
+const ARENA_START_SECS = 60; // старт после первой ставки = 1:00
+const MAX_CAP_SECS     = 180; // верхний предел = 3:00
+const OVERTIME_FLOOR   = 15;  // нижний порог овертайма = 0:15
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
@@ -591,7 +589,7 @@ async function grantDailyIfNeeded(telegramId) {
 
 /* ========= Auction subsystem ========= */
 let arena = {
-  phase: 'idle',            // 'idle' | 'betting' | 'pause'
+  phase: 'idle',            // 'idle' | 'running' | 'settling'
   secsLeft: 0,
   bank: ARENA.startBank,
   currentBid: 0,
@@ -600,14 +598,14 @@ let arena = {
   leaderTid: null,
   leaderName: null,
   roundId: null,
-  firstBidAt: null,
-  lastBidAt: null,
-  capReached: false,
 };
 
 async function settleArenaRound() {
   // если лидера нет — просто уходим в idle
   if (!arena.leaderUserId) return toIdle();
+
+  arena.phase = 'settling';
+  arena.secsLeft = 0;
 
   const rake = Math.floor(arena.bank * ARENA.rakePct);
   const paid = arena.bank - rake;
@@ -623,11 +621,8 @@ async function settleArenaRound() {
   `, [arena.leaderUserId, arena.bank, rake, paid, arena.leaderTid, arena.roundId]);
   await pool.query('COMMIT');
 
-  // в паузу
-  arena.phase = 'pause';
-  arena.secsLeft = ARENA.pauseLen;
-  arena.firstBidAt = arena.lastBidAt = null;
-  arena.capReached = false;
+  // после завершения сразу в idle
+  toIdle();
 }
 
 function toIdle() {
@@ -638,33 +633,24 @@ function toIdle() {
   arena.nextBid = ARENA.minBid;
   arena.leaderUserId = arena.leaderTid = arena.leaderName = null;
   arena.roundId = null;
-  arena.firstBidAt = arena.lastBidAt = null;
-  arena.capReached = false;
+}
+
+function extendOnBid() {
+  if (arena.secsLeft >= 120) {
+    arena.secsLeft = Math.min(arena.secsLeft + 20, MAX_CAP_SECS);
+  } else if (arena.secsLeft > 30) {
+    arena.secsLeft = Math.min(arena.secsLeft + 10, MAX_CAP_SECS);
+  } else {
+    arena.secsLeft = Math.max(arena.secsLeft, OVERTIME_FLOOR);
+  }
 }
 
 setInterval(async () => {
-  if (arena.phase === 'betting') {
-    const nowSec = Math.floor(Date.now() / 1000);
-    if (arena.firstBidAt) {
-      const elapsed = nowSec - arena.firstBidAt;
-      if (elapsed >= ARENA.hard_cap_secs) {
-        arena.capReached = true;
-        arena.secsLeft = 0;
-      } else if (!arena.capReached && arena.secsLeft > 0) {
-        arena.secsLeft = Math.max(0, arena.secsLeft - 1);
-      }
-      if (
-        arena.secsLeft === 0 &&
-        arena.leaderUserId &&
-        arena.lastBidAt &&
-        nowSec - arena.lastBidAt >= ARENA.hold_to_win_secs
-      ) {
-        await settleArenaRound();
-      }
-    }
-  } else if (arena.phase === 'pause') {
+  if (arena.phase === 'running') {
     arena.secsLeft = Math.max(0, arena.secsLeft - 1);
-    if (arena.secsLeft === 0) toIdle();
+    if (arena.secsLeft === 0) {
+      await settleArenaRound();
+    }
   }
 }, 1000);
 
@@ -1241,12 +1227,10 @@ app.get('/api/arena/state', (req, res) => {
     ok: true,
     phase: arena.phase,
     secsLeft: arena.secsLeft,
-    capReached: arena.capReached,
     bank: arena.bank,
-    currentBid: arena.currentBid,
-    nextBid: arena.nextBid,
     leader: arena.leaderName ? { name: arena.leaderName } : null,
-    lastWinnerTid: arena.phase === 'pause' ? arena.leaderTid : null,
+    bidStep: ARENA.step,
+    minBid: ARENA.minBid,
   });
 });
 
@@ -1254,18 +1238,14 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
   try {
     const uid = req.tgUser.id;
 
-    const nowSec = Math.floor(Date.now()/1000);
     if (arena.phase === 'idle') {
       const r = await pool.query(
         'INSERT INTO arena_rounds(bank) VALUES($1) RETURNING id',
         [arena.bank]
       );
       arena.roundId = r.rows[0].id;
-      arena.phase = 'betting';
-      arena.firstBidAt = nowSec;
-      arena.lastBidAt = nowSec;
-      arena.capReached = false;
-      arena.secsLeft = ARENA.start_after_first_bid_secs;
+      arena.phase = 'running';
+      arena.secsLeft = ARENA_START_SECS;
     }
 
     await pool.query('BEGIN');
@@ -1291,19 +1271,18 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
     arena.leaderTid = uid;
     arena.leaderName = u.rows[0].username || ('id' + userId);
 
-    arena.lastBidAt = nowSec;
-    const elapsed = arena.firstBidAt ? nowSec - arena.firstBidAt : 0;
-    if (!arena.capReached && elapsed < ARENA.hard_cap_secs) {
-      arena.secsLeft = Math.min(
-        arena.secsLeft + ARENA.extend_on_bid_secs,
-        ARENA.hard_cap_secs - elapsed
-      );
-    } else if (elapsed >= ARENA.hard_cap_secs) {
-      arena.capReached = true;
-      arena.secsLeft = 0;
-    }
+    extendOnBid();
 
-    return res.json({ ok:true, bank:arena.bank, nextBid:arena.nextBid, secsLeft:arena.secsLeft });
+    return res.json({
+      ok: true,
+      bank: arena.bank,
+      nextBid: arena.nextBid,
+      secsLeft: arena.secsLeft,
+      phase: arena.phase,
+      leader: arena.leaderName ? { name: arena.leaderName } : null,
+      bidStep: ARENA.step,
+      minBid: ARENA.minBid,
+    });
   } catch (e) {
     await pool.query('ROLLBACK').catch(()=>{});
     console.error('/api/arena/bid', e);
