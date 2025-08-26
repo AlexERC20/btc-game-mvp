@@ -99,6 +99,13 @@ const pool = new pg.Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+export async function listTelegramIds() {
+  const { rows } = await pool.query(
+    'SELECT DISTINCT telegram_id FROM users WHERE telegram_id IS NOT NULL'
+  );
+  return rows.map((r) => Number(r.telegram_id));
+}
+
 /* ========= DB bootstrap / миграции ========= */
 await pool.query(`
   CREATE TABLE IF NOT EXISTS users(

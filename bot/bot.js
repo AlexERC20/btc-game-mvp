@@ -37,6 +37,21 @@ const STARS_PACKS = {
   '30000': { credit: 1_500_000 },
 };
 
+const ADMIN_USERNAME = 'ownagez';
+const ADMIN_ID = process.env.ADMIN_ID ? Number(process.env.ADMIN_ID) : null;
+
+const NOTIFICATIONS = {
+  arena_open: 'Арена уже доступна! Зайди забери свои 10000$',
+};
+
+function isAdmin(from) {
+  if (!from) return false;
+  if (ADMIN_ID && Number(from.id) === ADMIN_ID) return true;
+  return from.username === ADMIN_USERNAME;
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 await pool.query(`
   CREATE TABLE IF NOT EXISTS users(
     id SERIAL PRIMARY KEY,
@@ -209,6 +224,56 @@ async function checkAndGrantChannelBonus(ctx) {
   await ctx.reply(`Твой баланс: $${Number(bal).toLocaleString()}`);
 }
 
+async function broadcastNotification(tg, adminChatId, messageId, text) {
+  const { rows } = await pool.query(
+    'SELECT DISTINCT telegram_id FROM users WHERE telegram_id IS NOT NULL'
+  );
+  const ids = Array.from(new Set(rows.map((r) => Number(r.telegram_id)))).filter(Boolean);
+  const total = ids.length;
+  let sent = 0;
+  let errors = 0;
+  await tg.editMessageText(adminChatId, messageId, undefined, `Отправлено ${sent}/${total}`);
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    try {
+      await tg.sendMessage(id, text);
+      sent++;
+    } catch (err) {
+      const code = err?.response?.error_code;
+      if (code === 403) {
+        errors++;
+      } else if (code === 429) {
+        const retry = err.parameters?.retry_after || 1;
+        await sleep(retry * 1000);
+        i--;
+        continue;
+      } else {
+        errors++;
+        console.error('notify error', id, err.description || err.message);
+      }
+    }
+    if ((sent + errors) % 25 === 0 || sent + errors === total) {
+      try {
+        await tg.editMessageText(
+          adminChatId,
+          messageId,
+          undefined,
+          `Отправлено ${sent}/${total}`
+        );
+      } catch {}
+    }
+    await sleep(40);
+  }
+  try {
+    await tg.editMessageText(
+      adminChatId,
+      messageId,
+      undefined,
+      `Готово: ${sent}/${total}, ошибок ${errors}`
+    );
+  } catch {}
+}
+
 function mainMenu(urlWithUid) {
   return Markup.keyboard([
     [Markup.button.webApp('Открыть ETH Game', urlWithUid)],
@@ -259,6 +324,68 @@ bot.hears('Рефералы', async (ctx) => {
 
 bot.hears('Проверить', async (ctx) => {
   await checkAndGrantChannelBonus(ctx);
+});
+
+bot.command('notification', async (ctx) => {
+  if (!isAdmin(ctx.from)) {
+    await ctx.reply('Команда доступна только администратору');
+    return;
+  }
+  const buttons = Object.entries(NOTIFICATIONS).map(([k, v]) => [
+    Markup.button.callback(v, `ntf:${k}`),
+  ]);
+  await ctx.reply('Выберите уведомление:', Markup.inlineKeyboard(buttons));
+});
+
+bot.action(/^ntf:([\w_]+)$/, async (ctx) => {
+  if (!isAdmin(ctx.from)) {
+    await ctx.answerCbQuery('Нет доступа');
+    return;
+  }
+  const key = ctx.match[1];
+  const text = NOTIFICATIONS[key];
+  if (!text) {
+    await ctx.answerCbQuery('Нет такого уведомления');
+    return;
+  }
+  await ctx.answerCbQuery();
+  await ctx.editMessageText(
+    text,
+    Markup.inlineKeyboard([
+      [Markup.button.callback('Отправить всем', `ntf:send:${key}`)],
+      [Markup.button.callback('Отмена', 'ntf:cancel')],
+    ])
+  );
+});
+
+bot.action(/^ntf:send:([\w_]+)$/, async (ctx) => {
+  if (!isAdmin(ctx.from)) {
+    await ctx.answerCbQuery('Нет доступа');
+    return;
+  }
+  const key = ctx.match[1];
+  const text = NOTIFICATIONS[key];
+  if (!text) {
+    await ctx.answerCbQuery('Нет такого уведомления');
+    return;
+  }
+  await ctx.answerCbQuery('Запущено');
+  await ctx.editMessageText('⏳ Рассылка запущена...');
+  const progress = await ctx.reply('Подготовка рассылки...');
+  broadcastNotification(ctx.telegram, ctx.chat.id, progress.message_id, text).catch((e) =>
+    console.error('broadcast', e)
+  );
+});
+
+bot.action('ntf:cancel', async (ctx) => {
+  if (!isAdmin(ctx.from)) {
+    await ctx.answerCbQuery();
+    return;
+  }
+  await ctx.answerCbQuery('Отменено');
+  try {
+    await ctx.deleteMessage();
+  } catch {}
 });
 
 // ===== мини-HTTP (если бот как Web Service)
