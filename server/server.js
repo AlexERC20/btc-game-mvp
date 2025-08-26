@@ -80,13 +80,19 @@ const ARENA = {
   startBank: 10_000,
   minBid: 50,
   step: 10,
+  pauseLen: 2,
   rakePct: 0.10,
 };
 
-// Arena timer constants (ms)
-const ARENA_START_MS = 60_000;   // старт после первой ставки = 1:00
-const ARENA_MAX_MS   = 180_000;  // кап по времени = 3:00
-const ARENA_FLOOR_MS = 15_000;   // минимум в овертайме = 0:15
+const ARENA_TIMER = {
+  FIRST_BID_START: 300,      // 5 минут
+  THRESHOLD_LONG: 120,       // 2:00
+  THRESHOLD_SHORT: 30,       // 0:30
+  EXTENSION_LONG: 20,        // +20s
+  EXTENSION_MEDIUM: 10,      // +10s
+  OVERTIME_FLOOR: 15,        // не меньше 15s
+  // OPTIONAL: MAX_CAP: 900, // верхняя «крыша», если нужна (15 мин)
+};
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
@@ -524,9 +530,6 @@ let state = {
 };
 const MAX_HIST = 10;
 
-// one-time result notifications per user { tid -> {id,youWin,amount,ts} }
-const pendingResults = new Map();
-
 /* ========= Цена (Binance WS) ========= */
 let ws = null;
 function connectPrice() {
@@ -590,41 +593,27 @@ async function grantDailyIfNeeded(telegramId) {
   return 0;
 }
 
-/* ========= Arena subsystem ========= */
+/* ========= Auction subsystem ========= */
 let arena = {
-  roundId: null,
-  phase: 'idle', // idle | open | overtime | settling
+  phase: 'idle',            // 'idle' | 'betting' | 'pause'
+  secsLeft: 0,
   bank: ARENA.startBank,
+  currentBid: 0,
+  nextBid: ARENA.minBid,
   leaderUserId: null,
   leaderTid: null,
   leaderName: null,
-  nextBid: ARENA.minBid,
-  startedAt: null,
-  endsAt: null,
-  lastBidAt: null,
-  winnerUserId: null,
+  roundId: null,
 };
 
-function resetArena() {
-  arena.roundId = null;
-  arena.phase = 'idle';
-  arena.bank = ARENA.startBank;
-  arena.leaderUserId = null;
-  arena.leaderTid = null;
-  arena.leaderName = null;
-  arena.nextBid = ARENA.minBid;
-  arena.startedAt = null;
-  arena.endsAt = null;
-  arena.lastBidAt = null;
-  arena.winnerUserId = null;
-}
-
 async function settleArenaRound() {
-  if (!arena.leaderUserId) { resetArena(); return; }
-  arena.phase = 'settling';
-  arena.winnerUserId = arena.leaderUserId;
+  // если лидера нет — просто уходим в idle
+  if (!arena.leaderUserId) return toIdle();
+
   const rake = Math.floor(arena.bank * ARENA.rakePct);
   const paid = arena.bank - rake;
+
+  // payout + XP победителю, закрыть раунд
   await pool.query('BEGIN');
   await pool.query('UPDATE users SET balance = balance + $1, xp = xp + $1 WHERE id = $2', [paid, arena.leaderUserId]);
   await pool.query(`
@@ -633,35 +622,30 @@ async function settleArenaRound() {
           winner_tid = $5, won_amount = $4, settled_at = now()
       WHERE id = $6
   `, [arena.leaderUserId, arena.bank, rake, paid, arena.leaderTid, arena.roundId]);
-  await pool.query('COMMIT').catch(()=>{});
-  setTimeout(resetArena, 1500);
+  await pool.query('COMMIT');
+
+  // в паузу
+  arena.phase = 'pause';
+  arena.secsLeft = ARENA.pauseLen;
 }
 
-function extendOnBid() {
-  const now = Date.now();
-  if (!arena.startedAt) return;
-  let remain = arena.endsAt - now;
-  if (remain >= 120_000) {
-    arena.endsAt += 20_000;
-  } else if (remain > 30_000) {
-    arena.endsAt += 10_000;
-  }
-  const cap = arena.startedAt + ARENA_MAX_MS;
-  if (arena.endsAt > cap) arena.endsAt = cap;
-  remain = arena.endsAt - now;
-  if (remain < ARENA_FLOOR_MS) {
-    arena.endsAt = Math.min(now + ARENA_FLOOR_MS, cap);
-  }
-  arena.phase = (arena.endsAt - now <= 30_000) ? 'overtime' : 'open';
+function toIdle() {
+  arena.phase = 'idle';
+  arena.secsLeft = 0;
+  arena.bank = ARENA.startBank;
+  arena.currentBid = 0;
+  arena.nextBid = ARENA.minBid;
+  arena.leaderUserId = arena.leaderTid = arena.leaderName = null;
+  arena.roundId = null;
 }
 
-setInterval(() => {
-  if (arena.phase === 'open' || arena.phase === 'overtime') {
-    if (Date.now() >= arena.endsAt) {
-      settleArenaRound().catch(console.error);
-    } else if (arena.phase === 'open' && arena.endsAt - Date.now() <= 30_000) {
-      arena.phase = 'overtime';
-    }
+setInterval(async () => {
+  if (arena.phase === 'betting') {
+    arena.secsLeft = Math.max(0, arena.secsLeft - 1);
+    if (arena.secsLeft === 0) await settleArenaRound();
+  } else if (arena.phase === 'pause') {
+    arena.secsLeft = Math.max(0, arena.secsLeft - 1);
+    if (arena.secsLeft === 0) toIdle();
   }
 }, 1000);
 
@@ -749,12 +733,11 @@ async function settle() {
     [state.price, side, fee, distributable, state.currentRoundId]
   );
 
-  const allBets = state.betsBuy.concat(state.betsSell);
   const byUser = new Map();
-  for (const b of allBets) {
-    const cur = byUser.get(b.user_id) || { stake: 0, payout: 0, tgId: b.user };
-    cur.stake += b.amount;
-    byUser.set(b.user_id, cur);
+  for (const w of winners) {
+    const cur = byUser.get(w.user_id) || { stake: 0, payout: 0 };
+    cur.stake += w.amount;
+    byUser.set(w.user_id, cur);
   }
 
   if (totalWin > 0 && winners.length) {
@@ -770,10 +753,8 @@ async function settle() {
           [share, w.user_id]
         );
         const cur = byUser.get(w.user_id);
-        if (cur) {
-          cur.payout += share;
-          byUser.set(w.user_id, cur);
-        }
+        cur.payout += share;
+        byUser.set(w.user_id, cur);
         if (w.insured) {
           await pool.query('UPDATE users SET insurance_count=insurance_count+1 WHERE id=$1', [w.user_id]);
         }
@@ -786,11 +767,6 @@ async function settle() {
       const refund = Math.floor(l.amount / 2);
       if (refund > 0) {
         await pool.query('UPDATE users SET balance=balance+$1 WHERE id=$2', [refund, l.user_id]);
-        const cur = byUser.get(l.user_id);
-        if (cur) {
-          cur.payout += refund;
-          byUser.set(l.user_id, cur);
-        }
       }
     }
   }
@@ -809,21 +785,6 @@ async function settle() {
     const profit = Math.max(0, Math.floor(agg.payout - agg.stake));
     const xpGain = profit * XP.WIN_PER_DOLLAR;
     await grantXpOnce(pool, userId, 'win', state.currentRoundId, xpGain);
-
-    const delta = Math.floor(agg.payout - agg.stake);
-    if (!String(agg.tgId || '').startsWith('bot:')) {
-      const res = {
-        id: crypto.randomUUID(),
-        youWin: delta > 0,
-        amount: delta,
-        ts: Date.now(),
-      };
-      pendingResults.set(String(agg.tgId), res);
-      setTimeout(() => {
-        const cur = pendingResults.get(String(agg.tgId));
-        if (cur && cur.id === res.id) pendingResults.delete(String(agg.tgId));
-      }, 5000);
-    }
   }
 
   state.history.unshift({
@@ -965,7 +926,6 @@ app.get('/api/round', async (req, res) => {
   const initData = req.query?.initData || '';
   const v = verifyInitData(initData, process.env.BOT_TOKEN);
   let user = null;
-  let result = null;
   if (v.ok && v.uid) {
     pool.query('UPDATE users SET last_active_at=now() WHERE telegram_id=$1', [v.uid]).catch(()=>{});
     const ures = await pool.query('SELECT level, xp FROM users WHERE telegram_id=$1', [v.uid]);
@@ -979,7 +939,6 @@ app.get('/api/round', async (req, res) => {
         level_threshold: levelThreshold(lvl),
         level_progress: xp - xpSpentBeforeLevel(lvl),
       };
-      result = pendingResults.get(String(v.uid)) || null;
     }
   }
   res.json({
@@ -991,8 +950,7 @@ app.get('/api/round', async (req, res) => {
     betsBuy: state.betsBuy, betsSell: state.betsSell,
     lastSettlement: state.lastSettlement,
     asset: ASSET,
-    user,
-    result
+    user
   });
 });
 app.get('/api/history', (req, res) => res.json({ history: state.history }));
@@ -1260,47 +1218,30 @@ app.get('/api/leaderboard/xp', async (req, res) => {
 
 /* ========= Arena API ========= */
 app.get('/api/arena/state', (req, res) => {
-  const initData = req.query?.initData || '';
-  let uid = null;
-  const v = verifyInitData(initData, process.env.BOT_TOKEN);
-  if (v.ok && v.uid) uid = v.uid;
-  let youWin = null;
-  if (arena.phase === 'settling' && arena.winnerUserId) {
-    youWin = uid === arena.winnerUserId ? true : (uid ? false : null);
-  }
   res.json({
+    ok: true,
     phase: arena.phase,
-    roundId: arena.roundId,
+    secsLeft: arena.secsLeft,
     bank: arena.bank,
-    leader: arena.leaderName,
+    currentBid: arena.currentBid,
     nextBid: arena.nextBid,
-    startedAt: arena.startedAt,
-    endsAt: arena.endsAt,
-    youWin,
+    leader: arena.leaderName ? { name: arena.leaderName } : null,
+    lastWinnerTid: arena.phase === 'pause' ? arena.leaderTid : null,
   });
 });
 
 app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
   try {
     const uid = req.tgUser.id;
-    const { roundId } = req.body || {};
-    if (!['idle','open','overtime'].includes(arena.phase)) {
-      return res.status(400).json({ error:'PHASE' });
-    }
-    if (arena.phase !== 'idle' && roundId && roundId !== arena.roundId) {
-      return res.status(400).json({ error:'ROUND_MISMATCH' });
-    }
 
-    const now = Date.now();
     if (arena.phase === 'idle') {
       const r = await pool.query(
         'INSERT INTO arena_rounds(bank) VALUES($1) RETURNING id',
         [arena.bank]
       );
       arena.roundId = r.rows[0].id;
-      arena.phase = 'open';
-      arena.startedAt = now;
-      arena.endsAt = now + ARENA_START_MS;
+      arena.phase = 'betting';
+      arena.secsLeft = ARENA_TIMER.FIRST_BID_START;
     }
 
     await pool.query('BEGIN');
@@ -1311,7 +1252,7 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
     const userId = u.rows[0]?.id;
     if (!userId || u.rows[0].balance < arena.nextBid) {
       await pool.query('ROLLBACK');
-      return res.status(400).json({ error:'INSUFFICIENT' });
+      return res.json({ ok:false, error:'INSUFFICIENT' });
     }
     await pool.query('UPDATE users SET balance=balance-$1, xp=xp+50 WHERE id=$2',
                      [arena.nextBid, userId]);
@@ -1320,28 +1261,30 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
     await pool.query('COMMIT');
 
     arena.bank += arena.nextBid;
+    arena.currentBid = arena.nextBid;
     arena.nextBid += ARENA.step;
     arena.leaderUserId = userId;
     arena.leaderTid = uid;
     arena.leaderName = u.rows[0].username || ('id' + userId);
-    arena.lastBidAt = now;
 
-    extendOnBid();
+    if (arena.secsLeft > ARENA_TIMER.THRESHOLD_LONG) {
+      arena.secsLeft += ARENA_TIMER.EXTENSION_LONG;
+    } else if (arena.secsLeft >= ARENA_TIMER.THRESHOLD_SHORT) {
+      arena.secsLeft += ARENA_TIMER.EXTENSION_MEDIUM;
+    } else {
+      if (arena.secsLeft < ARENA_TIMER.OVERTIME_FLOOR) {
+        arena.secsLeft = ARENA_TIMER.OVERTIME_FLOOR;
+      }
+    }
 
-    return res.json({
-      phase: arena.phase,
-      roundId: arena.roundId,
-      bank: arena.bank,
-      leader: arena.leaderName,
-      nextBid: arena.nextBid,
-      startedAt: arena.startedAt,
-      endsAt: arena.endsAt,
-      youWin: null,
-    });
+    // OPTIONAL cap
+    // arena.secsLeft = Math.min(arena.secsLeft, ARENA_TIMER.MAX_CAP || Infinity);
+
+    return res.json({ ok:true, bank:arena.bank, nextBid:arena.nextBid, secsLeft:arena.secsLeft });
   } catch (e) {
     await pool.query('ROLLBACK').catch(()=>{});
     console.error('/api/arena/bid', e);
-    res.status(500).json({ error:'SERVER' });
+    res.status(500).json({ ok:false, error:'SERVER' });
   }
 });
 
@@ -1369,15 +1312,6 @@ app.get('/api/arena/leaderboard', async (req, res) => {
   } catch (e) {
     res.json({ ok:false, error:'SERVER' });
   }
-});
-
-
-app.post('/api/result/ack', requireTgAuth, (req, res) => {
-  const { id } = req.body || {};
-  const uid = String(req.tgUser.id);
-  const cur = pendingResults.get(uid);
-  if (cur && cur.id === id) pendingResults.delete(uid);
-  res.json({ ok:true });
 });
 
 
