@@ -160,7 +160,7 @@
   .btnsm[disabled]{ background:#333 !important; opacity:0.8; cursor:not-allowed; }
   .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
 
-  #sheetChatFeed .feed{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+  .sheet .feed{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
   .msg{background:#121212;border:1px solid var(--border);border-radius:12px;padding:10px}
   .msg .meta{color:#aaa;font-size:12px;margin-bottom:4px}
   .msg .text{font-size:14px;line-height:1.3}
@@ -261,8 +261,10 @@
   </div>
 </div>
 
-<!-- SHEET: Сообщение -->
+<!-- SHEET: Сообщение + история -->
 <div class="sheet" id="sheetAd">
+  <h3>история чата</h3>
+  <div id="chatFeed" class="feed"></div>
   <h3>Ваше сообщение</h3>
   <div class="inputline">
     <input id="adInput" type="text" maxlength="50" placeholder="Сообщение (до 50 символов)">
@@ -286,13 +288,6 @@
     <button class="btnsm cancel" data-close>Закрыть</button>
     <button class="btnsm" id="claimDo" disabled>CLAIM</button>
   </div>
-</div>
-
-<!-- SHEET: история чата -->
-<div class="sheet" id="sheetChatFeed">
-  <h3>история чата</h3>
-  <div id="chatFeed" class="feed"></div>
-  <div class="btnrow"><button class="btnsm cancel" data-close>Закрыть</button></div>
 </div>
 
 <script>
@@ -339,7 +334,6 @@ const sheetTopup = document.getElementById('sheetTopup');
 const sheetStars = document.getElementById('sheetStars');
 const sheetAd = document.getElementById('sheetAd');
 const sheetClaim = document.getElementById('sheetClaim');
-const sheetChatFeed = document.getElementById('sheetChatFeed');
 
 const openChannel = document.getElementById('openChannel');
 const checkBonus = document.getElementById('checkBonus');
@@ -358,9 +352,11 @@ let arenaPhase = 'idle';
 let arenaMax = 0;
 let pauseMax = 0;
 let adState = {};
+let shoutTimer = null;
 
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
 function normUser(u){ return '@'+String(u||'anon').replace(/^@+/, ''); }
+function hapticImpact(style='light'){ try{ tg?.HapticFeedback?.impactOccurred(style); }catch{} }
 function setBalanceVal(amount){ if(balInline) balInline.textContent = fmt(amount); }
 function renderProfile(p){
   if(!p) return;
@@ -409,26 +405,65 @@ async function pollArena(){
   const r = await fetch('/api/arena/state').then(r=>r.json()).catch(()=>null);
   if(r?.ok) renderArena(r);
 }
-async function pollAd(){
+async function refreshShoutState(includeHistory=false){
   const r = await fetch('/api/shout').then(r=>r.json()).catch(()=>null);
-  if(!r?.ok) return;
-  const st = r.state||{};
-  adState = st;
-  adUserEl.textContent = normUser(st.holder?.name);
-  adTextEl.textContent = st.message || 'Пока пусто.';
-  adPriceEl.textContent = 'Цена: $' + Number(st.next_price||0).toLocaleString();
-  adEnter.textContent = 'Цена сейчас: $' + Number(st.next_price||0).toLocaleString();
+  if(r?.ok){
+    const st = r.state||{};
+    adState = st;
+    adUserEl.textContent = normUser(st.holder?.name);
+    adTextEl.textContent = st.message || 'Пока пусто.';
+    adPriceEl.textContent = 'Цена: $' + Number(st.next_price||0).toLocaleString();
+    adEnter.textContent = 'Цена сейчас: $' + Number(st.next_price||0).toLocaleString();
+  }
+  if(includeHistory){
+    const h = await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
+    if(h.ok){
+      chatFeed.innerHTML = h.items.map(it=> (
+        `<div class="msg"><div class="meta">${normUser(it.username)} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}</div><div class="text">${escapeHtml(it.text||'')}</div></div>`
+      )).join('');
+    } else {
+      chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>';
+    }
+  }
 }
-async function loadChatHistory(){
-  const r = await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
-  if(!r.ok){ chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>'; return; }
-  chatFeed.innerHTML = r.items.map(it=>(
-    `<div class="msg"><div class="meta">${normUser(it.username)} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}</div><div class="text">${escapeHtml(it.text||'')}</div></div>`
-  )).join('');
+
+async function openShoutSheet(){
+  hapticImpact('light');
+  adInput.value='';
+  adCount.textContent='0/50';
+  adSend.disabled=true;
+  await refreshShoutState(true);
+  openSheet(sheetAd);
+  adInput.focus();
+  if(shoutTimer) clearInterval(shoutTimer);
+  shoutTimer = setInterval(()=>refreshShoutState(true),12000);
+}
+
+async function sendShout(){
+  const text = adInput.value.trim().slice(0,50);
+  if(!text) return;
+  adSend.disabled = true;
+  const r = await fetch('/api/shout/bid',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ initData: tg?.initData || '', text })}).then(r=>r.json()).catch(()=>({ok:false}));
+  adSend.disabled = false;
+  if(!r.ok){
+    if(r.error==='INSUFFICIENT' || r.error==='INSUFFICIENT_BALANCE') alert('Недостаточно средств');
+    else if(r.error==='PRICE_CHANGED'){ if(r.next_price){ adState.next_price = r.next_price; adEnter.textContent = 'Цена сейчас: $' + Number(r.next_price).toLocaleString(); } alert('Цена изменилась, попробуйте ещё раз'); }
+    else if(r.error==='TOO_LONG') alert('До 50 символов');
+    else if(r.error==='LOCKED') alert('Чат временно недоступен');
+    else alert('Ошибка, попробуйте ещё раз');
+    await refreshShoutState(true);
+    return;
+  }
+  closeAllSheets();
+  hapticImpact('medium');
+  try{ navigator?.vibrate?.(15); }catch{}
+  await refreshShoutState();
+  await loadProfile();
+}
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));}
-function openSheet(el){ if(!el) return; sheetBg.classList.add('show'); el.classList.add('open'); }
-function closeAllSheets(){ document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open')); sheetBg.classList.remove('show'); }
+function openSheet(el){ if(!el) return; sheetBg.classList.add('show'); el.classList.add('open'); document.body.style.overflow='hidden'; }
+function closeAllSheets(){ document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open')); sheetBg.classList.remove('show'); document.body.style.overflow=''; if(shoutTimer){ clearInterval(shoutTimer); shoutTimer=null; } }
 sheetBg.addEventListener('click', closeAllSheets);
 document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeAllSheets));
 
@@ -463,10 +498,10 @@ refBtn.onclick = ()=>{
 };
 
 topupBtn.onclick = ()=> openSheet(sheetTopup);
-chatFeedBtn.onclick = async ()=>{ await loadChatHistory(); openSheet(sheetChatFeed); };
+chatFeedBtn.onclick = ()=>{ openShoutSheet(); };
 starsBtn.onclick = ()=> openSheet(sheetStars);
 claimBtn.onclick = async ()=>{ openSheet(sheetClaim); claimVopEl.textContent='… VOP'; await fetchClaimInfo(); };
-adWriteBtn.onclick = ()=>{ adInput.value=''; adCount.textContent='0/50'; adSend.disabled=true; openSheet(sheetAd); };
+adWriteBtn.onclick = ()=>{ openShoutSheet(); };
 
 adInput.addEventListener('input', ()=>{
   const v = adInput.value.slice(0,50);
@@ -475,13 +510,7 @@ adInput.addEventListener('input', ()=>{
   adSend.disabled = !v.trim();
 });
 
-adSend.onclick = async ()=>{
-  const text = adInput.value.trim();
-  if(!text) return;
-  const r = await fetch('/api/shout/bid',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ initData: tg?.initData || '', text })}).then(r=>r.json()).catch(()=>({ok:false}));
-  if(r.ok){ closeAllSheets(); pollAd(); loadProfile(); }
-  else if(r.error==='INSUFFICIENT'){ alert('Недостаточно средств'); }
-};
+adSend.onclick = async ()=>{ await sendShout(); };
 
 async function loadLb24(){
   const r = await fetch('/api/arena/leaderboard?window=24h').then(r=>r.json()).catch(()=>null);
@@ -533,12 +562,12 @@ async function fetchClaimInfo(){
 }
 
 setInterval(pollArena,1000);
-setInterval(pollAd,4000);
+setInterval(refreshShoutState,4000);
 setInterval(loadProfile,5000);
 setInterval(loadLb24,25000);
 loadProfile();
 pollArena();
-pollAd();
+refreshShoutState();
 loadLb24();
 </script>
 
