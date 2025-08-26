@@ -218,7 +218,6 @@
     </div>
   </div>
   <div class="menu">
-    <button class="chipbtn" id="refBtn">+500$</button>
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="chatFeedBtn">ЧАТ</button>
     <button class="chipbtn" id="rulesBtn">Правила</button>
@@ -248,7 +247,7 @@
   <p>• +$500 — за каждого друга по реф-ссылке</p>
   <div class="btnrow">
     <button class="btnsm" id="openChannel">Открыть канал</button>
-    <button class="btnsm" id="checkBonus">Проверить</button>
+    <button class="btnsm" id="refBtn">+500$</button>
   </div>
   <div class="btnrow">
     <button class="btnsm cancel" data-close>Закрыть</button>
@@ -387,7 +386,6 @@ const sheetShop = document.getElementById('sheetShop');
 const shopTabs = document.getElementById('shopTabs');
 
 const openChannel = document.getElementById('openChannel');
-const checkBonus = document.getElementById('checkBonus');
 const starsPacks = document.getElementById('starsPacks');
 const buyStars = document.getElementById('buyStars');
 const adInput = document.getElementById('adInput');
@@ -575,13 +573,6 @@ async function loadLb24(){
 }
 
 openChannel.onclick = ()=>{ try{ if(window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK); else window.open(CHANNEL_LINK); }catch{ window.open(CHANNEL_LINK); } };
-checkBonus.onclick = async ()=>{
-  checkBonus.disabled=true;
-  const r = await fetch('/api/bonus/check',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ initData: tg?.initData || '' })}).then(r=>r.json()).catch(()=>({ok:false}));
-  checkBonus.disabled=false;
-  if(r.ok){ await loadProfile(); alert('Бонус начислен!'); }
-  else { alert('Не удалось проверить.'); }
-};
 
 starsPacks.addEventListener('click', e=>{
   const b = e.target.closest('.chipopt'); if(!b) return;
