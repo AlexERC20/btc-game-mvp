@@ -331,6 +331,8 @@ const claimDo = document.getElementById('claimDo');
 
 let selectedPack = null;
 let arenaPhase = 'idle';
+let arenaMax = 0;
+let pauseMax = 0;
 let adState = {};
 
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
@@ -353,12 +355,25 @@ function renderArena(st){
   const newBank = Number(st.bank||0);
   bankEl.textContent = fmt(newBank);
   bankEl.dataset.v = newBank;
-  ringTimer.textContent = '00:' + String(st.secsLeft).padStart(2,'0');
+  const mm = Math.floor(st.secsLeft/60);
+  const ss = st.secsLeft % 60;
+  ringTimer.textContent = String(mm).padStart(2,'0')+':' + String(ss).padStart(2,'0');
   ringPhase.textContent = st.phase==='idle'?'Ожидаем первую ставку':st.phase==='pause'?'Пауза':'Идёт аукцион';
   bidBtn.textContent = 'Ставка $' + Number(st.nextBid||0).toLocaleString();
   bidBtn.disabled = st.phase === 'pause';
   leaderEl.textContent = 'Лидер: ' + (st.leader?.name || '—');
-  const pct = st.phase==='running'? st.secsLeft/60 : st.phase==='pause'? st.secsLeft/10 : 0;
+
+  if(arenaPhase!==st.phase){
+    if(st.phase==='betting') arenaMax = st.secsLeft;
+    if(st.phase==='pause') pauseMax = st.secsLeft;
+  } else {
+    if(st.phase==='betting' && st.secsLeft>arenaMax) arenaMax = st.secsLeft;
+    if(st.phase==='pause' && st.secsLeft>pauseMax) pauseMax = st.secsLeft;
+  }
+
+  const pct = st.phase==='betting' ? (arenaMax? st.secsLeft/arenaMax : 0)
+             : st.phase==='pause' ? (pauseMax? st.secsLeft/pauseMax : 0)
+             : 0;
   const CIRC = 2*Math.PI*140; ring.setAttribute('stroke-dasharray', CIRC); ring.setAttribute('stroke-dashoffset', CIRC*(1-pct));
   if(arenaPhase!=='pause' && st.phase==='pause' && normUser(st.leader?.name)===normUser(username||'')){
     FW.start();
