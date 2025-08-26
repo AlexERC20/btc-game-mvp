@@ -83,10 +83,10 @@ const ARENA = {
   rakePct: 0.10,
 };
 
-// Arena timer constants
-const ARENA_START_SECS = 60; // старт после первой ставки = 1:00
-const MAX_CAP_SECS     = 180; // верхний предел = 3:00
-const OVERTIME_FLOOR   = 15;  // нижний порог овертайма = 0:15
+// Arena timer constants (ms)
+const ARENA_START_MS = 60_000;   // старт после первой ставки = 1:00
+const ARENA_MAX_MS   = 180_000;  // кап по времени = 3:00
+const ARENA_FLOOR_MS = 15_000;   // минимум в овертайме = 0:15
 
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
@@ -590,30 +590,41 @@ async function grantDailyIfNeeded(telegramId) {
   return 0;
 }
 
-/* ========= Auction subsystem ========= */
+/* ========= Arena subsystem ========= */
 let arena = {
-  phase: 'idle',            // 'idle' | 'running' | 'settling'
-  secsLeft: 0,
+  roundId: null,
+  phase: 'idle', // idle | open | overtime | settling
   bank: ARENA.startBank,
-  currentBid: 0,
-  nextBid: ARENA.minBid,
   leaderUserId: null,
   leaderTid: null,
   leaderName: null,
-  roundId: null,
+  nextBid: ARENA.minBid,
+  startedAt: null,
+  endsAt: null,
+  lastBidAt: null,
+  winnerUserId: null,
 };
 
+function resetArena() {
+  arena.roundId = null;
+  arena.phase = 'idle';
+  arena.bank = ARENA.startBank;
+  arena.leaderUserId = null;
+  arena.leaderTid = null;
+  arena.leaderName = null;
+  arena.nextBid = ARENA.minBid;
+  arena.startedAt = null;
+  arena.endsAt = null;
+  arena.lastBidAt = null;
+  arena.winnerUserId = null;
+}
+
 async function settleArenaRound() {
-  // если лидера нет — просто уходим в idle
-  if (!arena.leaderUserId) return toIdle();
-
+  if (!arena.leaderUserId) { resetArena(); return; }
   arena.phase = 'settling';
-  arena.secsLeft = 0;
-
+  arena.winnerUserId = arena.leaderUserId;
   const rake = Math.floor(arena.bank * ARENA.rakePct);
   const paid = arena.bank - rake;
-
-  // payout + XP победителю, закрыть раунд
   await pool.query('BEGIN');
   await pool.query('UPDATE users SET balance = balance + $1, xp = xp + $1 WHERE id = $2', [paid, arena.leaderUserId]);
   await pool.query(`
@@ -622,54 +633,34 @@ async function settleArenaRound() {
           winner_tid = $5, won_amount = $4, settled_at = now()
       WHERE id = $6
   `, [arena.leaderUserId, arena.bank, rake, paid, arena.leaderTid, arena.roundId]);
-  await pool.query('COMMIT');
-
-  try {
-    const { rows:[sum] } = await pool.query(
-      'SELECT COALESCE(SUM(amount),0) AS spent FROM arena_bids WHERE round_id=$1 AND user_id=$2',
-      [arena.roundId, arena.leaderUserId]
-    );
-    const spent = Number(sum?.spent || 0);
-    const delta = paid - spent;
-    const res = { id: crypto.randomUUID(), youWin: true, amount: delta, ts: Date.now() };
-    pendingResults.set(String(arena.leaderTid), res);
-    setTimeout(() => {
-      const cur = pendingResults.get(String(arena.leaderTid));
-      if (cur && cur.id === res.id) pendingResults.delete(String(arena.leaderTid));
-    }, 5000);
-  } catch (e) {
-    console.error('arena result', e);
-  }
-
-  // после завершения сразу в idle
-  toIdle();
-}
-
-function toIdle() {
-  arena.phase = 'idle';
-  arena.secsLeft = 0;
-  arena.bank = ARENA.startBank;
-  arena.currentBid = 0;
-  arena.nextBid = ARENA.minBid;
-  arena.leaderUserId = arena.leaderTid = arena.leaderName = null;
-  arena.roundId = null;
+  await pool.query('COMMIT').catch(()=>{});
+  setTimeout(resetArena, 1500);
 }
 
 function extendOnBid() {
-  if (arena.secsLeft >= 120) {
-    arena.secsLeft = Math.min(arena.secsLeft + 20, MAX_CAP_SECS);
-  } else if (arena.secsLeft > 30) {
-    arena.secsLeft = Math.min(arena.secsLeft + 10, MAX_CAP_SECS);
-  } else {
-    arena.secsLeft = Math.max(arena.secsLeft, OVERTIME_FLOOR);
+  const now = Date.now();
+  if (!arena.startedAt) return;
+  let remain = arena.endsAt - now;
+  if (remain >= 120_000) {
+    arena.endsAt += 20_000;
+  } else if (remain > 30_000) {
+    arena.endsAt += 10_000;
   }
+  const cap = arena.startedAt + ARENA_MAX_MS;
+  if (arena.endsAt > cap) arena.endsAt = cap;
+  remain = arena.endsAt - now;
+  if (remain < ARENA_FLOOR_MS) {
+    arena.endsAt = Math.min(now + ARENA_FLOOR_MS, cap);
+  }
+  arena.phase = (arena.endsAt - now <= 30_000) ? 'overtime' : 'open';
 }
 
-setInterval(async () => {
-  if (arena.phase === 'running') {
-    arena.secsLeft = Math.max(0, arena.secsLeft - 1);
-    if (arena.secsLeft === 0) {
-      await settleArenaRound();
+setInterval(() => {
+  if (arena.phase === 'open' || arena.phase === 'overtime') {
+    if (Date.now() >= arena.endsAt) {
+      settleArenaRound().catch(console.error);
+    } else if (arena.phase === 'open' && arena.endsAt - Date.now() <= 30_000) {
+      arena.phase = 'overtime';
     }
   }
 }, 1000);
@@ -1270,34 +1261,46 @@ app.get('/api/leaderboard/xp', async (req, res) => {
 /* ========= Arena API ========= */
 app.get('/api/arena/state', (req, res) => {
   const initData = req.query?.initData || '';
-  let result = null;
+  let uid = null;
   const v = verifyInitData(initData, process.env.BOT_TOKEN);
-  if (v.ok && v.uid) result = pendingResults.get(String(v.uid)) || null;
-
+  if (v.ok && v.uid) uid = v.uid;
+  let youWin = null;
+  if (arena.phase === 'settling' && arena.winnerUserId) {
+    youWin = uid === arena.winnerUserId ? true : (uid ? false : null);
+  }
   res.json({
-    ok: true,
     phase: arena.phase,
-    secsLeft: arena.secsLeft,
+    roundId: arena.roundId,
     bank: arena.bank,
-    leader: arena.leaderName ? { name: arena.leaderName } : null,
-    bidStep: ARENA.step,
-    minBid: ARENA.minBid,
-    result,
+    leader: arena.leaderName,
+    nextBid: arena.nextBid,
+    startedAt: arena.startedAt,
+    endsAt: arena.endsAt,
+    youWin,
   });
 });
 
 app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
   try {
     const uid = req.tgUser.id;
+    const { roundId } = req.body || {};
+    if (!['idle','open','overtime'].includes(arena.phase)) {
+      return res.status(400).json({ error:'PHASE' });
+    }
+    if (arena.phase !== 'idle' && roundId && roundId !== arena.roundId) {
+      return res.status(400).json({ error:'ROUND_MISMATCH' });
+    }
 
+    const now = Date.now();
     if (arena.phase === 'idle') {
       const r = await pool.query(
         'INSERT INTO arena_rounds(bank) VALUES($1) RETURNING id',
         [arena.bank]
       );
       arena.roundId = r.rows[0].id;
-      arena.phase = 'running';
-      arena.secsLeft = ARENA_START_SECS;
+      arena.phase = 'open';
+      arena.startedAt = now;
+      arena.endsAt = now + ARENA_START_MS;
     }
 
     await pool.query('BEGIN');
@@ -1308,7 +1311,7 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
     const userId = u.rows[0]?.id;
     if (!userId || u.rows[0].balance < arena.nextBid) {
       await pool.query('ROLLBACK');
-      return res.json({ ok:false, error:'INSUFFICIENT' });
+      return res.status(400).json({ error:'INSUFFICIENT' });
     }
     await pool.query('UPDATE users SET balance=balance-$1, xp=xp+50 WHERE id=$2',
                      [arena.nextBid, userId]);
@@ -1317,28 +1320,28 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
     await pool.query('COMMIT');
 
     arena.bank += arena.nextBid;
-    arena.currentBid = arena.nextBid;
     arena.nextBid += ARENA.step;
     arena.leaderUserId = userId;
     arena.leaderTid = uid;
     arena.leaderName = u.rows[0].username || ('id' + userId);
+    arena.lastBidAt = now;
 
     extendOnBid();
 
     return res.json({
-      ok: true,
-      bank: arena.bank,
-      nextBid: arena.nextBid,
-      secsLeft: arena.secsLeft,
       phase: arena.phase,
-      leader: arena.leaderName ? { name: arena.leaderName } : null,
-      bidStep: ARENA.step,
-      minBid: ARENA.minBid,
+      roundId: arena.roundId,
+      bank: arena.bank,
+      leader: arena.leaderName,
+      nextBid: arena.nextBid,
+      startedAt: arena.startedAt,
+      endsAt: arena.endsAt,
+      youWin: null,
     });
   } catch (e) {
     await pool.query('ROLLBACK').catch(()=>{});
     console.error('/api/arena/bid', e);
-    res.status(500).json({ ok:false, error:'SERVER' });
+    res.status(500).json({ error:'SERVER' });
   }
 });
 
