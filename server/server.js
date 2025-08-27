@@ -6,6 +6,7 @@ import { WebSocket } from 'ws';
 import pg from 'pg';
 import crypto from 'crypto';
 import { grantXpOnce, levelThreshold, xpSpentBeforeLevel, XP } from '../xp.mjs';
+import { PRICE_BUMP_STEP, calcPrice } from './shopMath.js';
 
 function verifyInitData(initData, botToken) {
   try {
@@ -87,16 +88,17 @@ const VOP_DAILY_CAP             = 150;     // максимум VOP в сутки
 const VOP_OFFLINE_CAP_HOURS     = 12;
 const VOP_MIN_LEVEL             = 25;      // фарм VOP открывается с 25 уровня (level >= 25)
 
-// ==== Апгрейды (стоимость в $ и +FP)
-const USD_UPGRADES = [
-  { id:'usd_booster_1', title:'Booster I',  cost:  500, fp:+1,  reqLevel:1  },
-  { id:'usd_booster_2', title:'Booster II', cost: 2000, fp:+3,  reqLevel:5  },
-  { id:'usd_booster_3', title:'Booster III',cost: 8000, fp:+8,  reqLevel:12 }
+// ==== Магазин бустов и экстракторов ====
+const BOOSTERS_USD = [
+  { tier:1, id:'usd_booster_1', title:'Booster I',  base:  500,  fp:1, level:1 },
+  { tier:2, id:'usd_booster_2', title:'Booster II', base: 1350, fp:3, level:5 },
+  { tier:3, id:'usd_booster_3', title:'Booster III',base: 3400, fp:8, level:12 },
 ];
-const VOP_UPGRADES = [
-  { id:'vop_extractor_1', title:'Extractor I',  cost: 2000, fp:+1,  reqLevel:25 },
-  { id:'vop_extractor_2', title:'Extractor II', cost: 8000, fp:+3,  reqLevel:28 },
-  { id:'vop_extractor_3', title:'Extractor III',cost: 25000,fp:+8,  reqLevel:32 }
+
+const EXTRACTORS_VOP = [
+  { tier:1, id:'vop_extractor_1', title:'Extractor I',  base:  2500, fp:1, level:25 },
+  { tier:2, id:'vop_extractor_2', title:'Extractor II', base:  6750, fp:3, level:28 },
+  { tier:3, id:'vop_extractor_3', title:'Extractor III',base: 17000, fp:8, level:32 },
 ];
 
 // Arena defaults
@@ -231,7 +233,13 @@ await pool.query(`ALTER TABLE users
   ADD COLUMN IF NOT EXISTS claimed_usd_today BIGINT NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS claimed_vop_today BIGINT NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS claimed_usd_date DATE,
-  ADD COLUMN IF NOT EXISTS claimed_vop_date DATE;
+  ADD COLUMN IF NOT EXISTS claimed_vop_date DATE,
+  ADD COLUMN IF NOT EXISTS boost_t1 INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS boost_t2 INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS boost_t3 INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS extract_t1 INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS extract_t2 INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS extract_t3 INT NOT NULL DEFAULT 0;
 `);
 
 await pool.query(`CREATE TABLE IF NOT EXISTS farm_history(
@@ -1486,11 +1494,27 @@ app.get('/api/farm/usd/state', async (req, res) => {
   }
   const active = await checkUsdActive(u.id);
   const accr = computeAccrual('usd', u, now);
-  const upgrades = USD_UPGRADES.map(up=>{
+  const upgrades = BOOSTERS_USD.map(up=>{
+    const purchases = Number(u[`boost_t${up.tier}`] || 0);
+    const price = calcPrice(up.base, purchases);
+    const pricePerFp = Math.round(price / up.fp);
+    const mod = purchases % PRICE_BUMP_STEP;
+    const next = mod === 0 && purchases > 0 ? 0 : PRICE_BUMP_STEP - mod;
     let canBuy = true, reason = null;
-    if (u.level < up.reqLevel) { canBuy=false; reason='LEVEL'; }
-    else if (u.balance < up.cost) { canBuy=false; reason='BALANCE'; }
-    return { ...up, canBuy, reason };
+    if (u.level < up.level) { canBuy=false; reason='LEVEL'; }
+    else if (u.balance < price) { canBuy=false; reason='BALANCE'; }
+    return {
+      id: up.id,
+      title: up.title,
+      fp: up.fp,
+      reqLevel: up.level,
+      price,
+      pricePerFp,
+      purchases_mod: mod,
+      next_bump_in: next,
+      canBuy,
+      reason
+    };
   });
   const hist = await pool.query("SELECT type, amount, meta, created_at FROM farm_history WHERE user_id=$1 AND type LIKE '%usd' ORDER BY id DESC LIMIT 10", [u.id]);
   res.json({ ok:true, active, ratePerHour: accr.ratePerHour, fp: u.fp_usd, claimable: accr.claimable, dailyCap: USD_DAILY_CAP, claimedToday: u.claimed_usd_today, offlineCapHours: USD_OFFLINE_CAP_HOURS, lastClaimAt: u.last_claim_usd, upgrades, history: hist.rows.map(r=>({ type:r.type, amount:Number(r.amount), ts:r.created_at, meta:r.meta })) });
@@ -1527,15 +1551,17 @@ app.post('/api/farm/usd/upgrade', async (req, res) => {
   const upgradeId = req.body.upgradeId;
   if (!uid || !upgradeId) return res.json({ ok:false, error:'BAD_REQ' });
   await ensureUser(uid, null);
-  const up = USD_UPGRADES.find(u=>u.id===upgradeId);
+  const up = BOOSTERS_USD.find(u=>u.id===upgradeId);
   if (!up) return res.json({ ok:false, error:'NO_UPGRADE' });
   const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
   const u = rows[0];
-  if (u.level < up.reqLevel) return res.json({ ok:false, error:'LEVEL' });
-  if (u.balance < up.cost) return res.json({ ok:false, error:'BALANCE' });
-  await pool.query('UPDATE users SET balance=balance-$1, fp_usd=fp_usd+$2 WHERE id=$3', [up.cost, up.fp, u.id]);
-  await pool.query('INSERT INTO farm_history(user_id,type,amount,meta) VALUES($1,$2,$3,$4)', [u.id,'upgrade_usd',-up.cost,{fpDelta:up.fp,title:up.title}]);
-  res.json({ ok:true, fp: u.fp_usd + up.fp, newBalance: Number(u.balance) - up.cost });
+  const purchases = Number(u[`boost_t${up.tier}`] || 0);
+  const price = calcPrice(up.base, purchases);
+  if (u.level < up.level) return res.json({ ok:false, error:'LEVEL' });
+  if (u.balance < price) return res.json({ ok:false, error:'BALANCE' });
+  await pool.query(`UPDATE users SET balance=balance-$1, fp_usd=fp_usd+$2, boost_t${up.tier}=boost_t${up.tier}+1 WHERE id=$3`, [price, up.fp, u.id]);
+  await pool.query('INSERT INTO farm_history(user_id,type,amount,meta) VALUES($1,$2,$3,$4)', [u.id,'upgrade_usd',-price,{fpDelta:up.fp,title:up.title}]);
+  res.json({ ok:true, fp: u.fp_usd + up.fp, newBalance: Number(u.balance) - price });
 });
 
 app.get('/api/farm/vop/state', async (req, res) => {
@@ -1570,11 +1596,27 @@ app.get('/api/farm/vop/state', async (req, res) => {
 
   const claimEligible = referrals >= 30;
 
-  const upgrades = VOP_UPGRADES.map(up=>{
+  const upgrades = EXTRACTORS_VOP.map(up=>{
+    const purchases = Number(u[`extract_t${up.tier}`] || 0);
+    const price = calcPrice(up.base, purchases);
+    const pricePerFp = Math.round(price / up.fp);
+    const mod = purchases % PRICE_BUMP_STEP;
+    const next = mod === 0 && purchases > 0 ? 0 : PRICE_BUMP_STEP - mod;
     let canBuy=true, reason=null;
-    if (u.level < up.reqLevel) { canBuy=false; reason='LEVEL'; }
-    else if (u.balance < up.cost) { canBuy=false; reason='BALANCE'; }
-    return { ...up, canBuy, reason };
+    if (u.level < up.level) { canBuy=false; reason='LEVEL'; }
+    else if (u.balance < price) { canBuy=false; reason='BALANCE'; }
+    return {
+      id: up.id,
+      title: up.title,
+      fp: up.fp,
+      reqLevel: up.level,
+      price,
+      pricePerFp,
+      purchases_mod: mod,
+      next_bump_in: next,
+      canBuy,
+      reason
+    };
   });
   const hist = await pool.query("SELECT type, amount, meta, created_at FROM farm_history WHERE user_id=$1 AND type LIKE '%vop' ORDER BY id DESC LIMIT 10", [u.id]);
 
@@ -1656,15 +1698,17 @@ app.post('/api/farm/vop/upgrade', async (req, res) => {
   const upgradeId = req.body.upgradeId;
   if (!uid || !upgradeId) return res.json({ ok:false, error:'BAD_REQ' });
   await ensureUser(uid, null);
-  const up = VOP_UPGRADES.find(u=>u.id===upgradeId);
+  const up = EXTRACTORS_VOP.find(u=>u.id===upgradeId);
   if (!up) return res.json({ ok:false, error:'NO_UPGRADE' });
   const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
   const u = rows[0];
-  if (u.level < up.reqLevel) return res.json({ ok:false, error:'LEVEL' });
-  if (u.balance < up.cost) return res.json({ ok:false, error:'BALANCE' });
-  await pool.query('UPDATE users SET balance=balance-$1, fp_vop=fp_vop+$2 WHERE id=$3', [up.cost, up.fp, u.id]);
-  await pool.query('INSERT INTO farm_history(user_id,type,amount,meta) VALUES($1,$2,$3,$4)', [u.id,'upgrade_vop',-up.cost,{fpDelta:up.fp,title:up.title}]);
-  res.json({ ok:true, fp: u.fp_vop + up.fp, newBalance: Number(u.balance) - up.cost });
+  const purchases = Number(u[`extract_t${up.tier}`] || 0);
+  const price = calcPrice(up.base, purchases);
+  if (u.level < up.level) return res.json({ ok:false, error:'LEVEL' });
+  if (u.balance < price) return res.json({ ok:false, error:'BALANCE' });
+  await pool.query(`UPDATE users SET balance=balance-$1, fp_vop=fp_vop+$2, extract_t${up.tier}=extract_t${up.tier}+1 WHERE id=$3`, [price, up.fp, u.id]);
+  await pool.query('INSERT INTO farm_history(user_id,type,amount,meta) VALUES($1,$2,$3,$4)', [u.id,'upgrade_vop',-price,{fpDelta:up.fp,title:up.title}]);
+  res.json({ ok:true, fp: u.fp_vop + up.fp, newBalance: Number(u.balance) - price });
 });
 
 app.listen(PORT, () => console.log('Server listening on', PORT));
