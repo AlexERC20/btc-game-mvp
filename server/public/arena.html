@@ -466,11 +466,19 @@ async function pollAd(){
   adPriceEl.textContent = 'Цена: $' + Number(st.next_price||0).toLocaleString();
   adEnter.textContent = 'Цена сейчас: $' + Number(st.next_price||0).toLocaleString();
 }
-async function loadChatHistory(){
-  const r = await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
-  if(!r.ok){ chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>'; return; }
+async function loadChatFeed(){
+  const r = await fetch('/api/shout/history?limit=50')
+    .then(r=>r.json())
+    .catch(()=>({ok:false,items:[]}));
+  if(!r.ok){
+    chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>';
+    return;
+  }
   chatFeed.innerHTML = r.items.map(it=>(
-    `<div class="msg"><div class="meta">${normUser(it.username)} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}</div><div class="text">${escapeHtml(it.text||'')}</div></div>`
+    `<div class="msg">
+       <div class="meta">@${(it.username||'anon').replace(/^@+/,'@')} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}</div>
+       <div class="text">${escapeHtml(it.text||'')}</div>
+     </div>`
   )).join('');
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));}
@@ -514,7 +522,7 @@ refBtn.onclick = ()=>{
 };
 
 topupBtn.onclick = ()=> openSheet(sheetTopup);
-chatFeedBtn.onclick = async ()=>{ await loadChatHistory(); openSheet(sheetChatFeed); };
+chatFeedBtn.onclick = async ()=>{ await loadChatFeed(); openSheet(sheetChatFeed); };
 rulesBtn.onclick = ()=> openSheet(sheetRules);
 starsBtn.onclick = ()=> openSheet(sheetStars);
 // Переход в магазин аналогично главной странице
