@@ -101,13 +101,19 @@ const EXTRACTORS_VOP = [
   { tier:3, id:'vop_extractor_3', title:'Extractor III',base: 17000, fp:8, level:32 },
 ];
 
-// Arena defaults
+// Arena configuration
+const ARENA_FEE_PCT = Number(process.env.ARENA_FEE_PCT || 0.10);
+const ARENA_FEE_TO_BOTS_PCT = Number(process.env.ARENA_FEE_TO_BOTS_PCT || 0);
+const BOT_ARENA_DISTRIBUTION = process.env.BOT_ARENA_DISTRIBUTION || 'equal';
+const MIN_BOT_SHARE_CENTS = Number(process.env.MIN_BOT_SHARE_CENTS || 1);
+const BOT_ARENA_REMAINDER = process.env.BOT_ARENA_REMAINDER || 'first_bot';
+
 const ARENA = {
   startBank: 10_000,
   minBid: 50,
   step: 10,
   pauseLen: 2,
-  rakePct: 0.10,
+  rakePct: ARENA_FEE_PCT,
 };
 
 const ARENA_TIMER = {
@@ -149,7 +155,8 @@ await pool.query(`
     last_chat_xp_at TIMESTAMPTZ,
     streak_wins INT NOT NULL DEFAULT 0,
     last_result_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now(),
+    is_bot BOOLEAN NOT NULL DEFAULT FALSE
   );
 
   CREATE TABLE IF NOT EXISTS rounds(
@@ -195,6 +202,15 @@ await pool.query(`
     amount BIGINT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now(),
     UNIQUE(user_id, source, source_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS ledger(
+    id SERIAL PRIMARY KEY,
+    user_id INT REFERENCES users(id),
+    type TEXT NOT NULL,
+    amount BIGINT NOT NULL,
+    meta JSONB,
+    created_at TIMESTAMPTZ DEFAULT now()
   );
 `);
 
@@ -717,24 +733,62 @@ let arena = {
 async function settleArenaRound() {
   // если лидера нет — просто уходим в idle
   if (!arena.leaderUserId) return toIdle();
+  const fee = Math.floor(arena.bank * ARENA.rakePct);
+  const botsShare = Math.floor(fee * ARENA_FEE_TO_BOTS_PCT);
+  const paid = arena.bank - fee;
 
-  const rake = Math.floor(arena.bank * ARENA.rakePct);
-  const paid = arena.bank - rake;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('UPDATE users SET balance = balance + $1, xp = xp + $1 WHERE id = $2', [paid, arena.leaderUserId]);
+    await client.query(`
+        UPDATE arena_rounds
+        SET ended_at = now(), winner_user_id = $1, bank = $2, rake = $3, paid = $4,
+            winner_tid = $5, won_amount = $4, settled_at = now()
+        WHERE id = $6
+    `, [arena.leaderUserId, arena.bank, fee, paid, arena.leaderTid, arena.roundId]);
 
-  // payout + XP победителю, закрыть раунд
-  await pool.query('BEGIN');
-  await pool.query('UPDATE users SET balance = balance + $1, xp = xp + $1 WHERE id = $2', [paid, arena.leaderUserId]);
-  await pool.query(`
-      UPDATE arena_rounds
-      SET ended_at = now(), winner_user_id = $1, bank = $2, rake = $3, paid = $4,
-          winner_tid = $5, won_amount = $4, settled_at = now()
-      WHERE id = $6
-  `, [arena.leaderUserId, arena.bank, rake, paid, arena.leaderTid, arena.roundId]);
-  await pool.query('COMMIT');
+    if (botsShare > 0) {
+      await distributeArenaFeeToBots(client, arena.roundId, botsShare, fee);
+    }
+
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 
   // в паузу
   arena.phase = 'pause';
   arena.secsLeft = ARENA.pauseLen;
+}
+
+async function distributeArenaFeeToBots(client, roundId, amount, totalFee) {
+  if (BOT_ARENA_DISTRIBUTION !== 'equal') return;
+  const res = await client.query('SELECT id FROM users WHERE is_bot=TRUE');
+  const bots = res.rows;
+  if (!bots.length) return;
+
+  const per = Math.floor((amount / bots.length) / MIN_BOT_SHARE_CENTS) * MIN_BOT_SHARE_CENTS;
+  let remainder = amount - per * bots.length;
+
+  for (let i = 0; i < bots.length; i++) {
+    let add = per;
+    if (BOT_ARENA_REMAINDER === 'first_bot' && i === 0) add += remainder;
+    if (add <= 0) continue;
+    const botId = bots[i].id;
+    await client.query('UPDATE users SET balance = balance + $1 WHERE id=$2', [add, botId]);
+    await client.query(
+      'INSERT INTO ledger(user_id,type,amount,meta) VALUES($1,$2,$3,$4)',
+      [botId, 'arena_fee_share', add, JSON.stringify({ round_id: roundId, amount: add, total_fee: totalFee })]
+    );
+  }
+
+  if (globalThis.metrics?.arena?.bot_fee_distributed) {
+    globalThis.metrics.arena.bot_fee_distributed(amount, bots.length, roundId);
+  }
 }
 
 function toIdle() {
@@ -1355,10 +1409,14 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
 
     await pool.query('BEGIN');
     const u = await pool.query(
-      'SELECT id, balance, username FROM users WHERE telegram_id=$1 FOR UPDATE',
+      'SELECT id, balance, username, is_bot FROM users WHERE telegram_id=$1 FOR UPDATE',
       [uid]
     );
     const userId = u.rows[0]?.id;
+    if (u.rows[0]?.is_bot) {
+      await pool.query('ROLLBACK');
+      return res.status(403).json({ ok:false, error:'bots_forbidden_on_arena' });
+    }
     if (!userId || u.rows[0].balance < arena.nextBid) {
       await pool.query('ROLLBACK');
       return res.json({ ok:false, error:'INSUFFICIENT' });
