@@ -22,13 +22,13 @@ body{padding:16px;letter-spacing:0.3px}
 .btn[disabled]{opacity:.5;cursor:not-allowed}
 .back-text{background:none;border:none;color:#fff;font-size:14px;padding:0;margin-bottom:6px;cursor:pointer}
 .card{background:var(--card);border:1px solid var(--outline);border-radius:16px;padding:16px;margin:16px 0;box-shadow:0 0 4px rgba(0,0,0,.2)}
-.claim-card,.upgrades-card,.history-card{margin:24px 0;}
+.claim-card{margin:24px 0;}
+.upgrades-card{margin:32px 0 48px;}
 .progress{height:6px;background:var(--outline);border-radius:6px;overflow:hidden}
 .progress .bar{height:100%;background:var(--accent);border-radius:inherit}
 .progress.success .bar{background:var(--success)}
 .chip{display:inline-block;background:var(--outline);border-radius:999px;padding:6px 10px;font-size:12px}
 .grid-2{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
-.list.history{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
 .row{display:flex;gap:16px;align-items:center}
 .col{flex:1}
 .label{color:var(--muted);font-size:12px}
@@ -40,6 +40,5 @@ body{padding:16px;letter-spacing:0.3px}
 .upgrade .title{font-weight:700;margin-bottom:6px}
 .upgrade .row{justify-content:space-between}
 .price{font-weight:700}
-.list.history li{display:flex;justify-content:space-between}
-.safe-bottom{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+.safe-bottom{padding-bottom:calc(40px + env(safe-area-inset-bottom))}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(1px,1px,1px,1px)}
