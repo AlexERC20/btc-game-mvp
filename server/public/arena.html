@@ -512,7 +512,8 @@ topupBtn.onclick = ()=> openSheet(sheetTopup);
 chatFeedBtn.onclick = async ()=>{ await loadChatHistory(); openSheet(sheetChatFeed); };
 rulesBtn.onclick = ()=> openSheet(sheetRules);
 starsBtn.onclick = ()=> openSheet(sheetStars);
-shopBtn.onclick = ()=> openSheet(sheetShop);
+// Переход в магазин аналогично главной странице
+shopBtn.onclick = ()=>{ location.href = `/farm.html?uid=${encodeURIComponent(uid)}`; };
 adWriteBtn.onclick = ()=>{ adInput.value=''; adCount.textContent='0/50'; adSend.disabled=true; openSheet(sheetAd); };
 
 adInput.addEventListener('input', ()=>{
