@@ -941,7 +941,7 @@ function bindOnce(){
       await loadChatFeed();
       openSheet(sheetChatFeed);
     };
-    shopBtn.onclick = ()=>{ location.href = `/farm-usd.html?uid=${encodeURIComponent(uid)}`; };
+    shopBtn.onclick = ()=>{ location.href = `/farm.html?uid=${encodeURIComponent(uid)}`; };
     shopTabs.addEventListener('click', (e)=>{
       const b = e.target.closest('.tab-btn'); if(!b) return;
       shopTabs.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
