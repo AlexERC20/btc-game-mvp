@@ -9,6 +9,7 @@
 </head>
 <body class="safe-bottom">
 <h1 class="sr-only">Real Price BTC Game</h1>
+<button class="back-text" id="backText">Назад</button>
 <div class="tabs row" style="margin-top:0">
   <button class="tab btn btn-primary" data-type="usd">Фарм $</button>
   <button class="tab btn btn-ghost" data-type="vop">Фарм VOP</button>
@@ -48,6 +49,16 @@
 <script src="js/farm.js"></script>
 <script>
   initFarmPage();
+  const backText = document.getElementById('backText');
+  backText.addEventListener('click',()=>{
+    if(history.length>1) history.back(); else location.href='/';
+  });
+  if(window.Telegram?.WebApp?.BackButton){
+    Telegram.WebApp.BackButton.show();
+    Telegram.WebApp.onEvent('backButtonClicked',()=>{
+      if(history.length>1) history.back(); else location.href='/';
+    });
+  }
 </script>
 </body>
 </html>

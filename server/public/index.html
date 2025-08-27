@@ -1073,6 +1073,11 @@ async function refreshFarmUsdPill(){
     farmPill.style.display='none';
   }
 }
+
+async function refreshState(){
+  await refreshBalance();
+  await refreshFarmUsdPill();
+}
 async function leaderboard(){
   const r = await fetch(`/api/leaderboard?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>({ok:false}));
   if (!r.ok) return;
@@ -1290,8 +1295,14 @@ function escapeHtml(s){
 
 // init
 bindOnce();
-if (!IS_VIEWER) await auth();
-await refreshFarmUsdPill();
+if (!IS_VIEWER) await refreshState();
+
+window.addEventListener('storage', e=>{
+  if (e.key==='stateUpdated') refreshState();
+});
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState==='visible') refreshState();
+});
 poll();
 setInterval(poll, 1000);
 setInterval(maybeCelebrateWin, 3000);
