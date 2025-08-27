@@ -56,7 +56,29 @@ async function claim(type){
     }
   }
 
-  function renderUpgrades(type,list){const box=document.getElementById('upgrades');box.innerHTML='';if(!list||!list.length){box.innerHTML='<div class="muted">Нет апгрейдов</div>';return;}list.forEach(u=>{const card=document.createElement('div');card.className='upgrade card card-compact';card.innerHTML=`<div class="title">${u.title}</div><div class="row"><span class="chip">+${u.fp} FP</span><span class="price">${formatMoney(u.cost)}</span></div><div class="muted">Треб. уровень: ${u.reqLevel}</div>`;const btn=document.createElement('button');btn.className='btn btn-primary';btn.textContent='Купить';btn.disabled=!u.canBuy;btn.addEventListener('click',()=>buyUpgrade(type,u));card.appendChild(btn);box.appendChild(card);});}
+  function renderUpgrades(type,list){
+    const box=document.getElementById('upgrades');
+    box.innerHTML='';
+    if(!list||!list.length){
+      box.innerHTML='<div class="muted">Нет апгрейдов</div>';
+      return;
+    }
+    list.forEach(u=>{
+      const card=document.createElement('div');
+      card.className='card upgrade-card';
+      card.innerHTML=`<h3>${u.title}</h3>
+        <div class="upgrade-badge chip">+${u.fp} FP</div>
+        <div class="upgrade-price">${formatMoney(u.cost)}</div>
+        <div class="upgrade-req">Треб. уровень: ${u.reqLevel}</div>`;
+      const btn=document.createElement('button');
+      btn.className='btn btn-primary';
+      btn.textContent='Купить';
+      btn.disabled=!u.canBuy;
+      btn.addEventListener('click',()=>buyUpgrade(type,u));
+      card.appendChild(btn);
+      box.appendChild(card);
+    });
+  }
 
     function renderState(type,s){
     if(!s.ok)return;
