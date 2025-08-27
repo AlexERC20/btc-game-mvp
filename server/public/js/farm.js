@@ -14,7 +14,7 @@ let currentState=null;
 async function claim(type){
   haptic('impact');
   if(type==='vop'){
-    if(!currentState?.can_claim){toast('Нужно 30 приглашённых, чтобы клеймить VOP');haptic('error');return;}
+    if(!currentState?.claimEligible){toast('Нужно 30 приглашённых, чтобы клеймить VOP');haptic('error');return;}
     if((currentState?.available||0)<=0){toast('Пока нечего клеймить');haptic('error');return;}
   }
   const url = type==='vop'?'/api/farm/claim_vop':`/api/farm/${type}/claim`;
@@ -56,7 +56,7 @@ async function claim(type){
     }
   }
 
-  function renderUpgrades(type,list){
+  function renderUpgrades(type,list,locked=false){
     const box=document.getElementById('upgrades');
     box.innerHTML='';
     if(!list||!list.length){
@@ -71,10 +71,18 @@ async function claim(type){
         <div class="upgrade-price">${formatMoney(u.cost)}</div>
         <div class="upgrade-req">Треб. уровень: ${u.reqLevel}</div>`;
       const btn=document.createElement('button');
-      btn.className='btn btn-primary';
-      btn.textContent='Купить';
-      btn.disabled=!u.canBuy;
-      btn.addEventListener('click',()=>buyUpgrade(type,u));
+      if(locked){
+        card.style.opacity='0.6';
+        card.style.pointerEvents='none';
+        btn.className='btn btn-secondary';
+        btn.textContent='🔒';
+        btn.disabled=true;
+      }else{
+        btn.className='btn btn-primary';
+        btn.textContent='Купить';
+        btn.disabled=!u.canBuy;
+        btn.addEventListener('click',()=>buyUpgrade(type,u));
+      }
       card.appendChild(btn);
       box.appendChild(card);
     });
@@ -90,27 +98,57 @@ async function claim(type){
     const capText=document.getElementById('capText');
     const capBar=document.getElementById('capBar');
     const inactive=document.getElementById('inactiveBanner');
+    const claimNote=document.getElementById('claimNote');
+    const footer=document.getElementById('lockedFooter');
+    const offlineLimit=document.getElementById('offlineLimit');
+
     if(type==='usd'){
       claimAmount.textContent=formatMoney(s.claimable);
       btnClaim.disabled=!(s.active&&s.claimable>0);
+      btnClaim.classList.add('btn-success');
+      btnClaim.classList.remove('btn-secondary');
+      claimNote.textContent='';
       rate.textContent=formatMoney(s.ratePerHour).slice(1)+' $/ч';
       capText.textContent=`${formatMoney(s.claimedToday)} / ${formatMoney(s.dailyCap)}`;
       inactive.hidden=s.active;
-    }else{
-      claimAmount.textContent=formatVop(s.available);
-      btnClaim.disabled=!s.can_claim;
-      btnClaim.title=s.can_claim?'':'Нужно 30 приглашённых, чтобы клеймить VOP';
-      rate.textContent=s.speed_per_hour+' VOP/ч';
-      capText.textContent=`${s.daily_progress} / ${s.daily_limit}`;
-      inactive.hidden=true;
-    }
-    fp.textContent=s.fp;
-    const pct = type==='usd'
-      ? (s.dailyCap?Math.min(100,s.claimedToday/s.dailyCap*100):0)
-      : (s.daily_limit?Math.min(100,s.daily_progress/s.daily_limit*100):0);
-    capBar.style.width=pct+'%';
+      footer.hidden=true;
+      offlineLimit.textContent='Оффлайн-лимит: до 12 ч';
+      fp.textContent=s.fp;
+      const pct = s.dailyCap?Math.min(100,s.claimedToday/s.dailyCap*100):0;
+      capBar.style.width=pct+'%';
       renderUpgrades(type,s.upgrades);
+      return;
     }
+
+    // VOP
+    const unlocked = s.isUnlocked;
+    claimAmount.textContent=formatVop(unlocked?s.available:0);
+    btnClaim.disabled=!unlocked || !s.claimEligible || (s.available||0)<=0;
+    btnClaim.classList.toggle('btn-success', unlocked);
+    btnClaim.classList.toggle('btn-secondary', !unlocked);
+    btnClaim.title='';
+    rate.textContent=unlocked?(s.speedPerHour+' VOP/ч'):'— VOP/ч';
+    fp.textContent=unlocked? s.fp : '—';
+    capText.textContent=unlocked?`${s.limitToday.used} / ${s.limitToday.max}`:'0 / 0';
+    inactive.hidden=true;
+    offlineLimit.textContent=`Оффлайн-лимит: до ${s.offlineLimit||0} ч`;
+    const pct = unlocked && s.limitToday.max?Math.min(100,s.limitToday.used/s.limitToday.max*100):0;
+    capBar.style.width=pct+'%';
+    renderUpgrades(type,s.upgrades,!unlocked);
+
+    if(!unlocked){
+      claimNote.textContent='';
+      footer.hidden=false;
+      footer.textContent=`Доступ к фарму VOP откроется с 25 уровня. Ваш уровень: ${s.level}. Прокачивайте уровень, чтобы открыть доступ.`;
+    }else{
+      footer.hidden=true;
+      if(!s.claimEligible){
+        claimNote.textContent=`Нужно 30 приглашённых для CLAIM (сейчас: ${s.referrals}/30)`;
+      }else{
+        claimNote.textContent='';
+      }
+    }
+  }
 
 let currentType='usd';
 async function loadCurrent(){const s=await loadFarmState(currentType);renderState(currentType,s);}
