@@ -41,6 +41,8 @@ body{padding:var(--gap-m);letter-spacing:0.3px}
 .label{color:var(--muted);font-size:calc(12px * var(--ui-scale))}
 .val{font-weight:700}
 .muted{color:var(--muted);font-size:calc(12px * var(--ui-scale))}
+.claim-note{text-align:right;margin-top:var(--gap-xxs);}
+.info-footer{text-align:center;margin-top:var(--gap-m);}
 .banner{padding:calc(12px * var(--gap-scale));border-radius:calc(12px * var(--ui-scale));margin-top:calc(12px * var(--gap-scale))}
 .banner.warn{background:#332;color:#ffb}
 .card-compact{padding:calc(12px * var(--gap-scale));margin:0}

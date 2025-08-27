@@ -19,6 +19,7 @@
     <div class="claim-amount">Доступно к получению: <b id="claimAmount">$0</b></div>
     <button class="btn btn-success farm-claim" id="btnClaim" disabled>CLAIM</button>
   </div>
+  <div class="muted claim-note" id="claimNote"></div>
   <div class="metrics row">
     <div class="col"><div class="label">Скорость</div><div class="val" id="rate">0 $/ч</div></div>
     <div class="col"><div class="label">FP</div><div class="val" id="fp">0</div></div>
@@ -26,18 +27,18 @@
   <div class="cap">
     <div class="cap-row row"><span>Лимит сегодня</span><span id="capText">$0 / $0</span></div>
     <div class="progress success"><div class="bar" id="capBar" style="width:0%"></div></div>
-    <div class="muted">Оффлайн-лимит: до 12 ч</div>
+    <div class="muted" id="offlineLimit">Оффлайн-лимит: до 12 ч</div>
   </div>
   <div class="banner warn" id="inactiveBanner" hidden>
     Чтобы активировать фарм, сделай ставку от $50 за 24 часа
     <button class="btn btn-secondary" id="goPlay">Играть</button>
   </div>
 </section>
-
 <section class="card upgrades-card" id="upgradesCard">
   <h3>Апгрейды</h3>
   <div class="upgrades-grid" id="upgrades"></div>
 </section>
+<div class="muted info-footer" id="lockedFooter" hidden></div>
 
 <script src="js/farm.js"></script>
 <script>

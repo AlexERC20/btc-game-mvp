@@ -1544,17 +1544,9 @@ app.get('/api/farm/vop/state', async (req, res) => {
   await ensureUser(uid, null);
   const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
   const u = rows[0];
-  if (u.level < VOP_MIN_LEVEL) return res.json({ ok:true, locked:true, message:'Откроется на 25 уровне' });
+
   const now = new Date();
   const today = todayUTC();
-  if (ensureDayBuckets('vop', u, today)) {
-    await pool.query('UPDATE users SET claimed_vop_today=0, claimed_vop_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
-  }
-  if (!u.last_claim_vop) {
-    await pool.query('UPDATE users SET last_claim_vop=now() WHERE id=$1', [u.id]);
-    u.last_claim_vop = new Date();
-  }
-  const accr = computeAccrual('vop', u, now);
 
   // referrals count
   const { rows:[ref] } = await pool.query(
@@ -1562,7 +1554,21 @@ app.get('/api/farm/vop/state', async (req, res) => {
     [u.id]
   );
   const referrals = ref?.c ?? 0;
-  const canClaim = referrals >= 30;
+
+  const isUnlocked = u.level >= VOP_MIN_LEVEL;
+  let accr = { claimable:0, ratePerHour:0 };
+  if (isUnlocked) {
+    if (ensureDayBuckets('vop', u, today)) {
+      await pool.query('UPDATE users SET claimed_vop_today=0, claimed_vop_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
+    }
+    if (!u.last_claim_vop) {
+      await pool.query('UPDATE users SET last_claim_vop=now() WHERE id=$1', [u.id]);
+      u.last_claim_vop = new Date();
+    }
+    accr = computeAccrual('vop', u, now);
+  }
+
+  const claimEligible = referrals >= 30;
 
   const upgrades = VOP_UPGRADES.map(up=>{
     let canBuy=true, reason=null;
@@ -1571,17 +1577,21 @@ app.get('/api/farm/vop/state', async (req, res) => {
     return { ...up, canBuy, reason };
   });
   const hist = await pool.query("SELECT type, amount, meta, created_at FROM farm_history WHERE user_id=$1 AND type LIKE '%vop' ORDER BY id DESC LIMIT 10", [u.id]);
+
   res.json({
-    ok:true,
-    locked:false,
-    available: accr.claimable,
-    speed_per_hour: accr.ratePerHour,
-    fp: u.fp_vop,
-    daily_progress: u.claimed_vop_today,
-    daily_limit: VOP_DAILY_CAP,
-    offline_cap: VOP_OFFLINE_CAP_HOURS,
-    referrals_count: referrals,
-    can_claim: canClaim,
+    ok: true,
+    level: u.level,
+    isUnlocked,
+    referrals,
+    claimEligible,
+    available: isUnlocked ? accr.claimable : 0,
+    speedPerHour: isUnlocked ? accr.ratePerHour : 0,
+    fp: isUnlocked ? u.fp_vop : 0,
+    limitToday: {
+      used: isUnlocked ? u.claimed_vop_today : 0,
+      max: isUnlocked ? VOP_DAILY_CAP : 0
+    },
+    offlineLimit: VOP_OFFLINE_CAP_HOURS,
     vop_balance: u.vop_balance,
     upgrades,
     history: hist.rows.map(r=>({ type:r.type, amount:Number(r.amount), ts:r.created_at, meta:r.meta }))
