@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Фарм $</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  body{background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial;margin:0;padding:16px;}
+  .tabs{display:flex;gap:10px;margin-bottom:12px}
+  .tabs button{flex:1;padding:10px;border:none;border-radius:8px;font-weight:700;cursor:pointer}
+  .tabs .active{background:#1fa36a;color:#000}
+  .card{background:#0b0b0b;border:1px solid #1e1e1e;border-radius:12px;padding:12px;margin:10px 0}
+  button{background:#1fa36a;border:none;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer}
+  button[disabled]{opacity:.5;cursor:not-allowed}
+</style>
+</head>
+<body>
+<div class="tabs">
+  <button class="active">Фарм $</button>
+  <button id="toVop">Фарм VOP</button>
+</div>
+<div class="card" id="status">
+  <div>Доступно к получению: $<span id="claimable">0</span></div>
+  <button id="claim">CLAIM</button>
+  <div>Скорость: <span id="rate">0</span> $/ч</div>
+  <div>FP: <span id="fp">0</span></div>
+  <div>Лимит сегодня: <span id="claimedToday">0</span> / <span id="dailyCap">0</span></div>
+</div>
+<div class="card">
+  <h3>Апгрейды</h3>
+  <div id="upgrades"></div>
+</div>
+<div class="card">
+  <h3>История</h3>
+  <div id="history"></div>
+</div>
+<script>
+const params = new URLSearchParams(location.search);
+const uid = params.get('uid');
+document.getElementById('toVop').onclick = ()=>{ location.href = `/farm-vop.html?uid=${uid}`; };
+async function load(){
+  const r = await fetch(`/api/farm/usd/state?uid=${uid}`).then(r=>r.json()).catch(()=>({ok:false}));
+  if(!r.ok){ document.getElementById('status').textContent='Ошибка'; return; }
+  document.getElementById('claimable').textContent = r.claimable;
+  document.getElementById('rate').textContent = r.ratePerHour;
+  document.getElementById('fp').textContent = r.fp;
+  document.getElementById('claimedToday').textContent = r.claimedToday;
+  document.getElementById('dailyCap').textContent = r.dailyCap;
+  document.getElementById('claim').disabled = !r.active || r.claimable<=0;
+  renderUpgrades(r.upgrades);
+  renderHistory(r.history);
+}
+async function claim(){
+  const r = await fetch('/api/farm/usd/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid})}).then(r=>r.json()).catch(()=>({ok:false}));
+  if(r.ok){ Telegram?.WebApp?.HapticFeedback?.notificationOccurred('success'); load(); }
+}
+function renderUpgrades(list){
+  const box=document.getElementById('upgrades');
+  box.innerHTML = list.map(u=>`<div>${u.title} (+${u.fp} FP) - $${u.cost} <button data-id="${u.id}" ${!u.canBuy?'disabled':''}>Купить</button></div>`).join('');
+  box.querySelectorAll('button').forEach(b=>b.onclick=async()=>{
+    const id=b.dataset.id;
+    const resp=await fetch('/api/farm/usd/upgrade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid,upgradeId:id})}).then(r=>r.json()).catch(()=>({ok:false}));
+    if(resp.ok){ Telegram?.WebApp?.HapticFeedback?.impactOccurred('light'); load(); }
+  });
+}
+function renderHistory(items){
+  const h=document.getElementById('history');
+  h.innerHTML = items.map(it=>`<div>${it.type}: ${it.amount}</div>`).join('');
+}
+document.getElementById('claim').onclick=claim;
+load();
+</script>
+</body>
+</html>

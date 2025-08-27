@@ -75,6 +75,30 @@ const CHANNEL = process.env.CHANNEL || '@erc20coin';
 const SUBSCRIBE_BONUS = 5000; // разовый за подписку
 const DAILY_BONUS = 1000;     // ежедневный бонус
 
+// ==== FARM $ ====
+const USD_RATE_PER_FP_PER_HOUR = 0.5;     // $/час за 1 FP
+const USD_DAILY_CAP             = 5000;    // максимум $ в сутки с фарма
+const USD_OFFLINE_CAP_HOURS     = 12;      // максимум часов, которые накапливаются оффлайн
+const USD_ACTIVE_MIN_BET        = 50;      // фарм $ активен, если есть ставка >= $50 за последние 24 часа
+
+// ==== FARM VOP ====
+const VOP_RATE_PER_FP_PER_HOUR  = 0.02;    // VOP/час за 1 FP
+const VOP_DAILY_CAP             = 150;     // максимум VOP в сутки с фарма
+const VOP_OFFLINE_CAP_HOURS     = 12;
+const VOP_MIN_LEVEL             = 25;      // фарм VOP открывается с 25 уровня (level >= 25)
+
+// ==== Апгрейды (стоимость в $ и +FP)
+const USD_UPGRADES = [
+  { id:'usd_booster_1', title:'Booster I',  cost:  500, fp:+1,  reqLevel:1  },
+  { id:'usd_booster_2', title:'Booster II', cost: 2000, fp:+3,  reqLevel:5  },
+  { id:'usd_booster_3', title:'Booster III',cost: 8000, fp:+8,  reqLevel:12 }
+];
+const VOP_UPGRADES = [
+  { id:'vop_extractor_1', title:'Extractor I',  cost: 2000, fp:+1,  reqLevel:25 },
+  { id:'vop_extractor_2', title:'Extractor II', cost: 8000, fp:+3,  reqLevel:28 },
+  { id:'vop_extractor_3', title:'Extractor III',cost: 25000,fp:+8,  reqLevel:32 }
+];
+
 // Arena defaults
 const ARENA = {
   startBank: 10_000,
@@ -197,6 +221,27 @@ await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_wins INT NOT
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_result_at TIMESTAMPTZ`);
 await pool.query(`ALTER TABLE bets ADD COLUMN IF NOT EXISTS insured BOOLEAN NOT NULL DEFAULT FALSE`);
 await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS banner_spent BIGINT NOT NULL DEFAULT 0`);
+
+await pool.query(`ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS fp_usd       INT    NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS fp_vop       INT    NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS vop_balance  BIGINT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS last_claim_usd TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS last_claim_vop TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS claimed_usd_today BIGINT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS claimed_vop_today BIGINT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS claimed_usd_date DATE,
+  ADD COLUMN IF NOT EXISTS claimed_vop_date DATE;
+`);
+
+await pool.query(`CREATE TABLE IF NOT EXISTS farm_history(
+  id SERIAL PRIMARY KEY,
+  user_id INT REFERENCES users(id),
+  type TEXT NOT NULL,
+  amount BIGINT NOT NULL,
+  meta JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+)`);
 
 await pool.query(`CREATE TABLE IF NOT EXISTS xp_log(
   id SERIAL PRIMARY KEY,
@@ -598,6 +643,54 @@ async function grantDailyIfNeeded(telegramId) {
     return DAILY_BONUS;
   }
   return 0;
+}
+
+// farming helpers
+function ensureDayBuckets(kind, u, today) {
+  const dateField = kind === 'usd' ? 'claimed_usd_date' : 'claimed_vop_date';
+  const todayField = kind === 'usd' ? 'claimed_usd_today' : 'claimed_vop_today';
+  const day = today.toISOString().slice(0,10);
+  if (u[dateField]?.toISOString?.().slice(0,10) !== day) {
+    u[dateField] = day;
+    u[todayField] = 0;
+    return true;
+  }
+  return false;
+}
+
+async function checkUsdActive(userId) {
+  const { rows } = await pool.query(
+    'SELECT 1 FROM bets WHERE user_id=$1 AND amount>=$2 AND created_at>now()-interval \'24 hours\' LIMIT 1',
+    [userId, USD_ACTIVE_MIN_BET]
+  );
+  return rows.length > 0;
+}
+
+function computeAccrual(kind, u, now) {
+  const cfg = kind === 'usd'
+    ? {
+        fp: u.fp_usd,
+        rate: USD_RATE_PER_FP_PER_HOUR,
+        last: u.last_claim_usd,
+        offline: USD_OFFLINE_CAP_HOURS,
+        dailyCap: USD_DAILY_CAP,
+        claimed: u.claimed_usd_today,
+      }
+    : {
+        fp: u.fp_vop,
+        rate: VOP_RATE_PER_FP_PER_HOUR,
+        last: u.last_claim_vop,
+        offline: VOP_OFFLINE_CAP_HOURS,
+        dailyCap: VOP_DAILY_CAP,
+        claimed: u.claimed_vop_today,
+      };
+  const ratePerHour = cfg.fp * cfg.rate;
+  if (!cfg.last) return { ratePerHour, claimable: 0 };
+  const elapsed = Math.min((now - new Date(cfg.last)) / 3600000, cfg.offline);
+  let acc = Math.floor(ratePerHour * elapsed);
+  const capLeft = cfg.dailyCap - cfg.claimed;
+  if (acc > capLeft) acc = Math.max(0, capLeft);
+  return { ratePerHour, claimable: acc };
 }
 
 /* ========= Auction subsystem ========= */
@@ -1372,6 +1465,144 @@ app.post('/api/bonus/check', requireTgAuth, async (req, res) => {
     console.error('/api/bonus/check', e);
     res.json({ ok:false, msg:'SERVER' });
   }
+});
+
+/* ========= FARMING API ========= */
+app.get('/api/farm/usd/state', async (req, res) => {
+  const uid = Number(req.query.uid);
+  if (!uid) return res.json({ ok:false, error:'NO_UID' });
+  await ensureUser(uid, null);
+  const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
+  const u = rows[0];
+  const now = new Date();
+  const today = todayUTC();
+  if (ensureDayBuckets('usd', u, today)) {
+    await pool.query('UPDATE users SET claimed_usd_today=0, claimed_usd_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
+  }
+  if (!u.last_claim_usd) {
+    await pool.query('UPDATE users SET last_claim_usd=now() WHERE id=$1', [u.id]);
+    u.last_claim_usd = new Date();
+  }
+  const active = await checkUsdActive(u.id);
+  const accr = computeAccrual('usd', u, now);
+  const upgrades = USD_UPGRADES.map(up=>{
+    let canBuy = true, reason = null;
+    if (u.level < up.reqLevel) { canBuy=false; reason='LEVEL'; }
+    else if (u.balance < up.cost) { canBuy=false; reason='BALANCE'; }
+    return { ...up, canBuy, reason };
+  });
+  const hist = await pool.query("SELECT type, amount, meta, created_at FROM farm_history WHERE user_id=$1 AND type LIKE '%usd' ORDER BY id DESC LIMIT 10", [u.id]);
+  res.json({ ok:true, active, ratePerHour: accr.ratePerHour, fp: u.fp_usd, claimable: accr.claimable, dailyCap: USD_DAILY_CAP, claimedToday: u.claimed_usd_today, offlineCapHours: USD_OFFLINE_CAP_HOURS, lastClaimAt: u.last_claim_usd, upgrades, history: hist.rows.map(r=>({ type:r.type, amount:Number(r.amount), ts:r.created_at, meta:r.meta })) });
+});
+
+app.post('/api/farm/usd/claim', async (req, res) => {
+  const uid = Number(req.body.uid);
+  if (!uid) return res.json({ ok:false, error:'NO_UID' });
+  await ensureUser(uid, null);
+  const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
+  const u = rows[0];
+  const now = new Date();
+  const today = todayUTC();
+  if (ensureDayBuckets('usd', u, today)) {
+    await pool.query('UPDATE users SET claimed_usd_today=0, claimed_usd_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
+  }
+  const active = await checkUsdActive(u.id);
+  if (!active) return res.json({ ok:false, error:'INACTIVE' });
+  if (!u.last_claim_usd) {
+    await pool.query('UPDATE users SET last_claim_usd=now() WHERE id=$1', [u.id]);
+    u.last_claim_usd = new Date();
+  }
+  const accr = computeAccrual('usd', u, now);
+  const amt = accr.claimable;
+  if (amt <= 0) return res.json({ ok:true, claimed:0, newBalance:Number(u.balance) });
+  const day = today.toISOString().slice(0,10);
+  await pool.query('UPDATE users SET balance=balance+$1, last_claim_usd=now(), claimed_usd_today=claimed_usd_today+$1, claimed_usd_date=$3 WHERE id=$2', [amt, u.id, day]);
+  await pool.query('INSERT INTO farm_history(user_id,type,amount) VALUES($1,$2,$3)', [u.id, 'claim_usd', amt]);
+  res.json({ ok:true, claimed:amt, newBalance: Number(u.balance)+amt });
+});
+
+app.post('/api/farm/usd/upgrade', async (req, res) => {
+  const uid = Number(req.body.uid);
+  const upgradeId = req.body.upgradeId;
+  if (!uid || !upgradeId) return res.json({ ok:false, error:'BAD_REQ' });
+  await ensureUser(uid, null);
+  const up = USD_UPGRADES.find(u=>u.id===upgradeId);
+  if (!up) return res.json({ ok:false, error:'NO_UPGRADE' });
+  const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
+  const u = rows[0];
+  if (u.level < up.reqLevel) return res.json({ ok:false, error:'LEVEL' });
+  if (u.balance < up.cost) return res.json({ ok:false, error:'BALANCE' });
+  await pool.query('UPDATE users SET balance=balance-$1, fp_usd=fp_usd+$2 WHERE id=$3', [up.cost, up.fp, u.id]);
+  await pool.query('INSERT INTO farm_history(user_id,type,amount,meta) VALUES($1,$2,$3,$4)', [u.id,'upgrade_usd',-up.cost,{fpDelta:up.fp,title:up.title}]);
+  res.json({ ok:true, fp: u.fp_usd + up.fp, newBalance: Number(u.balance) - up.cost });
+});
+
+app.get('/api/farm/vop/state', async (req, res) => {
+  const uid = Number(req.query.uid);
+  if (!uid) return res.json({ ok:false, error:'NO_UID' });
+  await ensureUser(uid, null);
+  const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
+  const u = rows[0];
+  if (u.level < VOP_MIN_LEVEL) return res.json({ ok:true, locked:true, message:'Откроется на 25 уровне' });
+  const now = new Date();
+  const today = todayUTC();
+  if (ensureDayBuckets('vop', u, today)) {
+    await pool.query('UPDATE users SET claimed_vop_today=0, claimed_vop_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
+  }
+  if (!u.last_claim_vop) {
+    await pool.query('UPDATE users SET last_claim_vop=now() WHERE id=$1', [u.id]);
+    u.last_claim_vop = new Date();
+  }
+  const accr = computeAccrual('vop', u, now);
+  const upgrades = VOP_UPGRADES.map(up=>{
+    let canBuy=true, reason=null;
+    if (u.level < up.reqLevel) { canBuy=false; reason='LEVEL'; }
+    else if (u.balance < up.cost) { canBuy=false; reason='BALANCE'; }
+    return { ...up, canBuy, reason };
+  });
+  const hist = await pool.query("SELECT type, amount, meta, created_at FROM farm_history WHERE user_id=$1 AND type LIKE '%vop' ORDER BY id DESC LIMIT 10", [u.id]);
+  res.json({ ok:true, locked:false, ratePerHour: accr.ratePerHour, fp: u.fp_vop, claimable: accr.claimable, dailyCap: VOP_DAILY_CAP, claimedToday: u.claimed_vop_today, offlineCapHours: VOP_OFFLINE_CAP_HOURS, lastClaimAt: u.last_claim_vop, vopBalance: u.vop_balance, upgrades, history: hist.rows.map(r=>({ type:r.type, amount:Number(r.amount), ts:r.created_at, meta:r.meta })) });
+});
+
+app.post('/api/farm/vop/claim', async (req, res) => {
+  const uid = Number(req.body.uid);
+  if (!uid) return res.json({ ok:false, error:'NO_UID' });
+  await ensureUser(uid, null);
+  const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
+  const u = rows[0];
+  if (u.level < VOP_MIN_LEVEL) return res.json({ ok:false, error:'LOCKED' });
+  const now = new Date();
+  const today = todayUTC();
+  if (ensureDayBuckets('vop', u, today)) {
+    await pool.query('UPDATE users SET claimed_vop_today=0, claimed_vop_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
+  }
+  if (!u.last_claim_vop) {
+    await pool.query('UPDATE users SET last_claim_vop=now() WHERE id=$1', [u.id]);
+    u.last_claim_vop = new Date();
+  }
+  const accr = computeAccrual('vop', u, now);
+  const amt = accr.claimable;
+  if (amt <= 0) return res.json({ ok:true, claimed:0, newVopBalance:Number(u.vop_balance) });
+  const day = today.toISOString().slice(0,10);
+  await pool.query('UPDATE users SET vop_balance=vop_balance+$1, last_claim_vop=now(), claimed_vop_today=claimed_vop_today+$1, claimed_vop_date=$3 WHERE id=$2', [amt, u.id, day]);
+  await pool.query('INSERT INTO farm_history(user_id,type,amount) VALUES($1,$2,$3)', [u.id,'claim_vop',amt]);
+  res.json({ ok:true, claimed:amt, newVopBalance: Number(u.vop_balance)+amt });
+});
+
+app.post('/api/farm/vop/upgrade', async (req, res) => {
+  const uid = Number(req.body.uid);
+  const upgradeId = req.body.upgradeId;
+  if (!uid || !upgradeId) return res.json({ ok:false, error:'BAD_REQ' });
+  await ensureUser(uid, null);
+  const up = VOP_UPGRADES.find(u=>u.id===upgradeId);
+  if (!up) return res.json({ ok:false, error:'NO_UPGRADE' });
+  const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
+  const u = rows[0];
+  if (u.level < up.reqLevel) return res.json({ ok:false, error:'LEVEL' });
+  if (u.balance < up.cost) return res.json({ ok:false, error:'BALANCE' });
+  await pool.query('UPDATE users SET balance=balance-$1, fp_vop=fp_vop+$2 WHERE id=$3', [up.cost, up.fp, u.id]);
+  await pool.query('INSERT INTO farm_history(user_id,type,amount,meta) VALUES($1,$2,$3,$4)', [u.id,'upgrade_vop',-up.cost,{fpDelta:up.fp,title:up.title}]);
+  res.json({ ok:true, fp: u.fp_vop + up.fp, newBalance: Number(u.balance) - up.cost });
 });
 
 app.listen(PORT, () => console.log('Server listening on', PORT));
