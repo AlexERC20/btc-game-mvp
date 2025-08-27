@@ -41,3 +41,4 @@ body{padding:16px;letter-spacing:0.3px}
 .price{font-weight:700}
 .list.history li{display:flex;justify-content:space-between}
 .safe-bottom{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(1px,1px,1px,1px)}
