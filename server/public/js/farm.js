@@ -21,9 +21,9 @@ async function claim(type){
   const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid})}).then(r=>r.json()).catch(()=>({error:true}));
   if(r && r.ok){
     if(r.claimed!==undefined){
-      const msg = type==='usd'?formatMoney(r.claimed):formatVop(r.claimed);
-      toast('Получено: '+msg);
-    }
+        const msg = type==='usd'?formatMoney(r.claimed):formatVop(r.claimed);
+        toast('Получено: +'+msg);
+      }
     haptic('success');
     localStorage.setItem('stateUpdated', Date.now());
     loadCurrent();
@@ -39,13 +39,26 @@ async function claim(type){
   }
 }
 
-async function buyUpgrade(type,id){haptic('impact');const r=await fetch(`/api/farm/${type}/upgrade`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid,upgradeId:id})}).then(r=>r.json()).catch(()=>({ok:false}));if(r.ok){toast('OK');haptic('success');loadCurrent();}else{toast('Ошибка');haptic('error');}}
+  async function buyUpgrade(type,up){
+    haptic('impact');
+    const r=await fetch(`/api/farm/${type}/upgrade`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({uid,upgradeId:up.id})
+    }).then(r=>r.json()).catch(()=>({ok:false}));
+    if(r.ok){
+      toast(`Скорость +${up.fp} FP. Баланс: ${formatMoney(r.newBalance)}`);
+      haptic('success');
+      loadCurrent();
+    }else{
+      toast('Ошибка');
+      haptic('error');
+    }
+  }
 
-function renderUpgrades(type,list){const box=document.getElementById('upgrades');box.innerHTML='';if(!list||!list.length){box.innerHTML='<div class="muted">Нет апгрейдов</div>';return;}list.forEach(u=>{const card=document.createElement('div');card.className='upgrade card card-compact';card.innerHTML=`<div class="title">${u.title}</div><div class="row"><span class="chip">+${u.fp} FP</span><span class="price">${formatMoney(u.cost)}</span></div><div class="muted">Треб. уровень: ${u.reqLevel}</div>`;const btn=document.createElement('button');btn.className='btn btn-primary';btn.textContent='Купить';btn.disabled=!u.canBuy;btn.addEventListener('click',()=>buyUpgrade(type,u.id));card.appendChild(btn);box.appendChild(card);});}
+  function renderUpgrades(type,list){const box=document.getElementById('upgrades');box.innerHTML='';if(!list||!list.length){box.innerHTML='<div class="muted">Нет апгрейдов</div>';return;}list.forEach(u=>{const card=document.createElement('div');card.className='upgrade card card-compact';card.innerHTML=`<div class="title">${u.title}</div><div class="row"><span class="chip">+${u.fp} FP</span><span class="price">${formatMoney(u.cost)}</span></div><div class="muted">Треб. уровень: ${u.reqLevel}</div>`;const btn=document.createElement('button');btn.className='btn btn-primary';btn.textContent='Купить';btn.disabled=!u.canBuy;btn.addEventListener('click',()=>buyUpgrade(type,u));card.appendChild(btn);box.appendChild(card);});}
 
-function renderHistory(type,items){const box=document.getElementById('history');box.innerHTML='';if(!items||!items.length){box.innerHTML='<li class="muted">Пока пусто.</li>';return;}items.forEach(it=>{const li=document.createElement('li');if(it.type==='claim_'+type){li.innerHTML=`<span class="muted">${it.time||''}</span><span style="color:var(--success)">+${type==='usd'?formatMoney(it.amount):formatVop(it.amount)}</span>`;}else{li.innerHTML=`<span>${it.title||it.type}</span><span class="muted">-${type==='usd'?formatMoney(it.amount):formatVop(it.amount)}</span>`;}box.appendChild(li);});}
-
-  function renderState(type,s){
+    function renderState(type,s){
     if(!s.ok)return;
     currentState=s;
     const claimAmount=document.getElementById('claimAmount');
@@ -74,9 +87,8 @@ function renderHistory(type,items){const box=document.getElementById('history');
       ? (s.dailyCap?Math.min(100,s.claimedToday/s.dailyCap*100):0)
       : (s.daily_limit?Math.min(100,s.daily_progress/s.daily_limit*100):0);
     capBar.style.width=pct+'%';
-    renderUpgrades(type,s.upgrades);
-    renderHistory(type,s.history);
-  }
+      renderUpgrades(type,s.upgrades);
+    }
 
 let currentType='usd';
 async function loadCurrent(){const s=await loadFarmState(currentType);renderState(currentType,s);}
