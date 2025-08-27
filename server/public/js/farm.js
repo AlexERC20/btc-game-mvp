@@ -50,6 +50,12 @@ async function claim(type){
       toast(`Скорость +${up.fp} FP. Баланс: ${formatMoney(r.newBalance)}`);
       haptic('success');
       loadCurrent();
+    }else if(r.error==='BALANCE'){
+      toast('Не хватает денег');
+      haptic('error');
+    }else if(r.error==='LEVEL'){
+      toast('Недостаточный уровень');
+      haptic('error');
     }else{
       toast('Ошибка');
       haptic('error');
@@ -68,8 +74,10 @@ async function claim(type){
       card.className='card upgrade-card';
       card.innerHTML=`<h3>${u.title}</h3>
         <div class="upgrade-badge chip">+${u.fp} FP</div>
-        <div class="upgrade-price">${formatMoney(u.cost)}</div>
-        <div class="upgrade-req">Треб. уровень: ${u.reqLevel}</div>`;
+        <div class="upgrade-price">${formatMoney(u.price)}</div>
+        <div class="upgrade-req">Треб. уровень: ${u.reqLevel}</div>
+        <div class="muted">$ за 1 FP: ${formatMoney(u.pricePerFp).slice(1)}</div>
+        <div class="muted">${u.next_bump_in===0? 'Цена недавно выросла: +8%' : `Ещё ${u.next_bump_in} покупок до +8%`}</div>`;
       const btn=document.createElement('button');
       if(locked){
         card.style.opacity='0.6';
