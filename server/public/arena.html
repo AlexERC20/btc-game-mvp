@@ -386,6 +386,7 @@ let arenaPhase = 'idle';
 let arenaMax = 0;
 let pauseMax = 0;
 let adState = {};
+let adPriceTimer = null;
 
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
 function normUser(u){ return '@'+String(u||'anon').replace(/^@+/, ''); }
@@ -456,7 +457,7 @@ async function pollArena(){
   if(r?.ok) renderArena(r);
 }
 async function pollAd(){
-  const r = await fetch('/api/shout').then(r=>r.json()).catch(()=>null);
+  const r = await fetch(`/api/shout?initData=${encodeURIComponent(tg?.initData || '')}`).then(r=>r.json()).catch(()=>null);
   if(!r?.ok) return;
   const st = r.state||{};
   adState = st;
@@ -474,7 +475,11 @@ async function loadChatHistory(){
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));}
 function openSheet(el){ if(!el) return; sheetBg.classList.add('show'); el.classList.add('open'); }
-function closeAllSheets(){ document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open')); sheetBg.classList.remove('show'); }
+function closeAllSheets(){
+  document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open'));
+  sheetBg.classList.remove('show');
+  if (adPriceTimer) { clearInterval(adPriceTimer); adPriceTimer = null; }
+}
 sheetBg.addEventListener('click', closeAllSheets);
 document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeAllSheets));
 
@@ -514,7 +519,16 @@ rulesBtn.onclick = ()=> openSheet(sheetRules);
 starsBtn.onclick = ()=> openSheet(sheetStars);
 // Переход в магазин аналогично главной странице
 shopBtn.onclick = ()=>{ location.href = `/farm.html?uid=${encodeURIComponent(uid)}`; };
-adWriteBtn.onclick = ()=>{ adInput.value=''; adCount.textContent='0/50'; adSend.disabled=true; openSheet(sheetAd); };
+adWriteBtn.onclick = async ()=>{
+  try{ tg?.HapticFeedback?.impactOccurred('light'); }catch{}
+  adInput.value='';
+  adCount.textContent='0/50';
+  adSend.disabled=true;
+  await pollAd();
+  openSheet(sheetAd);
+  adInput.focus();
+  adPriceTimer = setInterval(pollAd,1000);
+};
 
 adInput.addEventListener('input', ()=>{
   const v = adInput.value.slice(0,50);
@@ -524,11 +538,22 @@ adInput.addEventListener('input', ()=>{
 });
 
 adSend.onclick = async ()=>{
-  const text = adInput.value.trim();
+  const text = adInput.value.trim().replace(/\n/g,' ').slice(0,50);
   if(!text) return;
-  const r = await fetch('/api/shout/bid',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ initData: tg?.initData || '', text })}).then(r=>r.json()).catch(()=>({ok:false}));
-  if(r.ok){ closeAllSheets(); pollAd(); loadProfile(); }
-  else if(r.error==='INSUFFICIENT'){ alert('Недостаточно средств'); }
+  const r = await fetch('/api/shout/bid',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ initData: tg?.initData || '', text })
+  }).then(r=>r.json()).catch(()=>({ok:false}));
+  if(!r.ok){
+    alert(r.error==='INSUFFICIENT' ? 'Недостаточно средств' : 'Цена изменилась, попробуйте снова');
+    await pollAd();
+    return;
+  }
+  closeAllSheets();
+  try{ tg?.HapticFeedback?.impactOccurred('medium'); }catch{}
+  await pollAd();
+  await loadProfile();
 };
 shopTabs.addEventListener('click', (e)=>{
   const b = e.target.closest('.tab-btn'); if(!b) return;
