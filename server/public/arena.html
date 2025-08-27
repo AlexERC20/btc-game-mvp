@@ -129,19 +129,42 @@
   .ad-enter{ color:var(--muted); font-size:13px }
 
   .lb-head{color:var(--muted);font-size:13px;margin:10px 0 6px;text-align:center}
-  .podium{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
-  .pod{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px;text-align:center}
-  .pod1{order:2;transform:scale(1.05)}
-  .pod2{order:1}
-  .pod3{order:3}
-  .pod .name{font-weight:700}
-  .pod .wins{color:#ccc;font-size:12px}
-  .pod .sum{font-weight:700;margin-top:2px}
-  .lb{display:grid;grid-template-columns:1fr;gap:8px}
-  .rank{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
-  .rank .left{display:flex;gap:8px;align-items:center}
-  .badge{width:24px;height:24px;border-radius:999px;background:#222;display:flex;align-items:center;justify-content:center;font-weight:800}
-  .rank .wins{color:#aaa;font-size:12px;margin-left:4px}
+  .arena-top24{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+    gap:12px;
+    padding:0 16px 20px;
+  }
+  .top-card{
+    background:#151515;
+    border-radius:14px;
+    padding:12px;
+    min-height:94px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+  }
+  .top-card .name{
+    font-weight:600;
+    line-height:1.1;
+    overflow:hidden;
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+    overflow-wrap:anywhere;
+    word-break:break-word;
+  }
+  .top-card .stats{
+    margin-top:6px;
+    font-size:13px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    opacity:.85;
+  }
+  .top-card.place-1 .name{font-size:16px;}
+  .top-card.place-2 .name,
+  .top-card.place-3 .name{font-size:15px;}
 
   /* bottom sheets */
   .sheet{position:fixed;left:0;right:0;bottom:0;background:#0b0b0b;border-top:1px solid var(--border);border-radius:16px 16px 0 0;transform:translateY(100%);transition:transform .25s ease;padding:14px 14px calc(18px + env(safe-area-inset-bottom));z-index:1000}
@@ -225,8 +248,7 @@
     <button class="chipbtn" id="shopBtn">Магазин</button>
   </div>
   <div class="lb-head">Топ за 24 часа</div>
-  <div class="podium" id="lbPodium"></div>
-  <div class="lb" id="lbRest"></div>
+  <div class="arena-top24" id="lb24"></div>
 </div>
 <div class="sheet-backdrop" id="sheetBg"></div>
 
@@ -339,8 +361,7 @@ const timerWrap = document.getElementById('timerWrap');
 const bankEl = document.getElementById('bank');
 const ringStatus = document.getElementById('ringStatus');
 const backText = document.getElementById('backText');
-const lbPodium = document.getElementById('lbPodium');
-const lbRest = document.getElementById('lbRest');
+const lb24 = document.getElementById('lb24');
 backText.onclick = () => { window.location.href = '/'; };
 const bidBtn = document.getElementById('bidBtn');
 const leaderEl = document.getElementById('leader');
@@ -576,22 +597,24 @@ async function loadLb24(){
   const r = await fetch('/api/arena/leaderboard?window=24h').then(r=>r.json()).catch(()=>null);
   if(!r?.ok) return;
   const items = r.items || [];
-  const top3 = items.slice(0,3);
-  lbPodium.innerHTML = top3.map((it,i)=>`
-    <div class="pod pod${i+1}">
-      <div class="name">${normUser(it.username)}</div>
-      <div class="wins">${it.wins} побед</div>
-      <div class="sum">${fmt(it.total_won)}</div>
-    </div>`).join('');
-  lbRest.innerHTML = items.slice(3).map((it,i)=>`
-    <div class="rank">
-      <div class="left">
-        <div class="badge">${i+4}</div>
-        <div class="name">${normUser(it.username)}<span class="wins">(${it.wins})</span></div>
-      </div>
-      <div class="val">${fmt(it.total_won)}</div>
-    </div>`).join('');
+  lb24.innerHTML = items.map((it,i)=>{
+    const name = normUser(it.username);
+    return `<div class="top-card place-${i+1}">
+      <div class="name" data-full="${name}">${name}</div>
+      <div class="stats">${it.wins} побед • ${fmt(it.total_won)}</div>
+    </div>`;
+  }).join('');
 }
+
+document.addEventListener('click', e=>{
+  const el = e.target.closest('.top-card .name');
+  if(!el) return;
+  const full = el.dataset.full;
+  if(full){
+    try{ tg?.showPopup?.({ message: full }); }
+    catch{ alert(full); }
+  }
+});
 
 openChannel.onclick = ()=>{ try{ if(window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK); else window.open(CHANNEL_LINK); }catch{ window.open(CHANNEL_LINK); } };
 
