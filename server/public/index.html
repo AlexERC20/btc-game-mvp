@@ -138,6 +138,9 @@
   .sheet .btnrow .btnsm.cancel{background:#333}
   .btnsm[disabled]{ background:#333 !important; opacity:0.8; cursor:not-allowed; }
   .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
+  .stat-row{display:flex;justify-content:space-between;gap:8px;margin:8px 0}
+  .stat-row .stat-label{color:var(--muted);font-size:13px}
+  .stat-row .stat-value{font-size:15px;font-weight:700}
 
   #sheetChatFeed .feed{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
   .msg{background:#121212;border:1px solid var(--border);border-radius:12px;padding:10px}
@@ -466,11 +469,10 @@
 <!-- SHEET: статистика -->
 <div class="sheet" id="sheetStats">
   <h3>Статистика</h3>
-  <p>Побед: <span id="statsWins">0</span></p>
-  <p>Поражений: <span id="statsLosses">0</span></p>
-  <p>Онлайн: <span id="statsOnline">0</span></p>
-  <p>Приглашений: <span id="statsInv">0</span></p>
-  <div id="statsList"></div>
+  <div class="stat-row"><div class="stat-label">Побед:</div><div id="statsWins" class="stat-value">0</div></div>
+  <div class="stat-row"><div class="stat-label">Поражений:</div><div id="statsLosses" class="stat-value">0</div></div>
+  <div class="stat-row"><div class="stat-label">Онлайн:</div><div id="statsOnline" class="stat-value">0</div></div>
+  <div class="stat-row"><div class="stat-label">Приглашений:</div><div id="statsInv" class="stat-value">0</div></div>
   <div class="btnrow">
     <button class="btnsm cancel" data-close>Закрыть</button>
   </div>
@@ -535,6 +537,12 @@ const CHANNEL_LINK = 'https://t.me/erc20coin';
 const tg = window.Telegram?.WebApp;
 
 let lastResultId = null;
+
+function formatHandle(u){
+  if(!u) return '';
+  const name = String(u).trim();
+  return name.startsWith('@') ? name : '@'+name;
+}
 
 function vibSuccess(){
   try{
@@ -606,7 +614,7 @@ async function api(path, payload={}) {
 (async () => {
   try { tg?.ready?.(); } catch {}
   const uid = tg?.initDataUnsafe?.user?.id || null;
-  const username = tg?.initDataUnsafe?.user?.username ? '@'+tg.initDataUnsafe.user.username : null;
+  const username = formatHandle(tg?.initDataUnsafe?.user?.username) || null;
   const initData = tg?.initData || '';
   const IS_VIEWER = !uid;
 
@@ -1100,8 +1108,6 @@ async function loadMyStats(){
   document.getElementById('statsLosses').textContent = s.losses;
   document.getElementById('statsOnline').textContent = s.online;
   document.getElementById('statsInv').textContent = s.invites;
-  const listEl = document.getElementById('statsList');
-  listEl.innerHTML = (s.recent||[]).map(it=>`<div>${it.delta}</div>`).join('');
   window.__lastWinRoundFromServer = s.last_win_round;
 }
 
@@ -1276,13 +1282,14 @@ async function place(side){
 async function loadChatFeed(){
   const r = await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
   if(!r.ok) { chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>'; return; }
-  chatFeed.innerHTML = r.items.map(it=>(
-    `<div class="msg">
-       <div class="meta">@${(it.username||'anon').replace(/^@+/,'@')} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}
-       </div>
+  chatFeed.innerHTML = r.items.map(it=>{
+    const raw = it.username || it.handle;
+    const user = raw ? formatHandle(raw) : 'Гость';
+    return `<div class="msg">
+       <div class="meta">${user} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}</div>
        <div class="text">${escapeHtml(it.text||'')}</div>
-     </div>`
-  )).join('');
+     </div>`;
+  }).join('');
 }
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, m => ({
