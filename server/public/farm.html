@@ -10,22 +10,21 @@
 <body class="safe-bottom">
 <h1 class="sr-only">Real Price BTC Game</h1>
 <button class="back-text" id="backText">Назад</button>
-<div class="tabs row" style="margin-top:0">
+<div class="farm-tabs tabs row">
   <button class="tab btn btn-primary" data-type="usd">Фарм $</button>
   <button class="tab btn btn-ghost" data-type="vop">Фарм VOP</button>
 </div>
-
-<section class="card claim-card" id="statusCard">
-  <div class="claim-top row" style="justify-content:space-between;align-items:center">
+<section class="card claim-card farm-stats" id="statusCard">
+  <div class="claim-top row">
     <div class="claim-amount">Доступно к получению: <b id="claimAmount">$0</b></div>
-    <button class="btn btn-success" id="btnClaim" disabled>CLAIM</button>
+    <button class="btn btn-success farm-claim" id="btnClaim" disabled>CLAIM</button>
   </div>
   <div class="metrics row">
     <div class="col"><div class="label">Скорость</div><div class="val" id="rate">0 $/ч</div></div>
     <div class="col"><div class="label">FP</div><div class="val" id="fp">0</div></div>
   </div>
   <div class="cap">
-    <div class="cap-row row" style="justify-content:space-between"><span>Лимит сегодня</span><span id="capText">$0 / $0</span></div>
+    <div class="cap-row row"><span>Лимит сегодня</span><span id="capText">$0 / $0</span></div>
     <div class="progress success"><div class="bar" id="capBar" style="width:0%"></div></div>
     <div class="muted">Оффлайн-лимит: до 12 ч</div>
   </div>
@@ -37,7 +36,7 @@
 
 <section class="card upgrades-card" id="upgradesCard">
   <h3>Апгрейды</h3>
-  <div class="grid-2" id="upgrades"></div>
+  <div class="upgrades-grid" id="upgrades"></div>
 </section>
 
 <script src="js/farm.js"></script>
