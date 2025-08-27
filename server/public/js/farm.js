@@ -9,18 +9,29 @@ function haptic(kind){try{const h=window.Telegram?.WebApp?.HapticFeedback;if(!h)
 
 async function loadFarmState(type){return await fetch(`/api/farm/${type}/state?uid=${uid}`).then(r=>r.json()).catch(()=>({ok:false}));}
 
+let currentState=null;
+
 async function claim(type){
   haptic('impact');
-  const r=await fetch(`/api/farm/${type}/claim`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid})}).then(r=>r.json()).catch(()=>({error:true}));
-  if(r && r.claimed!==undefined){
-    toast('Получено: '+formatVop(r.claimed));
+  if(type==='vop'){
+    if(!currentState?.can_claim){toast('Нужно 30 приглашённых, чтобы клеймить VOP');haptic('error');return;}
+    if((currentState?.available||0)<=0){toast('Пока нечего клеймить');haptic('error');return;}
+  }
+  const url = type==='vop'?'/api/farm/claim_vop':`/api/farm/${type}/claim`;
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid})}).then(r=>r.json()).catch(()=>({error:true}));
+  if(r && r.ok){
+    if(r.claimed!==undefined){
+      const msg = type==='usd'?formatMoney(r.claimed):formatVop(r.claimed);
+      toast('Получено: '+msg);
+    }
     haptic('success');
+    localStorage.setItem('stateUpdated', Date.now());
     loadCurrent();
   }else if(r && r.code==='NOT_ENOUGH_REFERRALS'){
     toast('Нужно 30 приглашённых');
     haptic('error');
   }else if(r && r.code==='NOTHING_TO_CLAIM'){
-    toast('Пока нечего забирать');
+    toast('Пока нечего клеймить');
     haptic('error');
   }else{
     toast('Ошибка');
@@ -36,6 +47,7 @@ function renderHistory(type,items){const box=document.getElementById('history');
 
   function renderState(type,s){
     if(!s.ok)return;
+    currentState=s;
     const claimAmount=document.getElementById('claimAmount');
     const btnClaim=document.getElementById('btnClaim');
     const rate=document.getElementById('rate');
@@ -51,7 +63,8 @@ function renderHistory(type,items){const box=document.getElementById('history');
       inactive.hidden=s.active;
     }else{
       claimAmount.textContent=formatVop(s.available);
-      btnClaim.disabled=!(s.can_claim&&s.available>0);
+      btnClaim.disabled=!s.can_claim;
+      btnClaim.title=s.can_claim?'':'Нужно 30 приглашённых, чтобы клеймить VOP';
       rate.textContent=s.speed_per_hour+' VOP/ч';
       capText.textContent=`${s.daily_progress} / ${s.daily_limit}`;
       inactive.hidden=true;

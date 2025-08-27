@@ -22,6 +22,7 @@ body{padding:16px;letter-spacing:0.3px}
 .btn[disabled]{opacity:.5;cursor:not-allowed}
 .back-text{background:none;border:none;color:#fff;font-size:14px;padding:0;margin-bottom:6px;cursor:pointer}
 .card{background:var(--card);border:1px solid var(--outline);border-radius:16px;padding:16px;margin:16px 0;box-shadow:0 0 4px rgba(0,0,0,.2)}
+.claim-card,.upgrades-card,.history-card{margin:24px 0;}
 .progress{height:6px;background:var(--outline);border-radius:6px;overflow:hidden}
 .progress .bar{height:100%;background:var(--accent);border-radius:inherit}
 .progress.success .bar{background:var(--success)}

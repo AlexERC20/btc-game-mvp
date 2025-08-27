@@ -614,7 +614,7 @@ async function ensureUser(telegramId, username) {
     );
   }
   const r = await pool.query(
-    'SELECT id, balance, username, insurance_count, level, xp, streak_wins FROM users WHERE telegram_id=$1',
+    'SELECT id, balance, vop_balance, username, insurance_count, level, xp, streak_wins FROM users WHERE telegram_id=$1',
     [telegramId]
   );
   return r.rows[0];
@@ -1588,7 +1588,7 @@ app.get('/api/farm/vop/state', async (req, res) => {
   });
 });
 
-app.post('/api/farm/vop/claim', async (req, res) => {
+app.post('/api/farm/claim_vop', async (req, res) => {
   const uid = Number(req.body.uid);
   if (!uid) return res.json({ ok:false, error:'NO_UID' });
   await ensureUser(uid, null);
@@ -1601,7 +1601,7 @@ app.post('/api/farm/vop/claim', async (req, res) => {
   );
   const referrals = ref?.c ?? 0;
   if (referrals < 30) {
-    return res.status(400).json({ code:'NOT_ENOUGH_REFERRALS', need:30, have:referrals });
+    return res.status(403).json({ code:'NOT_ENOUGH_REFERRALS', need:30, have:referrals });
   }
   const now = new Date();
   const today = todayUTC();
@@ -1618,10 +1618,27 @@ app.post('/api/farm/vop/claim', async (req, res) => {
     return res.status(400).json({ code:'NOTHING_TO_CLAIM' });
   }
   const day = today.toISOString().slice(0,10);
-  await pool.query('UPDATE users SET vop_balance=vop_balance+$1, last_claim_vop=now(), claimed_vop_today=claimed_vop_today+$1, claimed_vop_date=$3 WHERE id=$2', [amt, u.id, day]);
-  await pool.query('INSERT INTO farm_history(user_id,type,amount) VALUES($1,$2,$3)', [u.id,'claim_vop',amt]);
+  try {
+    await pool.query('BEGIN');
+    await pool.query('UPDATE users SET vop_balance=vop_balance+$1, last_claim_vop=now(), claimed_vop_today=claimed_vop_today+$1, claimed_vop_date=$3 WHERE id=$2', [amt, u.id, day]);
+    await pool.query('INSERT INTO farm_history(user_id,type,amount) VALUES($1,$2,$3)', [u.id,'claim_vop',amt]);
+    await pool.query('COMMIT');
+  } catch (e) {
+    await pool.query('ROLLBACK');
+    console.error('/api/farm/claim_vop', e);
+    return res.status(500).json({ ok:false, error:'SERVER' });
+  }
   console.log('claim_vop', { user_id:u.id, amount:amt, referrals_count:referrals, ts: new Date().toISOString() });
-  res.json({ claimed:amt, vop_balance: Number(u.vop_balance)+amt });
+  res.json({
+    ok:true,
+    claimed: amt,
+    vop_balance: Number(u.vop_balance) + amt,
+    vop_rate_per_hour: accr.ratePerHour,
+    vop_available: 0,
+    vop_today: Number(u.claimed_vop_today || 0) + amt,
+    xp: Number(u.xp || 0),
+    usd_balance: Number(u.balance || 0)
+  });
 });
 
 app.post('/api/farm/vop/upgrade', async (req, res) => {
