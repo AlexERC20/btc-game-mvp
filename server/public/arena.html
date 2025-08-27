@@ -551,7 +551,7 @@ adSend.onclick = async ()=>{
   const r = await fetch('/api/shout/bid',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ initData: tg?.initData || '', text })
+    body: JSON.stringify({ initData: tg?.initData || '', message: text })
   }).then(r=>r.json()).catch(()=>({ok:false}));
   if(!r.ok){
     alert(r.error==='INSUFFICIENT' ? 'Недостаточно средств' : 'Цена изменилась, попробуйте снова');
