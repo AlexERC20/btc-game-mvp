@@ -930,6 +930,7 @@ app.post('/api/auth', async (req, res) => {
         telegram_id: uid,
         username: u.username,
         balance: Number(u.balance),
+        vop_balance: Number(u.vop_balance || 0),
         ref_count: ref?.c ?? 0,
         insurance: Number(u.insurance_count || 0),
         level: lvl,
@@ -1554,6 +1555,15 @@ app.get('/api/farm/vop/state', async (req, res) => {
     u.last_claim_vop = new Date();
   }
   const accr = computeAccrual('vop', u, now);
+
+  // referrals count
+  const { rows:[ref] } = await pool.query(
+    'SELECT COUNT(*)::int AS c FROM referrals WHERE referrer_user_id=$1',
+    [u.id]
+  );
+  const referrals = ref?.c ?? 0;
+  const canClaim = referrals >= 30;
+
   const upgrades = VOP_UPGRADES.map(up=>{
     let canBuy=true, reason=null;
     if (u.level < up.reqLevel) { canBuy=false; reason='LEVEL'; }
@@ -1561,7 +1571,21 @@ app.get('/api/farm/vop/state', async (req, res) => {
     return { ...up, canBuy, reason };
   });
   const hist = await pool.query("SELECT type, amount, meta, created_at FROM farm_history WHERE user_id=$1 AND type LIKE '%vop' ORDER BY id DESC LIMIT 10", [u.id]);
-  res.json({ ok:true, locked:false, ratePerHour: accr.ratePerHour, fp: u.fp_vop, claimable: accr.claimable, dailyCap: VOP_DAILY_CAP, claimedToday: u.claimed_vop_today, offlineCapHours: VOP_OFFLINE_CAP_HOURS, lastClaimAt: u.last_claim_vop, vopBalance: u.vop_balance, upgrades, history: hist.rows.map(r=>({ type:r.type, amount:Number(r.amount), ts:r.created_at, meta:r.meta })) });
+  res.json({
+    ok:true,
+    locked:false,
+    available: accr.claimable,
+    speed_per_hour: accr.ratePerHour,
+    fp: u.fp_vop,
+    daily_progress: u.claimed_vop_today,
+    daily_limit: VOP_DAILY_CAP,
+    offline_cap: VOP_OFFLINE_CAP_HOURS,
+    referrals_count: referrals,
+    can_claim: canClaim,
+    vop_balance: u.vop_balance,
+    upgrades,
+    history: hist.rows.map(r=>({ type:r.type, amount:Number(r.amount), ts:r.created_at, meta:r.meta }))
+  });
 });
 
 app.post('/api/farm/vop/claim', async (req, res) => {
@@ -1571,6 +1595,14 @@ app.post('/api/farm/vop/claim', async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
   const u = rows[0];
   if (u.level < VOP_MIN_LEVEL) return res.json({ ok:false, error:'LOCKED' });
+  const { rows:[ref] } = await pool.query(
+    'SELECT COUNT(*)::int AS c FROM referrals WHERE referrer_user_id=$1',
+    [u.id]
+  );
+  const referrals = ref?.c ?? 0;
+  if (referrals < 30) {
+    return res.status(400).json({ code:'NOT_ENOUGH_REFERRALS', need:30, have:referrals });
+  }
   const now = new Date();
   const today = todayUTC();
   if (ensureDayBuckets('vop', u, today)) {
@@ -1582,11 +1614,14 @@ app.post('/api/farm/vop/claim', async (req, res) => {
   }
   const accr = computeAccrual('vop', u, now);
   const amt = accr.claimable;
-  if (amt <= 0) return res.json({ ok:true, claimed:0, newVopBalance:Number(u.vop_balance) });
+  if (amt <= 0) {
+    return res.status(400).json({ code:'NOTHING_TO_CLAIM' });
+  }
   const day = today.toISOString().slice(0,10);
   await pool.query('UPDATE users SET vop_balance=vop_balance+$1, last_claim_vop=now(), claimed_vop_today=claimed_vop_today+$1, claimed_vop_date=$3 WHERE id=$2', [amt, u.id, day]);
   await pool.query('INSERT INTO farm_history(user_id,type,amount) VALUES($1,$2,$3)', [u.id,'claim_vop',amt]);
-  res.json({ ok:true, claimed:amt, newVopBalance: Number(u.vop_balance)+amt });
+  console.log('claim_vop', { user_id:u.id, amount:amt, referrals_count:referrals, ts: new Date().toISOString() });
+  res.json({ claimed:amt, vop_balance: Number(u.vop_balance)+amt });
 });
 
 app.post('/api/farm/vop/upgrade', async (req, res) => {

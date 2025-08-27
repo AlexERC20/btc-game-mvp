@@ -314,7 +314,7 @@
 </head>
 <body>
 <div class="wrap">
-  <div class="balance flash-target" id="bal">Баланс: $—</div>
+  <div class="balance flash-target" id="bal">Баланс: $— • VOP: — 💎</div>
   <div id="viewerBanner" style="display:none;text-align:center;margin:6px 0 10px;">
     <div style="margin-bottom:6px">Открой в Telegram, чтобы играть</div>
     <a id="viewerOpen" href="https://t.me/realpricebtc_bot?startapp=go" style="background:#1fa36a;color:#fff;padding:6px 12px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">Открыть бота</a>
@@ -368,7 +368,7 @@
   <div class="levelcard" id="levelCard">
     <div class="level-head">
       <div class="level-title">Уровень <span id="lvlNum">1</span></div>
-      <div class="level-balance">Баланс: <span id="balInline">$—</span></div>
+      <div class="level-balance">Баланс: <span id="balInline">$—</span> • VOP: <span id="vopInline">—</span> 💎</div>
     </div>
     <div class="level-bar">
       <div class="level-fill" id="xpFill"></div>
@@ -386,7 +386,6 @@
     <button class="chipbtn" id="arenaBtn">Арена</button>
     <button class="chipbtn" id="starsBtn">Купить $</button>
     <button class="chipbtn" id="shopBtn">Магазин<span id="farmPill" class="chip" style="display:none;margin-left:4px;background:var(--green);color:#000;font-weight:700"></span></button>
-    <button class="chipbtn" id="claimBtn" style="display:none">CLAIM</button>
   </div>
   <div id="viewerHint" style="display:none;text-align:center;color:var(--muted);font-size:13px;margin:6px 0 10px;">Зайдите через Telegram WebApp, чтобы играть.</div>
 
@@ -489,17 +488,6 @@
   <div class="btnrow">
     <button class="btnsm cancel" data-close>Отмена</button>
     <button class="btnsm" id="adSend" disabled>Отправить</button>
-  </div>
-</div>
-
-<!-- SHEET: CLAIM -->
-<div class="sheet" id="sheetClaim">
-  <h3>CLAIM</h3>
-  <p style="margin-top:6px;">Ты можешь склеймить</p>
-  <div id="claimVop" style="font-size:22px;font-weight:800;margin:4px 0 10px;">— VOP</div>
-  <div class="btnrow">
-    <button class="btnsm cancel" data-close>Закрыть</button>
-    <button class="btnsm" id="claimDo" disabled>CLAIM</button>
   </div>
 </div>
 
@@ -642,6 +630,7 @@ const ringTimer   = document.getElementById('ringTimer');
 const ringPhase   = document.getElementById('ringPhase');
 const balEl   = document.getElementById('bal');
 const balInline = document.getElementById('balInline');
+const vopInline = document.getElementById('vopInline');
 const ring    = document.getElementById('ring');
 const betArc  = document.getElementById('betArc');
 const bankEl  = document.getElementById('bank');
@@ -664,7 +653,6 @@ const statsBtn= document.getElementById('statsBtn');
 const chatFeedBtn = document.getElementById('chatFeedBtn');
 const arenaBtn = document.getElementById('arenaBtn');
 const cfgBtn  = document.getElementById('cfgBtn');
-const claimBtn   = document.getElementById('claimBtn');
 const shopBtn = document.getElementById('shopBtn');
 const farmPill = document.getElementById('farmPill');
 
@@ -676,13 +664,10 @@ const sheetStars  = document.getElementById('sheetStars');
 const sheetIns    = document.getElementById('sheetIns');
 const sheetStats  = document.getElementById('sheetStats');
 const sheetAd     = document.getElementById('sheetAd');
-const sheetClaim  = document.getElementById('sheetClaim');
 const sheetChatFeed = document.getElementById('sheetChatFeed');
 const sheetShop  = document.getElementById('sheetShop');
 const shopTabs   = document.getElementById('shopTabs');
 const chatFeed      = document.getElementById('chatFeed');
-const claimVopEl  = document.getElementById('claimVop');
-const claimDo     = document.getElementById('claimDo');
 
 // stake controls
 const chipsBox  = document.getElementById('chips');
@@ -715,7 +700,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 if (IS_VIEWER) {
-  [buyBtn, sellBtn, cfgBtn, refBtn, topupBtn, insBtn, statsBtn, chatFeedBtn, arenaBtn, starsBtn, claimBtn, adWriteBtn, buyStars, buyIns, adSend, claimDo].forEach(b => b && (b.disabled = true));
+  [buyBtn, sellBtn, cfgBtn, refBtn, topupBtn, insBtn, statsBtn, chatFeedBtn, arenaBtn, starsBtn, adWriteBtn, buyStars, buyIns, adSend].forEach(b => b && (b.disabled = true));
   viewerBanner.style.display = 'block';
   viewerHint.style.display   = 'block';
   viewerOpen.onclick = (e)=>{ e.preventDefault(); const link = `https://t.me/${BOT_USERNAME}?startapp=go`; try{ if(window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(link); else window.location.href = link; } catch{ window.location.href = link; } };
@@ -838,10 +823,12 @@ function floatAmount(parent, text, plus /*true for +, false for -*/) {
 
 // helpers
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
-function setBalanceVal(amount){
-  const txt = 'Баланс: ' + fmt(amount);
+function setBalanceVal(amount, vop){
+  const vopFmt = Number(vop||0).toLocaleString('ru-RU');
+  const txt = 'Баланс: ' + fmt(amount) + ' • VOP: ' + vopFmt + ' 💎';
   if (balEl) balEl.textContent = txt;
   if (balInline) balInline.textContent = fmt(amount);
+  if (vopInline) vopInline.textContent = vopFmt;
 }
 function renderProfile(p){
   if (!p) return;
@@ -931,12 +918,6 @@ function bindOnce(){
   insBtn.onclick   = ()=>{ insCountEl.textContent = 'Доступно: ' + INS_COUNT; openSheet(sheetIns); };
   starsBtn.onclick = ()=> openSheet(sheetStars);
   statsBtn.onclick = ()=>{ loadMyStats(); openSheet(sheetStats); };
-  claimBtn.onclick = async ()=>{
-    openSheet(sheetClaim);
-    claimVopEl.textContent = '… VOP';
-    claimDo.disabled = true;
-    await fetchClaimInfo();
-  };
     chatFeedBtn.onclick = async ()=>{
       await loadChatFeed();
       openSheet(sheetChatFeed);
@@ -1064,12 +1045,9 @@ async function auth(){
     body: JSON.stringify({ uid, username })
   }).then(r=>r.json()).catch(()=>({ok:false}));
   if (r.ok) {
-    setBalanceVal(r.user.balance);
+    setBalanceVal(r.user.balance, r.user.vop_balance);
     INS_COUNT = Number(r.user.insurance || 0);
     if (insCountEl) insCountEl.textContent = 'Доступно: ' + INS_COUNT;
-    if (typeof r.user.ref_count === 'number') {
-      claimBtn.style.display = r.user.ref_count >= 30 ? 'inline-block' : 'none';
-    }
     renderProfile(r.user);
   }
 }
@@ -1079,30 +1057,11 @@ async function refreshBalance(){
     body: JSON.stringify({ uid, username })
   }).then(r=>r.json()).catch(()=>({ok:false}));
   if (r.ok) {
-    setBalanceVal(r.user.balance);
+    setBalanceVal(r.user.balance, r.user.vop_balance);
     INS_COUNT = Number(r.user.insurance || 0);
     if (insCountEl) insCountEl.textContent = 'Доступно: ' + INS_COUNT;
-    if (typeof r.user.ref_count === 'number') {
-      claimBtn.style.display = r.user.ref_count >= 30 ? 'inline-block' : 'none';
-    }
     renderProfile(r.user);
   }
-}
-
-async function fetchClaimInfo(){
-  const r = await fetch('/api/claim/info', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ uid })
-  }).then(r=>r.json()).catch(()=>({ ok:false }));
-
-  if (!r.ok) { claimVopEl.textContent = '— VOP'; return; }
-
-  // текст: "<число> VOP"
-  claimVopEl.textContent = (Number(r.claimable_vop)||0).toLocaleString() + ' VOP';
-
-  // Кнопка по ТЗ остаётся серой/disabled (боевой клейм добавим потом)
-  claimDo.disabled = true;
 }
 
 async function refreshFarmUsdPill(){
