@@ -103,7 +103,8 @@ const EXTRACTORS_VOP = [
 
 // Arena configuration
 const ARENA_FEE_PCT = Number(process.env.ARENA_FEE_PCT || 0.10);
-const ARENA_FEE_TO_BOTS_PCT = Number(process.env.ARENA_FEE_TO_BOTS_PCT || 0);
+const ARENA_FEE_TO_BOTS_PCT = Number(process.env.ARENA_FEE_TO_BOTS_PCT || 1);
+const ROUND_FEE_TO_BOTS_PCT = Number(process.env.ROUND_FEE_TO_BOTS_PCT || 1);
 const BOT_ARENA_DISTRIBUTION = process.env.BOT_ARENA_DISTRIBUTION || 'equal';
 const MIN_BOT_SHARE_CENTS = Number(process.env.MIN_BOT_SHARE_CENTS || 1);
 const BOT_ARENA_REMAINDER = process.env.BOT_ARENA_REMAINDER || 'first_bot';
@@ -791,6 +792,28 @@ async function distributeArenaFeeToBots(client, roundId, amount, totalFee) {
   }
 }
 
+async function distributeRoundFeeToBots(roundId, amount, totalFee) {
+  if (BOT_ARENA_DISTRIBUTION !== 'equal') return;
+  const res = await pool.query('SELECT id FROM users WHERE is_bot=TRUE');
+  const bots = res.rows;
+  if (!bots.length) return;
+
+  const per = Math.floor((amount / bots.length) / MIN_BOT_SHARE_CENTS) * MIN_BOT_SHARE_CENTS;
+  let remainder = amount - per * bots.length;
+
+  for (let i = 0; i < bots.length; i++) {
+    let add = per;
+    if (BOT_ARENA_REMAINDER === 'first_bot' && i === 0) add += remainder;
+    if (add <= 0) continue;
+    const botId = bots[i].id;
+    await pool.query('UPDATE users SET balance = balance + $1 WHERE id=$2', [add, botId]);
+    await pool.query(
+      'INSERT INTO ledger(user_id,type,amount,meta) VALUES($1,$2,$3,$4)',
+      [botId, 'round_fee_share', add, JSON.stringify({ round_id: roundId, amount: add, total_fee: totalFee })]
+    );
+  }
+}
+
 function toIdle() {
   arena.phase = 'idle';
   arena.secsLeft = 0;
@@ -884,6 +907,7 @@ async function settle() {
   const bank = totalWin + totalLose;
 
   const fee = Math.floor(totalLose * 0.10); // 10% только с проигравших
+  const botsShare = Math.floor(fee * ROUND_FEE_TO_BOTS_PCT);
   const distributable = bank - fee;
 
   const pct = ((state.price - state.startPrice) / state.startPrice) * 100;
@@ -933,6 +957,10 @@ async function settle() {
     }
   }
 
+  if (botsShare > 0) {
+    await distributeRoundFeeToBots(state.currentRoundId, botsShare, fee);
+  }
+
   const winUsers = new Set(winners.map(w => w.user_id));
   const loseUsers = new Set(losers.map(l => l.user_id));
   for (const id of winUsers) {
@@ -955,7 +983,7 @@ async function settle() {
   while (state.history.length > MAX_HIST) state.history.pop();
 
   state.lastSettlement = {
-    side, totalBank: bank, fee, distributable,
+    side, totalBank: bank, fee, distributable, botsShare,
     payouts: winners.map(w => ({
       user: w.user,
       amount: totalWin ? Math.round((w.amount / totalWin) * distributable) : 0,
