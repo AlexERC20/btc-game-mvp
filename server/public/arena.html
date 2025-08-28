@@ -130,6 +130,10 @@
 
   .lb-head{color:var(--muted);font-size:13px;margin:10px 0 6px;text-align:center}
   .arena-top24{ padding:0 16px 20px; }
+  .arena-top .user-name{
+    white-space:nowrap;
+    overflow:hidden;
+  }
   .lb-grid{
     display:grid;
     grid-template-columns:repeat(3,1fr);
@@ -246,7 +250,7 @@
     <button class="chipbtn" id="shopBtn">Магазин</button>
   </div>
   <div class="lb-head">Топ за 24 часа</div>
-  <div class="arena-top24">
+  <div class="arena-top arena-top24">
     <div class="lb-grid" id="lb24"></div>
   </div>
 </div>
@@ -411,6 +415,13 @@ let adPriceTimer = null;
 
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
 function normUser(u){ return '@'+String(u||'anon').replace(/^@+/, ''); }
+function shortHandle(handle){
+  const hasAt = handle?.startsWith('@');
+  const raw = hasAt ? handle.slice(1) : handle || '';
+  const chars = Array.from(raw);
+  const cut = chars.length > 6 ? chars.slice(0,6).join('') + '…' : raw;
+  return (hasAt ? '@' : '') + cut;
+}
 function setBalanceVal(amount, vop){
   if(balInline) balInline.textContent = fmt(amount);
   if(vopInline) vopInline.textContent = Number(vop||0).toLocaleString('ru-RU');
@@ -600,11 +611,12 @@ async function loadLb24(){
   let html = '';
   for(let i=0;i<3;i++){
     const it = items[i];
-    const name = it ? normUser(it.username) : '—';
+    const full = it ? normUser(it.username) : '—';
+    const short = it ? shortHandle(full) : '—';
     const wins = it ? it.wins : 0;
     const total = fmt(it ? it.total_won : 0);
     html += `<div class="lb-card place-${i+1}">
-      <div class="lb-name" title="${name}">${name}</div>
+      <div class="lb-name user-name" title="${full}">${short}</div>
       <div class="lb-meta">${wins} побед • ${total}</div>
     </div>`;
   }
