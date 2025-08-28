@@ -35,6 +35,7 @@ body{padding:var(--gap-m);letter-spacing:0.3px}
 .progress .bar{height:100%;background:var(--accent);border-radius:inherit}
 .progress.success .bar{background:var(--success)}
 .chip{display:inline-block;background:var(--outline);border-radius:999px;padding:calc(6px * var(--gap-scale)) calc(10px * var(--gap-scale));font-size:calc(12px * var(--ui-scale))}
+.chipbtn{background:#121212;border:1px solid var(--outline);border-radius:999px;padding:calc(8px * var(--gap-scale)) calc(12px * var(--gap-scale));font-size:calc(13px * var(--ui-scale));color:var(--text);cursor:pointer}
 .row{display:flex;gap:var(--gap-m);align-items:center}
 .grid-2{display:grid;grid-template-columns:repeat(auto-fill,minmax(calc(160px * var(--ui-scale)),1fr));gap:var(--gap-s)}
 .col{flex:1}
@@ -62,6 +63,9 @@ body{padding:var(--gap-m);letter-spacing:0.3px}
 
 /* farm tabs */
 .farm-tabs{margin:0 0 var(--gap-m);}
+
+.daily-strip{background:var(--card);border:1px solid var(--outline);border-radius:calc(12px * var(--ui-scale));padding:calc(8px * var(--gap-scale)) calc(10px * var(--gap-scale));font-size:calc(13px * var(--ui-scale));display:flex;align-items:center;justify-content:space-between;margin:var(--gap-m) 0}
+.daily-strip .badge{background:var(--warn);color:#000;border-radius:999px;padding:0 6px;font-size:calc(12px * var(--ui-scale));margin-left:4px}
 
 /* upgrades */
 .upgrades-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--gap-m);}

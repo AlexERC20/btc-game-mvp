@@ -81,6 +81,7 @@
   }
 
   .bank{text-align:center;color:#fff;font-size:18px;margin-top:6px}
+  .daily-strip{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 10px;font-size:13px;display:flex;justify-content:space-between;align-items:center;margin:8px 0}
   .btn{width:100%;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer;background:var(--green);margin-top:16px}
   .btn:active{transform:translateY(1px) scale(.99)}
   .btn[disabled]{opacity:.5;cursor:not-allowed}
@@ -217,12 +218,13 @@
         <circle cx="160" cy="160" r="140" stroke="#1f1f1f" stroke-width="14" fill="none"/>
         <circle id="ring" cx="160" cy="160" r="140" stroke="var(--ring)" stroke-width="14" fill="none" stroke-linecap="round" stroke-dasharray="879.645" stroke-dashoffset="0"/>
       </svg>
-      <div class="inring-stack">
-        <div class="inring-price" id="bank" data-v="0">$0</div>
-        <div class="inring-bottom" id="ringStatus">00:00 · Ожидание ставки</div>
-      </div>
+    <div class="inring-stack">
+      <div class="inring-price" id="bank" data-v="0">$0</div>
+      <div class="inring-bottom" id="ringStatus">00:00 · Ожидание ставки</div>
     </div>
   </div>
+</div>
+  <div id="dailyQuestStrip" class="daily-strip"></div>
   <button class="btn" id="bidBtn">Ставка $0</button>
   <div class="head" id="leader">Лидер: —</div>
   <div class="levelcard" id="levelCard">
@@ -665,6 +667,7 @@ pollArena();
 pollAd();
 loadLb24();
 </script>
+<script type="module" src="js/quests.js"></script>
 
 </body>
 </html>
