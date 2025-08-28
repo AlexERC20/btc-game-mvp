@@ -6,9 +6,11 @@ async function fetchDaily() {
     const r = await fetch('/api/quests?scope=day');
     const data = await r.json();
     _dailyCache = data;
+    if (!data.ok) console.error('Quests API error', data);
     return data;
-  } catch {
-    return { items: [], claimable: 0 };
+  } catch (e) {
+    console.error('Quests fetch failed', e);
+    return { ok: false, items: [], claimable: 0 };
   }
 }
 
@@ -16,7 +18,11 @@ export async function renderDailyStrip() {
   const el = document.getElementById('dailyQuestStrip');
   if (!el) return;
   const data = await fetchDaily();
-  if (!data.items || !data.items.length) return;
+  if (!data.items || !data.items.length) {
+    console.error('No quests received', data);
+    el.innerHTML = '<div class="left">Сегодня без заданий</div>';
+    return;
+  }
   const quest = data.items.find(q => !q.is_claimed && q.progress < q.goal) || data.items[0];
   const reward = quest.reward.type === 'USD'
     ? `$${quest.reward.value}`
