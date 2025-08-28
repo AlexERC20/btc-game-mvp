@@ -158,18 +158,22 @@ async function seedQuestTemplates(pool) {
 
 function nextMidnightUTC() {
   const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1));
+  d.setUTCHours(24, 0, 0, 0);
+  return d;
 }
 
 function nextWeekUTC() {
   const d = new Date();
-  const diff = (8 - d.getUTCDay()) % 7 || 7;
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + diff));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + (8 - day));
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
 }
 
 function nextMonthUTC() {
-  const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+  const now = new Date();
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
+  return d;
 }
 
 async function ensureUserQuests(pool, userId, userLevel = 0) {
@@ -177,9 +181,9 @@ async function ensureUserQuests(pool, userId, userLevel = 0) {
   for (const t of tmpl.rows) {
     if (userLevel < t.min_level) continue;
     let expires = null;
-    if (t.scope === 'day') expires = nextMidnightUTC().toISOString();
-    if (t.scope === 'week') expires = nextWeekUTC().toISOString();
-    if (t.scope === 'season') expires = nextMonthUTC().toISOString();
+    if (t.scope === 'day') expires = nextMidnightUTC();
+    if (t.scope === 'week') expires = nextWeekUTC();
+    if (t.scope === 'season') expires = nextMonthUTC();
     const exists = await pool.query(
       `SELECT 1 FROM user_quests
        WHERE user_id=$1 AND template_id=$2
@@ -1516,30 +1520,56 @@ app.get('/api/quests', requireTgAuth, async (req, res) => {
   try {
     const uid = req.tgUser.id;
     const u = await ensureUser(uid, req.tgUser.username ? '@' + req.tgUser.username : null);
-    const r = await pool.query(`
-      SELECT uq.id, qt.qkey, qt.title, qt.descr, qt.goal, qt.reward_type, qt.reward_value,
-             uq.progress, uq.is_claimed, uq.expires_at
-      FROM user_quests uq
-      JOIN quest_templates qt ON qt.id=uq.template_id
-      WHERE uq.user_id=$1 AND qt.scope=$2
-      ORDER BY qt.id
-    `, [u.id, scope]);
-    const items = r.rows.map(q => ({
-      id: q.id,
-      qkey: q.qkey,
-      title: q.title,
-      descr: q.descr,
-      goal: Number(q.goal),
-      progress: Number(q.progress),
-      reward: { type: q.reward_type, value: Number(q.reward_value) },
-      is_claimed: q.is_claimed,
-      expires_at: q.expires_at ? q.expires_at.toISOString() : null,
-    }));
+    await ensureUserQuests(pool, u.id, Number(u.level || 0));
+
+    const tRes = await pool.query(`SELECT * FROM quest_templates WHERE scope=$1 ORDER BY id`, [scope]);
+    const items = [];
+
+    for (const t of tRes.rows) {
+      let expires = null;
+      if (t.scope === 'day') expires = nextMidnightUTC();
+      if (t.scope === 'week') expires = nextWeekUTC();
+      if (t.scope === 'season') expires = nextMonthUTC();
+
+      const uRes = await pool.query(
+        `SELECT id, progress, is_claimed, expires_at
+         FROM user_quests
+         WHERE user_id=$1 AND template_id=$2
+           AND (expires_at IS NOT DISTINCT FROM $3)
+         LIMIT 1`,
+        [u.id, t.id, expires]
+      );
+
+      let uq = uRes.rows[0];
+      if (!uq) {
+        const ins = await pool.query(
+          `INSERT INTO user_quests(user_id, template_id, expires_at)
+           VALUES ($1,$2,$3)
+           RETURNING id, progress, is_claimed, expires_at`,
+          [u.id, t.id, expires]
+        );
+        uq = ins.rows[0];
+      }
+
+      items.push({
+        id: uq.id,
+        qkey: t.qkey,
+        title: t.title,
+        descr: t.descr,
+        goal: Number(t.goal),
+        progress: Number(uq.progress),
+        reward: { type: t.reward_type, value: Number(t.reward_value) },
+        is_claimed: uq.is_claimed,
+        expires_at: uq.expires_at ? uq.expires_at.toISOString() : null,
+        min_level: t.min_level,
+      });
+    }
+
     const claimable = items.filter(i => !i.is_claimed && i.progress >= i.goal).length;
-    res.json({ ok:true, items, claimable });
+    res.json({ ok: true, items, claimable });
   } catch (e) {
     console.error('/api/quests', e);
-    res.status(500).json({ ok:false, items: [], claimable:0 });
+    res.status(500).json({ ok: false, items: [], claimable: 0 });
   }
 });
 
