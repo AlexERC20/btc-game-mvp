@@ -129,42 +129,40 @@
   .ad-enter{ color:var(--muted); font-size:13px }
 
   .lb-head{color:var(--muted);font-size:13px;margin:10px 0 6px;text-align:center}
-  .arena-top24{
+  .arena-top24{ padding:0 16px 20px; }
+  .lb-grid{
     display:grid;
-    grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+    grid-template-columns:repeat(3,1fr);
     gap:12px;
-    padding:0 16px 20px;
   }
-  .top-card{
-    background:#151515;
-    border-radius:14px;
-    padding:12px;
-    min-height:94px;
+  .lb-card{
+    background:#1C1C1E;
+    border-radius:16px;
+    padding:14px 14px 12px;
+    min-height:72px;
     display:flex;
     flex-direction:column;
-    justify-content:space-between;
+    justify-content:center;
   }
-  .top-card .name{
-    font-weight:600;
-    line-height:1.1;
-    overflow:hidden;
-    display:-webkit-box;
-    -webkit-line-clamp:2;
-    -webkit-box-orient:vertical;
-    overflow-wrap:anywhere;
-    word-break:break-word;
-  }
-  .top-card .stats{
-    margin-top:6px;
-    font-size:13px;
+  .lb-name,.lb-meta{
     white-space:nowrap;
     overflow:hidden;
     text-overflow:ellipsis;
-    opacity:.85;
   }
-  .top-card.place-1 .name{font-size:16px;}
-  .top-card.place-2 .name,
-  .top-card.place-3 .name{font-size:15px;}
+  .lb-name{
+    font-weight:600;
+    font-size:16px;
+    line-height:20px;
+    margin-bottom:6px;
+  }
+  .lb-meta{
+    opacity:.8;
+    font-size:14px;
+    line-height:18px;
+  }
+  .place-1{ box-shadow:0 0 0 1px rgba(255,215,0,.18) inset; }
+  .place-2{ box-shadow:0 0 0 1px rgba(192,192,192,.14) inset; }
+  .place-3{ box-shadow:0 0 0 1px rgba(205,127,50,.14) inset; }
 
   /* bottom sheets */
   .sheet{position:fixed;left:0;right:0;bottom:0;background:#0b0b0b;border-top:1px solid var(--border);border-radius:16px 16px 0 0;transform:translateY(100%);transition:transform .25s ease;padding:14px 14px calc(18px + env(safe-area-inset-bottom));z-index:1000}
@@ -248,7 +246,9 @@
     <button class="chipbtn" id="shopBtn">Магазин</button>
   </div>
   <div class="lb-head">Топ за 24 часа</div>
-  <div class="arena-top24" id="lb24"></div>
+  <div class="arena-top24">
+    <div class="lb-grid" id="lb24"></div>
+  </div>
 </div>
 <div class="sheet-backdrop" id="sheetBg"></div>
 
@@ -597,22 +597,24 @@ async function loadLb24(){
   const r = await fetch('/api/arena/leaderboard?window=24h').then(r=>r.json()).catch(()=>null);
   if(!r?.ok) return;
   const items = r.items || [];
-  lb24.innerHTML = items.map((it,i)=>{
-    const name = normUser(it.username);
-    return `<div class="top-card place-${i+1}">
-      <div class="name" data-full="${name}">${name}</div>
-      <div class="stats">${it.wins} побед • ${fmt(it.total_won)}</div>
+  let html = '';
+  for(let i=0;i<3;i++){
+    const it = items[i];
+    const name = it ? normUser(it.username) : '—';
+    const wins = it ? it.wins : 0;
+    const total = fmt(it ? it.total_won : 0);
+    html += `<div class="lb-card place-${i+1}">
+      <div class="lb-name" title="${name}">${name}</div>
+      <div class="lb-meta">${wins} побед • ${total}</div>
     </div>`;
-  }).join('');
+  }
+  lb24.innerHTML = html;
 }
 
 document.addEventListener('click', e=>{
-  const el = e.target.closest('.top-card .name');
-  if(!el) return;
-  const full = el.dataset.full;
-  if(full){
-    try{ tg?.showPopup?.({ message: full }); }
-    catch{ alert(full); }
+  const card = e.target.closest('.lb-card');
+  if(card){
+    // placeholder for future actions
   }
 });
 
