@@ -72,5 +72,5 @@ body{padding:var(--gap-m);letter-spacing:0.3px}
 .upgrade-card h3{margin:0 0 var(--gap-xs);line-height:1.25;}
 .upgrade-badge{margin-bottom:var(--gap-xxs);}
 .upgrade-price{margin-bottom:var(--gap-xxs);font-weight:700;}
-.upgrade-req{margin-bottom:var(--gap-s);color:#9AA3A8;}
+.upgrade-req{margin-bottom:0;color:#9AA3A8;}
 .upgrade-card .btn{margin-top:var(--gap-s);}

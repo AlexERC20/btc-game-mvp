@@ -75,9 +75,7 @@ async function claim(type){
       card.innerHTML=`<h3>${u.title}</h3>
         <div class="upgrade-badge chip">+${u.fp} FP</div>
         <div class="upgrade-price">${formatMoney(u.price)}</div>
-        <div class="upgrade-req">Треб. уровень: ${u.reqLevel}</div>
-        <div class="muted">$ за 1 FP: ${formatMoney(u.pricePerFp).slice(1)}</div>
-        <div class="muted">${u.next_bump_in===0? 'Цена недавно выросла: +8%' : `Ещё ${u.next_bump_in} покупок до +8%`}</div>`;
+        <div class="upgrade-req">Треб. уровень: ${u.reqLevel}</div>`;
       const btn=document.createElement('button');
       if(locked){
         card.style.opacity='0.6';
