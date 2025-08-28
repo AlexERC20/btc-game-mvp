@@ -137,16 +137,18 @@
   .lb-grid{
     display:grid;
     grid-template-columns:repeat(3,1fr);
-    gap:12px;
+    gap:8px;
   }
   .lb-card{
+    position:relative;
     background:#1C1C1E;
     border-radius:16px;
-    padding:14px 14px 12px;
-    min-height:72px;
+    padding:8px 12px;
+    height:56px;
     display:flex;
     flex-direction:column;
     justify-content:center;
+    overflow:hidden;
   }
   .lb-name,.lb-meta{
     white-space:nowrap;
@@ -155,18 +157,21 @@
   }
   .lb-name{
     font-weight:600;
-    font-size:16px;
-    line-height:20px;
-    margin-bottom:6px;
+    font-size:13px;
+    margin-bottom:2px;
+    margin-right:20px;
   }
   .lb-meta{
+    font-size:12px;
     opacity:.8;
-    font-size:14px;
-    line-height:18px;
   }
-  .place-1{ box-shadow:0 0 0 1px rgba(255,215,0,.18) inset; }
-  .place-2{ box-shadow:0 0 0 1px rgba(192,192,192,.14) inset; }
-  .place-3{ box-shadow:0 0 0 1px rgba(205,127,50,.14) inset; }
+  .medal{position:absolute;top:4px;right:4px;font-size:14px;line-height:1}
+  .place-1,.place-2,.place-3{filter:brightness(1.06)}
+  .lb-empty{grid-column:1/-1;text-align:center;color:var(--muted);font-size:13px;padding:8px 0}
+  @media (max-width:360px){
+    .lb-name{font-size:12px}
+    .lb-meta{font-size:11px}
+  }
 
   /* bottom sheets */
   .sheet{position:fixed;left:0;right:0;bottom:0;background:#0b0b0b;border-top:1px solid var(--border);border-radius:16px 16px 0 0;transform:translateY(100%);transition:transform .25s ease;padding:14px 14px calc(18px + env(safe-area-inset-bottom));z-index:1000}
@@ -348,7 +353,8 @@
     </div>
   </div>
 
-<script>
+<script type="module">
+import { formatUsdShort } from './js/money.mjs';
 const BOT_USERNAME = 'realpricebtc_bot';
 const CHANNEL_LINK = 'https://t.me/erc20coin';
 const tg = window.Telegram?.WebApp; tg?.expand();
@@ -608,18 +614,23 @@ async function loadLb24(){
   const r = await fetch('/api/arena/leaderboard?window=24h').then(r=>r.json()).catch(()=>null);
   if(!r?.ok) return;
   const items = r.items || [];
-  let html = '';
-  for(let i=0;i<3;i++){
-    const it = items[i];
-    const full = it ? normUser(it.username) : '—';
-    const short = it ? shortHandle(full) : '—';
-    const wins = it ? it.wins : 0;
-    const total = fmt(it ? it.total_won : 0);
-    html += `<div class="lb-card place-${i+1}">
-      <div class="lb-name user-name" title="${full}">${short}</div>
-      <div class="lb-meta">${wins} побед • ${total}</div>
-    </div>`;
+  if(items.length === 0){
+    lb24.innerHTML = '<div class="lb-empty">Пока нет победителей за 24 часа.</div>';
+    return;
   }
+  const html = items.map((it,i)=>{
+    const full = normUser(it.username);
+    const short = shortHandle(full);
+    const wins = it.wins_count;
+    const total = formatUsdShort(it.wins_sum);
+    const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':'';
+    const placeCls = i<3? ` place-${i+1}` : '';
+    return `<div class="lb-card${placeCls}">`+
+      (medal?`<div class="medal">${medal}</div>`:'')+
+      `<div class="lb-name user-name" title="${full}">${short}</div>`+
+      `<div class="lb-meta">${wins}×🏆 • ${total}</div>`+
+    `</div>`;
+  }).join('');
   lb24.innerHTML = html;
 }
 
@@ -647,7 +658,7 @@ buyStars.onclick = async ()=>{
 setInterval(pollArena,1000);
 setInterval(pollAd,4000);
 setInterval(loadProfile,5000);
-setInterval(loadLb24,25000);
+setInterval(loadLb24,30000);
 loadProfile();
 pollArena();
 pollAd();
