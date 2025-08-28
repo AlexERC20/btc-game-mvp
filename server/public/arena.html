@@ -425,7 +425,7 @@ function shortHandle(handle){
   const hasAt = handle?.startsWith('@');
   const raw = hasAt ? handle.slice(1) : handle || '';
   const chars = Array.from(raw);
-  const cut = chars.length > 6 ? chars.slice(0,6).join('') + '…' : raw;
+  const cut = chars.length > 9 ? chars.slice(0,9).join('') + '..' : raw;
   return (hasAt ? '@' : '') + cut;
 }
 function setBalanceVal(amount, vop){
