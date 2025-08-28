@@ -136,7 +136,7 @@
   }
   .lb-grid{
     display:grid;
-    grid-template-columns:repeat(3,1fr);
+    grid-template-columns:repeat(auto-fit,minmax(126px,1fr));
     gap:8px;
   }
   .lb-card{
@@ -150,20 +150,21 @@
     justify-content:center;
     overflow:hidden;
   }
-  .lb-name,.lb-meta{
+  .lb-name,
+  .lb-meta{
     white-space:nowrap;
     overflow:hidden;
-    text-overflow:ellipsis;
   }
   .lb-name{
     font-weight:600;
     font-size:13px;
     margin-bottom:2px;
-    margin-right:20px;
+    margin-right:16px;
   }
   .lb-meta{
     font-size:12px;
     opacity:.8;
+    text-overflow:ellipsis;
   }
   .medal{position:absolute;top:4px;right:4px;font-size:14px;line-height:1}
   .place-1,.place-2,.place-3{filter:brightness(1.06)}
@@ -425,7 +426,7 @@ function shortHandle(handle){
   const hasAt = handle?.startsWith('@');
   const raw = hasAt ? handle.slice(1) : handle || '';
   const chars = Array.from(raw);
-  const cut = chars.length > 6 ? chars.slice(0,6).join('') + '…' : raw;
+  const cut = chars.length > 9 ? chars.slice(0,9).join('') + '..' : raw;
   return (hasAt ? '@' : '') + cut;
 }
 function setBalanceVal(amount, vop){
