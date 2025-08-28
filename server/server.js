@@ -132,49 +132,27 @@ const pool = new pg.Pool({
   ssl: { rejectUnauthorized: false },
 });
 
-const QUEST_TEMPLATES_SEED = [
-  { qkey:'daily_bets_3',   scope:'day',   title:'Сделай 3 ставки', descr:'За любые исходы', goal:3, reward_type:'USD', reward_value:300, min_level:0 },
-  { qkey:'daily_win_1',    scope:'day',   title:'Выиграй 1 раунд', descr:'Главная игра',    goal:1, reward_type:'XP',  reward_value:500, min_level:0 },
-  { qkey:'daily_chat_1',   scope:'day',   title:'Сообщение в чате',descr:'Платный чат',    goal:1, reward_type:'USD', reward_value:200, min_level:0 },
-
-  { qkey:'week_wins_10',   scope:'week',  title:'10 побед',        descr:'Главная/Арена',  goal:10, reward_type:'USD', reward_value:2000, min_level:0 },
-  { qkey:'week_bets_50',   scope:'week',  title:'50 ставок',       descr:'Любые ставки',   goal:50, reward_type:'XP',  reward_value:3000, min_level:0 },
-
-  { qkey:'season_invite_3',scope:'season',title:'3 друга',         descr:'Пригласи 3 друзей', goal:3, reward_type:'VOP',reward_value:2,   min_level:0 },
-
-  { qkey:'achv_lvl_25',    scope:'achv',  title:'Уровень 25',      descr:'Открой VOP-фарм', goal:1, reward_type:'USD',  reward_value:5000, min_level:0 },
-];
-
-async function seedQuestTemplates(pool) {
-  for (const q of QUEST_TEMPLATES_SEED) {
-    await pool.query(`
-      INSERT INTO quest_templates(qkey, scope, title, descr, goal, reward_type, reward_value, min_level)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-      ON CONFLICT (qkey) DO UPDATE
-      SET scope=$2, title=$3, descr=$4, goal=$5, reward_type=$6, reward_value=$7, min_level=$8
-    `, [q.qkey, q.scope, q.title, q.descr, q.goal, q.reward_type, q.reward_value, q.min_level]);
+async function seedQuestTemplates(pool){
+  const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM quest_templates');
+  if (rows[0].c) return;
+  const data = [
+    { qkey:'daily_bets_3', scope:'day',  title:'Сделай 3 ставки',  descr:'Любые исходы', goal:3,  reward_type:'USD', reward_value:300, min_level:0 },
+    { qkey:'daily_win_1',  scope:'day',  title:'Выиграй 1 раунд',  descr:'Главная игра',  goal:1,  reward_type:'XP',  reward_value:500, min_level:0 },
+    { qkey:'arena_bids_5', scope:'day',  title:'5 ставок на арене',descr:'Любые ставки',   goal:5,  reward_type:'USD', reward_value:500, min_level:0 },
+    { qkey:'week_wins_10', scope:'week', title:'10 побед за неделю',descr:'Суммарно',      goal:10, reward_type:'USD', reward_value:2000, min_level:0 },
+  ];
+  for (const t of data){
+    await pool.query(
+      `INSERT INTO quest_templates (qkey,scope,title,descr,goal,reward_type,reward_value,min_level)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [t.qkey,t.scope,t.title,t.descr,t.goal,t.reward_type,t.reward_value,t.min_level]
+    );
   }
 }
 
-function nextMidnightUTC() {
-  const d = new Date();
-  d.setUTCHours(24, 0, 0, 0);
-  return d;
-}
-
-function nextWeekUTC() {
-  const d = new Date();
-  const day = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + (8 - day));
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
-function nextMonthUTC() {
-  const now = new Date();
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0));
-  return d;
-}
+function nextMidnightUTC(){ const d=new Date(); d.setUTCHours(24,0,0,0); return d; }
+function nextWeekUTC(){ const d=new Date(); const w=d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+(8-w)); d.setUTCHours(0,0,0,0); return d; }
+function nextMonthUTC(){ const n=new Date(); return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth()+1, 1, 0,0,0)); }
 
 async function ensureUserQuests(pool, userId, userLevel = 0) {
   const tmpl = await pool.query(`SELECT * FROM quest_templates ORDER BY id`);
@@ -1516,57 +1494,57 @@ app.get('/api/shout/history', async (req, res) => {
 });
 
 app.get('/api/quests', requireTgAuth, async (req, res) => {
-  const scope = String(req.query.scope || 'day');
+  const scope = req.query.scope || 'day';
   try {
     const uid = req.tgUser.id;
     const u = await ensureUser(uid, req.tgUser.username ? '@' + req.tgUser.username : null);
     await ensureUserQuests(pool, u.id, Number(u.level || 0));
 
-    const tRes = await pool.query(`SELECT * FROM quest_templates WHERE scope=$1 ORDER BY id`, [scope]);
+    const expiresAt =
+      scope === 'day'    ? nextMidnightUTC() :
+      scope === 'week'   ? nextWeekUTC()     :
+      scope === 'season' ? nextMonthUTC()    : null;
+
+    const tRes = await pool.query(
+      `SELECT * FROM quest_templates WHERE scope=$1 AND min_level <= $2 ORDER BY id`,
+      [scope, u.level]
+    );
+
     const items = [];
-
-    for (const t of tRes.rows) {
-      let expires = null;
-      if (t.scope === 'day') expires = nextMidnightUTC();
-      if (t.scope === 'week') expires = nextWeekUTC();
-      if (t.scope === 'season') expires = nextMonthUTC();
-
+    for (const t of tRes.rows){
       const uRes = await pool.query(
-        `SELECT id, progress, is_claimed, expires_at
-         FROM user_quests
-         WHERE user_id=$1 AND template_id=$2
-           AND (expires_at IS NOT DISTINCT FROM $3)
-         LIMIT 1`,
-        [u.id, t.id, expires]
+        `SELECT id,progress,is_claimed,expires_at
+           FROM user_quests
+          WHERE user_id=$1 AND template_id=$2
+            AND (expires_at IS NOT DISTINCT FROM $3)
+          LIMIT 1`,
+        [u.id, t.id, expiresAt]
       );
-
       let uq = uRes.rows[0];
-      if (!uq) {
+      if (!uq){
         const ins = await pool.query(
-          `INSERT INTO user_quests(user_id, template_id, expires_at)
+          `INSERT INTO user_quests(user_id,template_id,expires_at)
            VALUES ($1,$2,$3)
-           RETURNING id, progress, is_claimed, expires_at`,
-          [u.id, t.id, expires]
+           RETURNING id,progress,is_claimed,expires_at`,
+          [u.id, t.id, expiresAt]
         );
         uq = ins.rows[0];
       }
-
       items.push({
-        id: uq.id,
-        qkey: t.qkey,
-        title: t.title,
-        descr: t.descr,
-        goal: Number(t.goal),
-        progress: Number(uq.progress),
-        reward: { type: t.reward_type, value: Number(t.reward_value) },
-        is_claimed: uq.is_claimed,
+        id: uq.id, qkey: t.qkey, title: t.title, descr: t.descr,
+        goal: Number(t.goal), progress: Number(uq.progress), is_claimed: uq.is_claimed,
         expires_at: uq.expires_at ? uq.expires_at.toISOString() : null,
-        min_level: t.min_level,
+        reward:{type:t.reward_type, value: Number(t.reward_value)},
+        min_level: t.min_level
       });
     }
 
-    const claimable = items.filter(i => !i.is_claimed && i.progress >= i.goal).length;
-    res.json({ ok: true, items, claimable });
+    if (!items.length){
+      return res.json({ ok:true, items:[{ qkey:'stub', title:'Загляни позже', descr:'Скоро будут задания', goal:1, progress:0, is_claimed:false, reward:{type:'USD', value:0} }], claimable:0 });
+    }
+
+    const claimable = items.filter(i=>i.progress>=i.goal && !i.is_claimed).length;
+    res.json({ ok:true, items, claimable });
   } catch (e) {
     console.error('/api/quests', e);
     res.status(500).json({ ok: false, items: [], claimable: 0 });
