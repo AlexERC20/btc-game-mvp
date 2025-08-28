@@ -94,6 +94,7 @@
   #phase{ display:none !important; }
   #timerUnder{ display:none !important; }
   .bank{text-align:center;color:#fff;font-size:18px;margin-top:6px}
+  .daily-strip{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 10px;font-size:13px;display:flex;justify-content:space-between;align-items:center;margin:8px 0}
   .row{display:flex;gap:14px;justify-content:center;margin:12px 0}
   .btn{flex:1;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer}
   .btn:active{transform:translateY(1px) scale(.99)}
@@ -365,6 +366,8 @@
     </div>
     <div class="level-xp" id="xpText">0 / 5 000 XP</div>
   </div>
+
+  <div id="dailyQuestStrip" class="daily-strip"></div>
 
   <div class="adline ad-shimmer" id="adLine">
     <div class="ad-left">
@@ -1385,8 +1388,9 @@ const FW = (() => {
     if (navigator.vibrate) navigator.vibrate([40, 60, 40, 100]);
   }
 
-  return { start };
+return { start };
 })();
 </script>
+<script type="module" src="js/quests.js"></script>
 </body>
 </html>

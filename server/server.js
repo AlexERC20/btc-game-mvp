@@ -132,6 +132,101 @@ const pool = new pg.Pool({
   ssl: { rejectUnauthorized: false },
 });
 
+const QUEST_TEMPLATES_SEED = [
+  { qkey:'daily_bets_3',   scope:'day',   title:'Сделай 3 ставки', descr:'За любые исходы', goal:3, reward_type:'USD', reward_value:300, min_level:0 },
+  { qkey:'daily_win_1',    scope:'day',   title:'Выиграй 1 раунд', descr:'Главная игра',    goal:1, reward_type:'XP',  reward_value:500, min_level:0 },
+  { qkey:'daily_chat_1',   scope:'day',   title:'Сообщение в чате',descr:'Платный чат',    goal:1, reward_type:'USD', reward_value:200, min_level:0 },
+
+  { qkey:'week_wins_10',   scope:'week',  title:'10 побед',        descr:'Главная/Арена',  goal:10, reward_type:'USD', reward_value:2000, min_level:0 },
+  { qkey:'week_bets_50',   scope:'week',  title:'50 ставок',       descr:'Любые ставки',   goal:50, reward_type:'XP',  reward_value:3000, min_level:0 },
+
+  { qkey:'season_invite_3',scope:'season',title:'3 друга',         descr:'Пригласи 3 друзей', goal:3, reward_type:'VOP',reward_value:2,   min_level:0 },
+
+  { qkey:'achv_lvl_25',    scope:'achv',  title:'Уровень 25',      descr:'Открой VOP-фарм', goal:1, reward_type:'USD',  reward_value:5000, min_level:0 },
+];
+
+async function seedQuestTemplates(pool) {
+  for (const q of QUEST_TEMPLATES_SEED) {
+    await pool.query(`
+      INSERT INTO quest_templates(qkey, scope, title, descr, goal, reward_type, reward_value, min_level)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      ON CONFLICT (qkey) DO UPDATE
+      SET scope=$2, title=$3, descr=$4, goal=$5, reward_type=$6, reward_value=$7, min_level=$8
+    `, [q.qkey, q.scope, q.title, q.descr, q.goal, q.reward_type, q.reward_value, q.min_level]);
+  }
+}
+
+function nextMidnightUTC() {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1));
+}
+
+function nextWeekUTC() {
+  const d = new Date();
+  const diff = (8 - d.getUTCDay()) % 7 || 7;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + diff));
+}
+
+function nextMonthUTC() {
+  const d = new Date();
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+}
+
+async function ensureUserQuests(pool, userId, userLevel = 0) {
+  const tmpl = await pool.query(`SELECT * FROM quest_templates ORDER BY id`);
+  for (const t of tmpl.rows) {
+    if (userLevel < t.min_level) continue;
+    let expires = null;
+    if (t.scope === 'day') expires = nextMidnightUTC().toISOString();
+    if (t.scope === 'week') expires = nextWeekUTC().toISOString();
+    if (t.scope === 'season') expires = nextMonthUTC().toISOString();
+    const exists = await pool.query(
+      `SELECT 1 FROM user_quests
+       WHERE user_id=$1 AND template_id=$2
+         AND (expires_at IS NOT DISTINCT FROM $3)`,
+      [userId, t.id, expires]
+    );
+    if (exists.rowCount === 0) {
+      await pool.query(
+        `INSERT INTO user_quests(user_id, template_id, expires_at)
+         VALUES ($1,$2,$3)`,
+        [userId, t.id, expires]
+      );
+    }
+  }
+}
+
+async function addQuestProgress(userId, qkey, delta = 1) {
+  const t = await pool.query(`SELECT id, scope FROM quest_templates WHERE qkey=$1`, [qkey]);
+  if (t.rowCount === 0) return;
+  const tmpl = t.rows[0];
+  let expires = null;
+  if (tmpl.scope === 'day') expires = nextMidnightUTC();
+  if (tmpl.scope === 'week') expires = nextWeekUTC();
+  if (tmpl.scope === 'season') expires = nextMonthUTC();
+  const uq = await pool.query(
+    `SELECT id, progress, is_claimed FROM user_quests
+     WHERE user_id=$1 AND template_id=$2
+       AND (expires_at IS NOT DISTINCT FROM $3)
+     LIMIT 1`,
+    [userId, tmpl.id, expires]
+  );
+  if (uq.rowCount === 0) {
+    await pool.query(
+      `INSERT INTO user_quests(user_id, template_id, expires_at, progress)
+       VALUES ($1,$2,$3,$4)`,
+      [userId, tmpl.id, expires, delta]
+    );
+  } else {
+    const row = uq.rows[0];
+    if (!row.is_claimed) {
+      await pool.query(`UPDATE user_quests SET progress=progress+$2 WHERE id=$1`, [row.id, delta]);
+    }
+  }
+}
+
+const questClaimRate = new Map();
+
 export async function listTelegramIds() {
   const { rows } = await pool.query(
     'SELECT DISTINCT telegram_id FROM users WHERE telegram_id IS NOT NULL'
@@ -279,6 +374,44 @@ await pool.query(`CREATE TABLE IF NOT EXISTS xp_log(
 )`);
 
 await pool.query(`
+  CREATE TABLE IF NOT EXISTS quest_templates (
+    id SERIAL PRIMARY KEY,
+    qkey TEXT UNIQUE NOT NULL,
+    scope TEXT NOT NULL CHECK (scope IN ('day','week','season','achv')),
+    title TEXT NOT NULL,
+    descr TEXT NOT NULL,
+    goal INT NOT NULL,
+    reward_type TEXT NOT NULL CHECK (reward_type IN ('USD','VOP','XP')),
+    reward_value INT NOT NULL,
+    min_level INT NOT NULL DEFAULT 0
+  );
+`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS user_quests (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    template_id INT NOT NULL REFERENCES quest_templates(id) ON DELETE CASCADE,
+    progress INT NOT NULL DEFAULT 0,
+    is_claimed BOOLEAN NOT NULL DEFAULT FALSE,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at TIMESTAMPTZ,
+    UNIQUE (user_id, template_id, started_at)
+  );
+`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS quest_claims (
+    id SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    template_id INT NOT NULL REFERENCES quest_templates(id) ON DELETE CASCADE,
+    reward_type TEXT NOT NULL,
+    reward_value INT NOT NULL,
+    claimed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+`);
+
+await pool.query(`
   CREATE TABLE IF NOT EXISTS arena_rounds(
     id SERIAL PRIMARY KEY,
     started_at TIMESTAMPTZ DEFAULT now(),
@@ -351,6 +484,8 @@ await pool.query(`
   INSERT INTO shout_state(id) VALUES (1)
   ON CONFLICT (id) DO NOTHING;
 `);
+
+await seedQuestTemplates(pool);
 
 
 // === BOTS MODULE START ===========================================
@@ -642,7 +777,9 @@ async function ensureUser(telegramId, username) {
     'SELECT id, balance, vop_balance, username, insurance_count, level, xp, streak_wins FROM users WHERE telegram_id=$1',
     [telegramId]
   );
-  return r.rows[0];
+  const u = r.rows[0];
+  if (u) await ensureUserQuests(pool, u.id, Number(u.level || 0));
+  return u;
 }
 
 function todayUTC() {
@@ -971,6 +1108,11 @@ async function settle() {
     await pool.query('UPDATE users SET streak_wins=0, last_result_at=now() WHERE id=$1', [id]);
   }
 
+  for (const id of winUsers) {
+    await addQuestProgress(id, 'daily_win_1', 1);
+    await addQuestProgress(id, 'week_wins_10', 1);
+  }
+
   for (const [userId, agg] of byUser.entries()) {
     const profit = Math.max(0, Math.floor(agg.payout - agg.stake));
     const xpGain = profit * XP.WIN_PER_DOLLAR;
@@ -1104,6 +1246,8 @@ app.post('/api/bet', requireTgAuth, async (req, res) => {
     else return res.status(400).json({ ok:false, error:'BAD_SIDE' });
 
     await grantXpOnce(pool, u.id, 'bet', ins.rows[0].id, XP.BET);
+    await addQuestProgress(u.id, 'daily_bets_3', 1);
+    await addQuestProgress(u.id, 'week_bets_50', 1);
 
     res.json({ ok:true, placed: amt });
   } catch (e) {
@@ -1343,6 +1487,7 @@ app.post('/api/shout/bid', requireTgAuth, async (req, res) => {
       await grantXpOnce(pool, user.id, 'chat', insMsg.rows[0].id, XP.CHAT);
       await pool.query('UPDATE users SET last_chat_xp_at = now() WHERE id=$1', [user.id]);
     }
+    await addQuestProgress(user.id, 'daily_chat_1', 1);
 
     res.json({ ok:true, paid: nextPrice });
   } catch (e) {
@@ -1363,6 +1508,93 @@ app.get('/api/shout/history', async (req, res) => {
   } catch (e) {
     console.error('/api/shout/history', e);
     res.status(500).json({ ok:false, items: [] });
+  }
+});
+
+app.get('/api/quests', requireTgAuth, async (req, res) => {
+  const scope = String(req.query.scope || 'day');
+  try {
+    const uid = req.tgUser.id;
+    const u = await ensureUser(uid, req.tgUser.username ? '@' + req.tgUser.username : null);
+    const r = await pool.query(`
+      SELECT uq.id, qt.qkey, qt.title, qt.descr, qt.goal, qt.reward_type, qt.reward_value,
+             uq.progress, uq.is_claimed, uq.expires_at
+      FROM user_quests uq
+      JOIN quest_templates qt ON qt.id=uq.template_id
+      WHERE uq.user_id=$1 AND qt.scope=$2
+      ORDER BY qt.id
+    `, [u.id, scope]);
+    const items = r.rows.map(q => ({
+      id: q.id,
+      qkey: q.qkey,
+      title: q.title,
+      descr: q.descr,
+      goal: Number(q.goal),
+      progress: Number(q.progress),
+      reward: { type: q.reward_type, value: Number(q.reward_value) },
+      is_claimed: q.is_claimed,
+      expires_at: q.expires_at ? q.expires_at.toISOString() : null,
+    }));
+    const claimable = items.filter(i => !i.is_claimed && i.progress >= i.goal).length;
+    res.json({ ok:true, items, claimable });
+  } catch (e) {
+    console.error('/api/quests', e);
+    res.status(500).json({ ok:false, items: [], claimable:0 });
+  }
+});
+
+app.post('/api/quests/claim', requireTgAuth, async (req, res) => {
+  const { id } = req.body || {};
+  if (!id) return res.status(400).json({ ok:false, error:'NO_ID' });
+  try {
+    const uid = req.tgUser.id;
+    const u = await ensureUser(uid, req.tgUser.username ? '@' + req.tgUser.username : null);
+    const rl = questClaimRate.get(u.id) || { count:0, ts:0 };
+    const now = Date.now();
+    if (now - rl.ts > 1000) { rl.count = 0; rl.ts = now; }
+    rl.count++;
+    questClaimRate.set(u.id, rl);
+    if (rl.count > 3) return res.status(429).json({ ok:false, error:'RATE_LIMIT' });
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const r = await client.query(`
+        SELECT uq.id, uq.user_id, uq.progress, uq.is_claimed, uq.expires_at,
+               qt.id AS template_id, qt.reward_type, qt.reward_value, qt.goal
+        FROM user_quests uq
+        JOIN quest_templates qt ON qt.id=uq.template_id
+        WHERE uq.id=$1 AND uq.user_id=$2 FOR UPDATE
+      `, [id, u.id]);
+      if (r.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ ok:false, error:'NOT_FOUND' }); }
+      const q = r.rows[0];
+      if (q.is_claimed) { await client.query('ROLLBACK'); return res.status(400).json({ ok:false, error:'ALREADY' }); }
+      if (q.expires_at && new Date(q.expires_at) < new Date()) { await client.query('ROLLBACK'); return res.status(400).json({ ok:false, error:'EXPIRED' }); }
+      if (q.progress < q.goal) { await client.query('ROLLBACK'); return res.status(400).json({ ok:false, error:'NOT_READY' }); }
+
+      let newBalance;
+      if (q.reward_type === 'USD') {
+        const upd = await client.query('UPDATE users SET balance=balance+$1 WHERE id=$2 RETURNING balance', [q.reward_value, u.id]);
+        newBalance = Number(upd.rows[0].balance);
+      } else if (q.reward_type === 'XP') {
+        await client.query('UPDATE users SET xp=xp+$1 WHERE id=$2', [q.reward_value, u.id]);
+      } else if (q.reward_type === 'VOP') {
+        await client.query('UPDATE users SET vop_balance=vop_balance+$1 WHERE id=$2', [q.reward_value, u.id]);
+      }
+
+      await client.query('UPDATE user_quests SET is_claimed=TRUE WHERE id=$1', [id]);
+      await client.query('INSERT INTO quest_claims(user_id, template_id, reward_type, reward_value) VALUES($1,$2,$3,$4)', [u.id, q.template_id, q.reward_type, q.reward_value]);
+      await client.query('COMMIT');
+      res.json({ ok:true, reward:{ type:q.reward_type, value:Number(q.reward_value) }, newBalance });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    console.error('/api/quests/claim', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
   }
 });
 
