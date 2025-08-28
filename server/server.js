@@ -1489,20 +1489,23 @@ app.get('/api/arena/leaderboard', async (req, res) => {
     const r = await pool.query(`
       SELECT u.username,
              ar.winner_tid AS tid,
-             COALESCE(SUM(ar.won_amount),0) AS total_won,
-             COUNT(*) AS wins
+             COUNT(*) AS wins_count,
+             COALESCE(SUM(ar.won_amount),0) AS wins_sum,
+             MAX(ar.settled_at) AS last_win_ts
       FROM arena_rounds ar
-      LEFT JOIN users u ON u.id = ar.winner_user_id
-      WHERE ar.settled_at >= now() - $1::interval
+      JOIN users u ON u.id = ar.winner_user_id
+      WHERE u.is_bot = FALSE
+        AND ar.settled_at >= now() - $1::interval
       GROUP BY ar.winner_tid, u.username
-      ORDER BY total_won DESC
-      LIMIT 25
+      ORDER BY wins_count DESC, wins_sum DESC, last_win_ts DESC
+      LIMIT 24
     `, [window]);
     res.json({ ok:true, items: r.rows.map(row => ({
       tid: row.tid ? Number(row.tid) : null,
       username: row.username ? '@'+row.username : null,
-      total_won: Number(row.total_won || 0),
-      wins: Number(row.wins || 0)
+      wins_count: Number(row.wins_count || 0),
+      wins_sum: Number(row.wins_sum || 0),
+      last_win_ts: row.last_win_ts ? new Date(row.last_win_ts).getTime() : null
     })) });
   } catch (e) {
     res.json({ ok:false, error:'SERVER' });
