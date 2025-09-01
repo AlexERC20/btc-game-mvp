@@ -6,6 +6,16 @@
 <title>Real Price BTC Game</title>
 <link rel="stylesheet" href="css/styles.css" />
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  .sheet{position:fixed;left:0;right:0;bottom:0;background:#0b0b0b;border-top:1px solid var(--border);border-radius:16px 16px 0 0;transform:translateY(100%);transition:transform .25s ease;padding:14px 14px calc(18px + env(safe-area-inset-bottom));z-index:1000}
+  .sheet.open{transform:translateY(0)}
+  .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:opacity .2s;z-index:900}
+  .sheet-backdrop.show{opacity:1;pointer-events:auto}
+  .sheet .btnrow{display:flex;gap:10px;margin-top:10px}
+  .sheet .btnrow .btnsm{flex:1;background:var(--green);border:none;border-radius:12px;color:#fff;padding:10px 0;font-weight:700}
+  .sheet .btnrow .btnsm.cancel{background:#333}
+  .sheet .wait{color:var(--muted);font-size:12px;margin:0 0 8px;text-align:center}
+</style>
 </head>
 <body class="farm-page">
 <h1 class="sr-only">Real Price BTC Game</h1>
@@ -26,7 +36,7 @@
     <div class="col"><div class="label">FP</div><div class="val" id="fp">0</div></div>
   </div>
   <div class="cap">
-    <div class="cap-row row"><span>Лимит сегодня</span><span id="capText">$0 / $0</span><button class="chipbtn" id="incLimitBtn">+ увеличить</button></div>
+      <div class="cap-row row"><span>Лимит сегодня</span><span id="capText">$0 / $0</span><button type="button" class="chipbtn" id="incLimitBtn">+ увеличить</button></div>
     <div class="progress success"><div class="bar" id="capBar" style="width:0%"></div></div>
     <div class="muted" id="friendsBonus"></div>
     <div class="muted" id="offlineLimit">Оффлайн-лимит: до 12 ч</div>
@@ -41,6 +51,20 @@
   <div class="upgrades-grid" id="upgrades"></div>
 </section>
 <div class="muted info-footer" id="lockedFooter" hidden></div>
+
+<div class="sheet-backdrop" id="sheetBg"></div>
+<div class="sheet" id="sheetShare">
+  <div class="btnrow">
+    <button type="button" class="btnsm" id="shareStart">Поделиться</button>
+    <button type="button" class="btnsm cancel" id="shareClose">Закрыть</button>
+  </div>
+</div>
+<div class="sheet" id="sheetFinding">
+  <p class="wait">Ищем друга…</p>
+  <div class="btnrow">
+    <button type="button" class="btnsm cancel" id="findingClose">Закрыть</button>
+  </div>
+</div>
 
 <script src="js/farm.js"></script>
 <script src="js/nozoom.js"></script>

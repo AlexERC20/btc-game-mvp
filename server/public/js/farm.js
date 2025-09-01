@@ -2,6 +2,21 @@
 const params = new URLSearchParams(location.search);
 const uid = params.get('uid');
 
+const sheetBg=document.getElementById('sheetBg');
+const sheetShare=document.getElementById('sheetShare');
+const sheetFinding=document.getElementById('sheetFinding');
+const shareStart=document.getElementById('shareStart');
+const shareClose=document.getElementById('shareClose');
+const findingClose=document.getElementById('findingClose');
+let pollTimer=null;let stopPolling=false;
+function openSheet(el){if(!el)return;sheetBg.classList.add('show');el.classList.add('open');}
+function closeAllSheets(){document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open'));sheetBg.classList.remove('show');}
+function showFindingFriendSheet(){stopPolling=false;openSheet(sheetFinding);}
+function hideFindingFriendSheet(){stopPolling=true;if(pollTimer)clearTimeout(pollTimer);closeAllSheets();}
+shareClose&& (shareClose.onclick=closeAllSheets);
+findingClose&& (findingClose.onclick=hideFindingFriendSheet);
+shareStart&& (shareStart.onclick=onIncreaseLimitClick);
+
 function formatMoney(n){return '$'+Number(n).toLocaleString('ru-RU');}
 function formatVop(n){return Number(n).toLocaleString('ru-RU')+' 💎';}
 function toast(msg){const t=document.createElement('div');t.textContent=msg;t.style.position='fixed';t.style.left='50%';t.style.bottom='20px';t.style.transform='translateX(-50%)';t.style.background='#333';t.style.padding='8px 12px';t.style.borderRadius='8px';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);}
@@ -61,6 +76,27 @@ async function claim(type){
       haptic('error');
     }
   }
+
+async function onIncreaseLimitClick(){
+  try{
+    const res=await fetch(`/api/referral/share-info?uid=${uid}`).then(r=>r.json());
+    const{ text,url }=res;
+    const shareUrl=`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+    try{Telegram?.WebApp?.openTelegramLink(shareUrl);}catch(e){}
+    closeAllSheets();
+    showFindingFriendSheet();
+    const startedAt=Date.now();
+    const poll=async()=>{
+      try{
+        const r=await fetch('/api/referral/check-new-active-friends',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid})});
+        const{ newActiveCount,addedUsd }=await r.json();
+        if(newActiveCount>0){hideFindingFriendSheet();toast(`Лимит увеличен на $${addedUsd}`);await loadCurrent();return;}
+        if(Date.now()-startedAt<120000 && !stopPolling){pollTimer=setTimeout(poll,3000);}else{hideFindingFriendSheet();toast('Похоже, друг ещё не зашёл. Попробуй позже.');}
+      }catch(e){hideFindingFriendSheet();toast('Сеть недоступна, повтори позже.');}
+    };
+    pollTimer=setTimeout(poll,3000);
+  }catch(e){toast('Не удалось подготовить приглашение.');}
+}
 
   function renderUpgrades(type,list,locked=false){
     const box=document.getElementById('upgrades');
@@ -133,7 +169,7 @@ async function claim(type){
       let bonusText = `Активные друзья сегодня: ${n}  •  +$${s.bonus_per_friend||0} за каждого`;
       if(n>0) bonusText += `  <span style="color:var(--success)">+$${bonus} к лимиту</span>`;
       friendsBonus.innerHTML = bonusText;
-      incLimitBtn.onclick=()=>{location.href=`/shop.html?uid=${encodeURIComponent(uid)}`;};
+      incLimitBtn.onclick=(e)=>{e.preventDefault();openSheet(sheetShare);};
       renderUpgrades(type,s.upgrades);
       return;
     }
