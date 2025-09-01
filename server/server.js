@@ -15,6 +15,7 @@ import {
   dayString,
   dailyUsdLimit,
 } from './farmUtils.js';
+import { runMigrations } from './migrate.js';
 
 function verifyInitData(initData, botToken) {
   try {
@@ -141,6 +142,13 @@ const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
 });
+
+try {
+  await runMigrations(pool);
+  console.log('migrations applied');
+} catch (e) {
+  console.error('migrations failed', e);
+}
 
 async function seedQuestTemplates(pool){
   const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM quest_templates');
@@ -859,11 +867,19 @@ function computeAccrual(kind, u, now, dailyCapOverride = null) {
 
 async function activeFriendsToday(userId) {
   const day = dayString(new Date(), FARM_TZ);
-  const { rows } = await pool.query(
-    'SELECT COUNT(*)::int AS c FROM daily_friend_activity WHERE referrer_user_id=$1 AND activity_date=$2',
-    [userId, day]
-  );
-  return rows[0]?.c || 0;
+  try {
+    const { rows } = await pool.query(
+      'SELECT COUNT(*)::int AS c FROM daily_friend_activity WHERE referrer_user_id=$1 AND activity_date=$2',
+      [userId, day]
+    );
+    return rows[0]?.c || 0;
+  } catch (e) {
+    if (e.message?.includes('relation') && e.message.includes('daily_friend_activity')) {
+      console.warn('activeFriendsToday: daily_friend_activity missing');
+      return 0;
+    }
+    throw e;
+  }
 }
 
 async function markFriendActivityOnBet(friendUserId, friendTid) {
@@ -882,7 +898,12 @@ async function markFriendActivityOnBet(friendUserId, friendTid) {
       [friendUserId, refId, day]
     );
   } catch (e) {
+    if (e.message?.includes('relation') && e.message.includes('daily_friend_activity')) {
+      console.warn('markFriendActivityOnBet: daily_friend_activity missing');
+      return;
+    }
     console.error('markFriendActivityOnBet', e);
+    throw e;
   }
 }
 
@@ -2214,19 +2235,34 @@ app.post('/api/farm/vop/upgrade', async (req, res) => {
 });
 
 app.get('/api/referrals/stats/today', async (req, res) => {
-  const uid = Number(req.query.uid);
-  if (!uid) return res.json({ ok:false, error:'NO_UID' });
-  await ensureUser(uid, null);
-  const { rows } = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
-  const userId = rows[0]?.id;
-  if (!userId) return res.json({ ok:false, error:'NO_USER' });
-  const total = await pool.query('SELECT COUNT(*)::int AS c FROM referrals WHERE referrer_user_id=$1', [userId]);
-  const day = dayString(new Date(), FARM_TZ);
-  const active = await pool.query(
-    'SELECT COUNT(*)::int AS c FROM daily_friend_activity WHERE referrer_user_id=$1 AND activity_date=$2',
-    [userId, day]
-  );
-  res.json({ ok:true, total_friends: total.rows[0].c, active_friends_today: active.rows[0].c });
+  try {
+    const uid = Number(req.query.uid);
+    if (!uid) return res.json({ ok:false, error:'NO_UID' });
+    await ensureUser(uid, null);
+    const { rows } = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
+    const userId = rows[0]?.id;
+    if (!userId) return res.json({ ok:false, error:'NO_USER' });
+    const total = await pool.query('SELECT COUNT(*)::int AS c FROM referrals WHERE referrer_user_id=$1', [userId]);
+    const day = dayString(new Date(), FARM_TZ);
+    let activeCount = 0;
+    try {
+      const active = await pool.query(
+        'SELECT COUNT(*)::int AS c FROM daily_friend_activity WHERE referrer_user_id=$1 AND activity_date=$2',
+        [userId, day]
+      );
+      activeCount = active.rows[0]?.c || 0;
+    } catch (e) {
+      if (e.message?.includes('relation') && e.message.includes('daily_friend_activity')) {
+        console.warn('/api/referrals/stats/today: daily_friend_activity missing');
+      } else {
+        throw e;
+      }
+    }
+    res.json({ ok:true, total_friends: total.rows[0].c, active_friends_today: activeCount });
+  } catch (e) {
+    console.error('/api/referrals/stats/today', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
 });
 
 app.listen(PORT, () => console.log('Server listening on', PORT));
