@@ -154,8 +154,8 @@ async function onIncreaseLimitClick(){
     if(type==='usd'){
       const claimable = s.available_to_claim ?? s.claimable;
       const ratePerHour = s.speed_usd_per_hour ?? s.speed_per_hour ?? s.ratePerHour;
-      const used = s.limitToday?.used ?? s.used_usd_today ?? s.limit_today_used ?? s.claimedToday;
-      const total = s.limitToday?.max ?? s.cap_usd_effective ?? s.limit_today_total ?? s.dailyCap;
+      const used = s.used_usd_today ?? s.limit_today_used ?? s.claimedToday;
+      const total = s.cap_usd_effective ?? s.limit_today_total ?? s.dailyCap;
       claimAmount.textContent=formatMoney(claimable);
       btnClaim.disabled=!(s.active&&claimable>0);
       btnClaim.classList.add('btn-success');
@@ -169,10 +169,12 @@ async function onIncreaseLimitClick(){
       fp.textContent=s.fp;
       const pct = total?Math.min(100,used/total*100):0;
       capBar.style.width=pct+'%';
-      const n = s.limitToday?.friends ?? s.active_friends_today || 0;
+      const n = s.active_friends_today||0;
       const bpf = s.friend_bonus_per_friend_usd || s.bonus_per_friend || 0;
       const bonus = bpf*n;
-      friendsBonus.innerHTML = `Активные друзья сегодня: ${n}  •  +$${bpf} за каждого  •  +$${bonus} к лимиту`;
+      let bonusText = `Активные друзья сегодня: ${n}  •  +$${bpf} за каждого`;
+      if(n>0) bonusText += `  <span style="color:var(--success)">+$${bonus} к лимиту</span>`;
+      friendsBonus.innerHTML = bonusText;
       incLimitBtn.onclick=(e)=>{e.preventDefault();openSheet(sheetShare);};
       renderUpgrades(type,s.upgrades);
       return;

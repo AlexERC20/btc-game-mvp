@@ -1,5 +1,5 @@
 // bot/bot.js — финал
-// Регистрация: $1000, Реферал: +$500, Подписка: +$30 000 (разово), Ежедневный вход: +$1000/день
+// Регистрация: $1000, Реферал: +$500, Подписка: +$5000 (разово), Ежедневный вход: +$1000/день
 
 import 'dotenv/config';
 import express from 'express';
@@ -19,7 +19,7 @@ const CHANNEL = '@erc20coin';
 const AMOUNTS = {
   REGISTER: 1000,
   REFERRAL: 500,    // рефереру
-  SUBSCRIBE: 30_000,  // разовый бонус за подписку
+  SUBSCRIBE: 5000,  // разовый бонус за подписку
   DAILY: 1000,      // ежедневный вход
 };
 
@@ -30,14 +30,12 @@ const pool = new pg.Pool({
 
 // Пакеты Stars (мэппинг «звёздный пакет → долларовый кредит»)
 const STARS_PACKS = {
-  '100':   { credit: 30_000 },
-  '500':   { credit: 160_000 },
-  '1000':  { credit: 350_000 },
-  '10000': { credit: 4_000_000 },
-  '30000': { credit: 15_000_000 },
+  '100':   { credit: 3_000 },
+  '500':   { credit: 16_000 },
+  '1000':  { credit: 35_000 },
+  '10000': { credit: 400_000 },
+  '30000': { credit: 1_500_000 },
 };
-
-const formatUsd = (n) => n.toLocaleString('en-US').replace(/,/g, ' ');
 
 const ADMIN_USERNAME = 'ownagez';
 const ADMIN_ID = process.env.ADMIN_ID ? Number(process.env.ADMIN_ID) : null;
@@ -211,7 +209,7 @@ async function checkAndGrantChannelBonus(ctx) {
       'UPDATE users SET balance=balance+$1, channel_bonus_claimed=TRUE WHERE telegram_id=$2',
       [AMOUNTS.SUBSCRIBE, uid]
     );
-    await ctx.reply(`✅ Подписка подтверждена! Бонус $${formatUsd(AMOUNTS.SUBSCRIBE)} начислён.`);
+    await ctx.reply(`✅ Подписка подтверждена! Бонус $${AMOUNTS.SUBSCRIBE} начислён.`);
   } else {
     await ctx.reply('Бонус за подписку уже начислялся ранее ✅');
   }
@@ -302,10 +300,10 @@ bot.start(async (ctx) => {
 
   const url = WEBAPP_URL + `?uid=${uid}`;
   await ctx.reply(
-    `Добро пожаловать! Тебе начислено $${formatUsd(AMOUNTS.REGISTER)} на старт.\n` +
-      (dailyGiven ? `Ежедневный бонус +$${formatUsd(AMOUNTS.DAILY)} уже начислён сегодня.\n` : '') +
-      `За подписку на канал ${CHANNEL} — +$${formatUsd(AMOUNTS.SUBSCRIBE)} (разово).\n` +
-      `За каждого друга — +$${formatUsd(AMOUNTS.REFERRAL)}.`,
+    `Добро пожаловать! Тебе начислено $${AMOUNTS.REGISTER} на старт.\n` +
+      (dailyGiven ? `Ежедневный бонус +$${AMOUNTS.DAILY} уже начислён сегодня.\n` : '') +
+      `За подписку на канал ${CHANNEL} — +$${AMOUNTS.SUBSCRIBE} (разово).\n` +
+      `За каждого друга — +$${AMOUNTS.REFERRAL}.`,
     { ...mainMenu(url) }
   );
 });
