@@ -11,9 +11,7 @@ import {
   FARM_TZ,
   BASE_USD_LIMIT,
   BONUS_PER_ACTIVE_FRIEND_USD,
-  FEATURE_DYNAMIC_LIMIT_USD,
   dayString,
-  dailyUsdLimit,
 } from './farmUtils.js';
 import { runMigrations } from './migrate.js';
 
@@ -73,6 +71,7 @@ const BINANCE_WS =
   'wss://stream.binance.com:9443/ws/ethusdt@miniTicker';
 
 const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
+const BOT_USERNAME = process.env.BOT_USERNAME || 'realpricebtc_bot';
 const MIN_BET = 50; // ✅ минимальная ставка ($)
 
 // shout auction defaults
@@ -825,6 +824,16 @@ function ensureDayBuckets(kind, u, today) {
   if (u[dateField]?.toISOString?.().slice(0,10) !== day) {
     u[dateField] = day;
     u[todayField] = 0;
+    return true;
+  }
+  return false;
+}
+
+function ensureFriendBonus(u, today) {
+  const day = today.toISOString().slice(0,10);
+  if (u.friend_bonus_date?.toISOString?.().slice(0,10) !== day) {
+    u.friend_bonus_date = day;
+    u.friend_bonus_usd_today = 0;
     return true;
   }
   return false;
@@ -1993,8 +2002,12 @@ app.get('/api/farm/usd/state', async (req, res) => {
     u.last_claim_usd = new Date();
   }
   const active = await checkUsdActive(u.id);
-  const activeFriends = FEATURE_DYNAMIC_LIMIT_USD ? await activeFriendsToday(u.id) : 0;
-  const limitTodayTotal = FEATURE_DYNAMIC_LIMIT_USD ? dailyUsdLimit(activeFriends) : USD_DAILY_CAP;
+  if (ensureFriendBonus(u, today)) {
+    await pool.query('UPDATE users SET friend_bonus_usd_today=0, friend_bonus_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
+  }
+  const activeFriends = await activeFriendsToday(u.id);
+  const baseCap = u.base_daily_cap_usd ?? BASE_USD_LIMIT;
+  const limitTodayTotal = baseCap + (u.friend_bonus_usd_today || 0);
   const accr = computeAccrual('usd', u, now, limitTodayTotal);
   const upgrades = BOOSTERS_USD.map(up=>{
     const purchases = Number(u[`boost_t${up.tier}`] || 0);
@@ -2058,8 +2071,12 @@ app.post('/api/farm/usd/claim', async (req, res) => {
     await pool.query('UPDATE users SET last_claim_usd=now() WHERE id=$1', [u.id]);
     u.last_claim_usd = new Date();
   }
-  const activeFriends = FEATURE_DYNAMIC_LIMIT_USD ? await activeFriendsToday(u.id) : 0;
-  const limitTodayTotal = FEATURE_DYNAMIC_LIMIT_USD ? dailyUsdLimit(activeFriends) : USD_DAILY_CAP;
+  if (ensureFriendBonus(u, today)) {
+    await pool.query('UPDATE users SET friend_bonus_usd_today=0, friend_bonus_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
+  }
+  const activeFriends = await activeFriendsToday(u.id);
+  const baseCap = u.base_daily_cap_usd ?? BASE_USD_LIMIT;
+  const limitTodayTotal = baseCap + (u.friend_bonus_usd_today || 0);
   const accr = computeAccrual('usd', u, now, limitTodayTotal);
   const amt = accr.claimable;
   if (amt <= 0) return res.json({ ok:true, claimed:0, newBalance:Number(u.balance) });
@@ -2232,6 +2249,49 @@ app.post('/api/farm/vop/upgrade', async (req, res) => {
   await pool.query(`UPDATE users SET balance=balance-$1, fp_vop=fp_vop+$2, extract_t${up.tier}=extract_t${up.tier}+1 WHERE id=$3`, [price, up.fp, u.id]);
   await pool.query('INSERT INTO farm_history(user_id,type,amount,meta) VALUES($1,$2,$3,$4)', [u.id,'upgrade_vop',-price,{fpDelta:up.fp,title:up.title}]);
   res.json({ ok:true, fp: u.fp_vop + up.fp, newBalance: Number(u.balance) - price });
+});
+
+app.get('/api/referral/share-info', async (req, res) => {
+  try {
+    const uid = Number(req.query.uid);
+    if (!uid) return res.status(400).json({ ok:false, error:'NO_UID' });
+    await ensureUser(uid, null);
+    const text = 'Помоги мне на арене, хочу забрать банк!';
+    const url = `https://t.me/${BOT_USERNAME}?start=${uid}`;
+    res.json({ text, url });
+  } catch (e) {
+    console.error('/api/referral/share-info', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+app.post('/api/referral/check-new-active-friends', async (req, res) => {
+  try {
+    const uid = Number(req.body.uid);
+    if (!uid) return res.json({ newActiveCount:0, addedUsd:0 });
+    await ensureUser(uid, null);
+    const { rows } = await pool.query(
+      'SELECT id, friend_bonus_usd_today, friend_bonus_date FROM users WHERE telegram_id=$1',
+      [uid]
+    );
+    const u = rows[0];
+    const today = todayUTC();
+    if (ensureFriendBonus(u, today)) {
+      await pool.query('UPDATE users SET friend_bonus_usd_today=0, friend_bonus_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
+    }
+    const activeFriends = await activeFriendsToday(u.id);
+    const already = Math.floor((u.friend_bonus_usd_today || 0) / BONUS_PER_ACTIVE_FRIEND_USD);
+    const newActiveCount = Math.max(0, activeFriends - already);
+    const addedUsd = newActiveCount * BONUS_PER_ACTIVE_FRIEND_USD;
+    if (addedUsd > 0) {
+      await pool.query('UPDATE users SET friend_bonus_usd_today=friend_bonus_usd_today+$1 WHERE id=$2', [addedUsd, u.id]);
+      console.log('friend_cap_bonus_applied', { user_id: u.id, count: newActiveCount, addedUsd });
+    }
+    res.json({ newActiveCount, addedUsd });
+  } catch (e) {
+    console.error('/api/referral/check-new-active-friends', e);
+    res.status(500).json({ newActiveCount:0, addedUsd:0, error:'SERVER' });
+  }
 });
 
 app.get('/api/referrals/stats/today', async (req, res) => {
