@@ -11,6 +11,7 @@ import {
   BASE_USD_LIMIT,
   BONUS_PER_ACTIVE_FRIEND_USD,
   dayString,
+  dailyUsdLimit,
 } from './farmUtils.js';
 import { runMigrations } from './migrate.js';
 
@@ -85,7 +86,6 @@ const DAILY_BONUS = 1000;     // ежедневный бонус
 
 // ==== FARM $ ====
 const USD_RATE_PER_FP_PER_HOUR = 0.5;     // $/час за 1 FP
-const USD_DAILY_CAP             = BASE_USD_LIMIT;    // базовый максимум $ в сутки с фарма
 const USD_OFFLINE_CAP_HOURS     = 12;      // максимум часов, которые накапливаются оффлайн
 const USD_ACTIVE_MIN_BET        = 50;      // фарм $ активен, если есть ставка >= $50 за последние 24 часа
 
@@ -853,7 +853,7 @@ function computeAccrual(kind, u, now, dailyCapOverride = null) {
         rate: USD_RATE_PER_FP_PER_HOUR,
         last: u.last_claim_usd,
         offline: USD_OFFLINE_CAP_HOURS,
-        dailyCap: dailyCapOverride ?? USD_DAILY_CAP,
+        dailyCap: dailyCapOverride ?? BASE_USD_LIMIT,
         claimed: u.claimed_usd_today,
       }
     : {
@@ -873,17 +873,17 @@ function computeAccrual(kind, u, now, dailyCapOverride = null) {
   return { ratePerHour, claimable: acc };
 }
 
-async function activeFriendsToday(userId) {
-  const day = dayString(todayUTC(), 'UTC');
+async function getActiveFriendsToday(userId) {
   try {
-    const { rows } = await pool.query(
-      'SELECT COUNT(*)::int AS c FROM daily_friend_activity WHERE referrer_user_id=$1 AND activity_date=$2',
-      [userId, day]
+    const { rows:[{ cnt }] } = await pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM referral_activity
+       WHERE referrer_id=$1 AND last_active_at >= date_trunc('day', now() AT TIME ZONE 'UTC')`,
+      [userId]
     );
-    return rows[0]?.c || 0;
+    return cnt || 0;
   } catch (e) {
-    if (e.message?.includes('relation') && e.message.includes('daily_friend_activity')) {
-      console.warn('activeFriendsToday: daily_friend_activity missing');
+    if (e.message?.includes('relation') && e.message.includes('referral_activity')) {
+      console.warn('getActiveFriendsToday: referral_activity missing');
       return 0;
     }
     throw e;
@@ -898,16 +898,24 @@ async function markFriendActivityOnBet(friendUserId, friendTid) {
     );
     const refId = rows[0]?.referrer_user_id;
     if (!refId || refId === friendUserId) return;
-    const day = dayString(todayUTC(), 'UTC');
-    await pool.query(
-      `INSERT INTO daily_friend_activity(friend_user_id, referrer_user_id, activity_date, first_event_at)
-       VALUES ($1,$2,$3,now())
-       ON CONFLICT (friend_user_id, activity_date) DO NOTHING`,
-      [friendUserId, refId, day]
+    const { rows:ex } = await pool.query(
+      'SELECT last_active_at FROM referral_activity WHERE referrer_id=$1 AND friend_id=$2',
+      [refId, friendUserId]
     );
+    let shouldLog = false;
+    const startOfDayUtc = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
+    if (!ex[0] || ex[0].last_active_at < startOfDayUtc) shouldLog = true;
+    await pool.query(
+      `INSERT INTO referral_activity (referrer_id, friend_id, last_active_at)
+       VALUES ($1,$2,now())
+       ON CONFLICT (referrer_id, friend_id)
+       DO UPDATE SET last_active_at = EXCLUDED.last_active_at`,
+      [refId, friendUserId]
+    );
+    if (shouldLog) console.log('trackFriendActive', { referrerId: refId, friendId: friendUserId, ts: new Date().toISOString() });
   } catch (e) {
-    if (e.message?.includes('relation') && e.message.includes('daily_friend_activity')) {
-      console.warn('markFriendActivityOnBet: daily_friend_activity missing');
+    if (e.message?.includes('relation') && e.message.includes('referral_activity')) {
+      console.warn('markFriendActivityOnBet: referral_activity missing');
       return;
     }
     console.error('markFriendActivityOnBet', e);
@@ -944,12 +952,10 @@ async function getFarmUsdState(uid) {
   if (ensureFriendBonus(u, today)) {
     await pool.query('UPDATE users SET friend_bonus_usd_today=0, friend_bonus_date=$2 WHERE id=$1', [u.id, dayStr]);
   }
-  const activeFriends = await activeFriendsToday(u.id);
-  const baseCap = u.base_daily_cap_usd ?? BASE_USD_LIMIT;
-  const bonusCap = u.friend_bonus_usd_today || 0;
-  const effectiveCap = baseCap + bonusCap;
-  await upsertDailyCap(u.id, today, baseCap, bonusCap, u.claimed_usd_today);
-  const accr = computeAccrual('usd', u, now, effectiveCap);
+  const activeFriends = await getActiveFriendsToday(u.id);
+  const maxCap = dailyUsdLimit(activeFriends);
+  await upsertDailyCap(u.id, today, BASE_USD_LIMIT, activeFriends * BONUS_PER_ACTIVE_FRIEND_USD, u.claimed_usd_today);
+  const accr = computeAccrual('usd', u, now, maxCap);
   const upgrades = BOOSTERS_USD.map(up => {
     const purchases = Number(u[`boost_t${up.tier}`] || 0);
     const price = calcPrice(up.base, purchases);
@@ -980,20 +986,21 @@ async function getFarmUsdState(uid) {
     fp: u.fp_usd,
     claimable: accr.claimable,
     used_usd_today: u.claimed_usd_today,
-    cap_usd_base: baseCap,
-    cap_usd_bonus: bonusCap,
-    cap_usd_effective: effectiveCap,
+    cap_usd_base: BASE_USD_LIMIT,
+    cap_usd_bonus: activeFriends * BONUS_PER_ACTIVE_FRIEND_USD,
+    cap_usd_effective: maxCap,
     active_friends_today: activeFriends,
     friend_bonus_per_friend_usd: BONUS_PER_ACTIVE_FRIEND_USD,
     offline_cap_hours: USD_OFFLINE_CAP_HOURS,
     lastClaimAt: u.last_claim_usd,
     upgrades,
     history: hist.rows.map(r => ({ type: r.type, amount: Number(r.amount), ts: r.created_at, meta: r.meta })),
+    limitToday: { base: BASE_USD_LIMIT, max: maxCap, used: u.claimed_usd_today, friends: activeFriends },
     // backward compatibility
     available_to_claim: accr.claimable,
     speed_per_hour: accr.ratePerHour,
     limit_today_used: u.claimed_usd_today,
-    limit_today_total: effectiveCap,
+    limit_today_total: maxCap,
     bonus_per_friend: BONUS_PER_ACTIVE_FRIEND_USD,
   };
 }
@@ -2073,6 +2080,15 @@ async function farmUsdHandler(req, res) {
     const uid = Number(req.query.uid);
     if (!uid) return res.json({ ok:false, error:'NO_UID' });
     const state = await getFarmUsdState(uid);
+    if (state?.limitToday) {
+      console.log('/api/farm/usd/state', {
+        user_id: uid,
+        friends: state.limitToday.friends,
+        base: state.limitToday.base,
+        max: state.limitToday.max,
+        used: state.limitToday.used,
+      });
+    }
     res.json(state);
   } catch (e) {
     console.error('/api/farm/usd', e);
@@ -2103,7 +2119,7 @@ app.post('/api/farm/usd/claim', async (req, res) => {
   if (ensureFriendBonus(u, today)) {
     await pool.query('UPDATE users SET friend_bonus_usd_today=0, friend_bonus_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
   }
-  const activeFriends = await activeFriendsToday(u.id);
+  const activeFriends = await getActiveFriendsToday(u.id);
   const baseCap = u.base_daily_cap_usd ?? BASE_USD_LIMIT;
   const limitTodayTotal = baseCap + (u.friend_bonus_usd_today || 0);
   const accr = computeAccrual('usd', u, now, limitTodayTotal);
@@ -2310,7 +2326,7 @@ app.post('/api/referral/check-new-active-friends', async (req, res) => {
     if (ensureFriendBonus(u, today)) {
       await pool.query('UPDATE users SET friend_bonus_usd_today=0, friend_bonus_date=$2 WHERE id=$1', [u.id, dayStr]);
     }
-    const activeFriends = await activeFriendsToday(u.id);
+    const activeFriends = await getActiveFriendsToday(u.id);
     const already = Math.floor((u.friend_bonus_usd_today || 0) / BONUS_PER_ACTIVE_FRIEND_USD);
     const newActiveCount = Math.max(0, activeFriends - already);
     const addedUsd = newActiveCount * BONUS_PER_ACTIVE_FRIEND_USD;
@@ -2335,17 +2351,17 @@ app.get('/api/referrals/stats/today', async (req, res) => {
     const userId = rows[0]?.id;
     if (!userId) return res.json({ ok:false, error:'NO_USER' });
     const total = await pool.query('SELECT COUNT(*)::int AS c FROM referrals WHERE referrer_user_id=$1', [userId]);
-    const day = dayString(todayUTC(), 'UTC');
     let activeCount = 0;
     try {
       const active = await pool.query(
-        'SELECT COUNT(*)::int AS c FROM daily_friend_activity WHERE referrer_user_id=$1 AND activity_date=$2',
-        [userId, day]
+        `SELECT COUNT(*)::int AS c FROM referral_activity
+         WHERE referrer_id=$1 AND last_active_at >= date_trunc('day', now() AT TIME ZONE 'UTC')`,
+        [userId]
       );
       activeCount = active.rows[0]?.c || 0;
     } catch (e) {
-      if (e.message?.includes('relation') && e.message.includes('daily_friend_activity')) {
-        console.warn('/api/referrals/stats/today: daily_friend_activity missing');
+      if (e.message?.includes('relation') && e.message.includes('referral_activity')) {
+        console.warn('/api/referrals/stats/today: referral_activity missing');
       } else {
         throw e;
       }
