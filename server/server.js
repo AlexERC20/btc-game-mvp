@@ -6,7 +6,6 @@ import { WebSocket } from 'ws';
 import pg from 'pg';
 import crypto from 'crypto';
 import { grantXpOnce, levelThreshold, xpSpentBeforeLevel, XP } from '../xp.mjs';
-import { PRICE_BUMP_STEP, calcPrice } from './shopMath.js';
 import {
   BASE_USD_LIMIT,
   BONUS_PER_ACTIVE_FRIEND_USD,
@@ -98,14 +97,14 @@ const VOP_MIN_LEVEL             = 25;      // фарм VOP открываетс�
 // ==== Магазин бустов и экстракторов ====
 const BOOSTERS_USD = [
   { tier:1, id:'usd_booster_1', title:'Booster I',  base:  500,  fp:1, level:1 },
-  { tier:2, id:'usd_booster_2', title:'Booster II', base: 1350, fp:3, level:5 },
-  { tier:3, id:'usd_booster_3', title:'Booster III',base: 3400, fp:8, level:12 },
+  { tier:2, id:'usd_booster_2', title:'Booster II', base: 2000, fp:3, level:5 },
+  { tier:3, id:'usd_booster_3', title:'Booster III',base: 8000, fp:8, level:12 },
 ];
 
 const EXTRACTORS_VOP = [
-  { tier:1, id:'vop_extractor_1', title:'Extractor I',  base:  2500, fp:1, level:25 },
-  { tier:2, id:'vop_extractor_2', title:'Extractor II', base:  6750, fp:3, level:28 },
-  { tier:3, id:'vop_extractor_3', title:'Extractor III',base: 17000, fp:8, level:32 },
+  { tier:1, id:'vop_extractor_1', title:'Extractor I',  base:  2000, fp:1, level:25 },
+  { tier:2, id:'vop_extractor_2', title:'Extractor II', base:  8000, fp:3, level:28 },
+  { tier:3, id:'vop_extractor_3', title:'Extractor III',base: 25000, fp:8, level:32 },
 ];
 
 // Arena configuration
@@ -957,11 +956,7 @@ async function getFarmUsdState(uid) {
   await upsertDailyCap(u.id, today, BASE_USD_LIMIT, activeFriends * BONUS_PER_ACTIVE_FRIEND_USD, u.claimed_usd_today);
   const accr = computeAccrual('usd', u, now, maxCap);
   const upgrades = BOOSTERS_USD.map(up => {
-    const purchases = Number(u[`boost_t${up.tier}`] || 0);
-    const price = calcPrice(up.base, purchases);
-    const pricePerFp = Math.round(price / up.fp);
-    const mod = purchases % PRICE_BUMP_STEP;
-    const next = mod === 0 && purchases > 0 ? 0 : PRICE_BUMP_STEP - mod;
+    const price = up.base;
     let canBuy = true, reason = null;
     if (u.level < up.level) { canBuy = false; reason = 'LEVEL'; }
     else if (u.balance < price) { canBuy = false; reason = 'BALANCE'; }
@@ -971,9 +966,6 @@ async function getFarmUsdState(uid) {
       fp: up.fp,
       reqLevel: up.level,
       price,
-      pricePerFp,
-      purchases_mod: mod,
-      next_bump_in: next,
       canBuy,
       reason
     };
@@ -2141,8 +2133,7 @@ app.post('/api/farm/usd/upgrade', async (req, res) => {
   if (!up) return res.json({ ok:false, error:'NO_UPGRADE' });
   const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
   const u = rows[0];
-  const purchases = Number(u[`boost_t${up.tier}`] || 0);
-  const price = calcPrice(up.base, purchases);
+  const price = up.base;
   if (u.level < up.level) return res.json({ ok:false, error:'LEVEL' });
   if (u.balance < price) return res.json({ ok:false, error:'BALANCE' });
   await pool.query(`UPDATE users SET balance=balance-$1, fp_usd=fp_usd+$2, boost_t${up.tier}=boost_t${up.tier}+1 WHERE id=$3`, [price, up.fp, u.id]);
@@ -2182,24 +2173,17 @@ app.get('/api/farm/vop/state', async (req, res) => {
 
   const claimEligible = referrals >= 30;
 
-  const upgrades = EXTRACTORS_VOP.map(up=>{
-    const purchases = Number(u[`extract_t${up.tier}`] || 0);
-    const price = calcPrice(up.base, purchases);
-    const pricePerFp = Math.round(price / up.fp);
-    const mod = purchases % PRICE_BUMP_STEP;
-    const next = mod === 0 && purchases > 0 ? 0 : PRICE_BUMP_STEP - mod;
-    let canBuy=true, reason=null;
-    if (u.level < up.level) { canBuy=false; reason='LEVEL'; }
-    else if (u.balance < price) { canBuy=false; reason='BALANCE'; }
+  const upgrades = EXTRACTORS_VOP.map(up => {
+    const price = up.base;
+    let canBuy = true, reason = null;
+    if (u.level < up.level) { canBuy = false; reason = 'LEVEL'; }
+    else if (u.balance < price) { canBuy = false; reason = 'BALANCE'; }
     return {
       id: up.id,
       title: up.title,
       fp: up.fp,
       reqLevel: up.level,
       price,
-      pricePerFp,
-      purchases_mod: mod,
-      next_bump_in: next,
       canBuy,
       reason
     };
@@ -2288,8 +2272,7 @@ app.post('/api/farm/vop/upgrade', async (req, res) => {
   if (!up) return res.json({ ok:false, error:'NO_UPGRADE' });
   const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
   const u = rows[0];
-  const purchases = Number(u[`extract_t${up.tier}`] || 0);
-  const price = calcPrice(up.base, purchases);
+  const price = up.base;
   if (u.level < up.level) return res.json({ ok:false, error:'LEVEL' });
   if (u.balance < price) return res.json({ ok:false, error:'BALANCE' });
   await pool.query(`UPDATE users SET balance=balance-$1, fp_vop=fp_vop+$2, extract_t${up.tier}=extract_t${up.tier}+1 WHERE id=$3`, [price, up.fp, u.id]);
