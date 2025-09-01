@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
 <title>Arena — BTC Game</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
@@ -11,7 +11,8 @@
     --green:#1fa36a; --red:#c6423a; --card:#0b0b0b; --border:#1e1e1e; --chip:#121212;
   }
   *{box-sizing:border-box}
-  html,body{height:100%;margin:0}
+  html,body{height:100%;margin:0;touch-action:pan-x pan-y}
+  button,a,.tap{touch-action:manipulation}
   body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial}
   .wrap{max-width:520px;margin:24px auto 0;padding:16px 14px 28px}
   .back-text{background:none;border:none;color:#fff;font-size:14px;padding:0;margin-bottom:6px;cursor:pointer}
@@ -193,6 +194,7 @@
   .sheet .share-wrap{flex:1;display:flex;flex-direction:column}
   .sheet .share-wrap .share-hint{color:var(--muted);font-size:12px;margin-top:4px;text-align:center}
   .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
+  .sheet .wait{color:var(--muted);font-size:12px;margin:0 0 8px;text-align:center}
 
   #sheetChatFeed .feed{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
   .msg{background:#121212;border:1px solid var(--border);border-radius:12px;padding:10px}
@@ -335,12 +337,12 @@
 <!-- SHEET: Обновить лимит -->
 <div class="sheet" id="sheetRefresh">
   <h3>Обновить ставки в этом раунде</h3>
+  <p class="wait">Ждём друга… проверяем каждые 3 с</p>
   <p>Пригласи друга по своей ссылке. Как только он зайдёт — лимит снова 20 ставок в текущем раунде.</p>
   <div class="btnrow">
     <div class="share-wrap">
       <button class="btnsm" id="refreshShare">Поделиться</button>
     </div>
-    <button class="btnsm" id="refreshApply">Проверить</button>
     <button class="btnsm cancel" data-close>Закрыть</button>
   </div>
 </div>
@@ -434,7 +436,9 @@ const sheetShop = document.getElementById('sheetShop');
 const shopTabs = document.getElementById('shopTabs');
 const sheetRefresh = document.getElementById('sheetRefresh');
 const refreshShare = document.getElementById('refreshShare');
-const refreshApply = document.getElementById('refreshApply');
+
+let refreshTimer = null;
+let refreshDeadline = 0;
 
 const openChannel = document.getElementById('openChannel');
 const starsPacks = document.getElementById('starsPacks');
@@ -503,9 +507,12 @@ function renderArena(st){
   if(st.userLimits){
     remainingBets = st.userLimits.remainingBets;
   }
+  if(refreshTimer && (st.phase !== 'betting' || remainingBets > 0)){
+    closeAllSheets();
+  }
   betsLeftEl.textContent = `осталось ${remainingBets} ставок`;
   bidBtn.textContent = remainingBets>0 ? ('Ставка $' + Number(st.nextBid||0).toLocaleString()) : 'Обновить';
-  bidBtn.disabled = st.phase === 'pause';
+  bidBtn.disabled = st.phase === 'pause' || !!refreshTimer;
   leaderEl.textContent = 'Лидер: ' + (st.leader?.name ? normUser(st.leader.name) : '—');
 
   if(arenaPhase!==st.phase){
@@ -567,6 +574,7 @@ function closeAllSheets(){
   document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open'));
   sheetBg.classList.remove('show');
   if (adPriceTimer) { clearInterval(adPriceTimer); adPriceTimer = null; }
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; refreshDeadline = 0; bidBtn.disabled = arenaPhase === 'pause'; }
 }
 sheetBg.addEventListener('click', closeAllSheets);
 document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeAllSheets));
@@ -613,13 +621,35 @@ starsBtn.onclick = ()=> openSheet(sheetStars);
 // Переход в магазин аналогично главной странице
 shopBtn.onclick = ()=>{ location.href = `/farm.html?uid=${encodeURIComponent(uid)}`; };
 
-async function openRefreshSheet(){
+async function pollRefresh(){
   const r = await fetch('/api/arena/refresh-check',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>null);
-  if(r?.ok){
-    remainingBets = r.remaining;
-    refreshApply.disabled = !r.eligible;
+  if(!refreshTimer) return;
+  if(r?.error === 'ROUND_ENDED' || r?.error === 'NEW_ROUND'){
+    closeAllSheets();
+    pollArena();
+    return;
   }
+  if(r?.ok && r.eligible){
+    const a = await fetch('/api/arena/refresh-apply',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>null);
+    if(a?.ok){
+      remainingBets = a.remaining;
+      closeAllSheets();
+      pollArena();
+    }
+    return;
+  }
+  if(Date.now() > refreshDeadline){
+    toast('Друг ещё не зашёл. Попробуй позже.');
+    closeAllSheets();
+  }
+}
+async function openRefreshSheet(){
+  if(refreshTimer) return;
+  bidBtn.disabled = true;
+  refreshDeadline = Date.now() + 120000;
   openSheet(sheetRefresh);
+  refreshTimer = setInterval(pollRefresh,3000);
+  await pollRefresh();
 }
 refreshShare.onclick = ()=>{
   const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
@@ -634,16 +664,6 @@ refreshShare.onclick = ()=>{
     } else {
       alert(text);
     }
-  }
-};
-refreshApply.onclick = async ()=>{
-  const r = await fetch('/api/arena/refresh-apply',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>null);
-  if(r?.ok){
-    remainingBets = r.remaining;
-    closeAllSheets();
-    pollArena();
-  } else {
-    alert('Пригласи и дождись, когда друг зайдёт в игру');
   }
 };
 adWriteBtn.onclick = async ()=>{
@@ -745,6 +765,7 @@ pollArena();
 pollAd();
 loadLb24();
 </script>
+<script src="js/nozoom.js"></script>
 <script type="module" src="js/quests.js"></script>
 
 </body>
