@@ -107,21 +107,33 @@ async function claim(type){
     const claimNote=document.getElementById('claimNote');
     const footer=document.getElementById('lockedFooter');
     const offlineLimit=document.getElementById('offlineLimit');
+    const friendsBonus=document.getElementById('friendsBonus');
+    const incLimitBtn=document.getElementById('incLimitBtn');
 
     if(type==='usd'){
-      claimAmount.textContent=formatMoney(s.claimable);
-      btnClaim.disabled=!(s.active&&s.claimable>0);
+      const claimable = s.available_to_claim ?? s.claimable;
+      const ratePerHour = s.speed_per_hour ?? s.ratePerHour;
+      const used = s.limit_today_used ?? s.claimedToday;
+      const total = s.limit_today_total ?? s.dailyCap;
+      claimAmount.textContent=formatMoney(claimable);
+      btnClaim.disabled=!(s.active&&claimable>0);
       btnClaim.classList.add('btn-success');
       btnClaim.classList.remove('btn-secondary');
       claimNote.textContent='';
-      rate.textContent=formatMoney(s.ratePerHour).slice(1)+' $/ч';
-      capText.textContent=`${formatMoney(s.claimedToday)} / ${formatMoney(s.dailyCap)}`;
+      rate.textContent=formatMoney(ratePerHour).slice(1)+' $/ч';
+      capText.textContent=`${formatMoney(used)} / ${formatMoney(total)}`;
       inactive.hidden=s.active;
       footer.hidden=true;
       offlineLimit.textContent='Оффлайн-лимит: до 12 ч';
       fp.textContent=s.fp;
-      const pct = s.dailyCap?Math.min(100,s.claimedToday/s.dailyCap*100):0;
+      const pct = total?Math.min(100,used/total*100):0;
       capBar.style.width=pct+'%';
+      const n = s.active_friends_today||0;
+      const bonus = (s.bonus_per_friend||0)*n;
+      let bonusText = `Активные друзья сегодня: ${n}  •  +$${s.bonus_per_friend||0} за каждого`;
+      if(n>0) bonusText += `  <span style="color:var(--success)">+$${bonus} к лимиту</span>`;
+      friendsBonus.innerHTML = bonusText;
+      incLimitBtn.onclick=()=>{location.href=`/shop.html?uid=${encodeURIComponent(uid)}`;};
       renderUpgrades(type,s.upgrades);
       return;
     }
