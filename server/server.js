@@ -127,6 +127,8 @@ const ARENA_TIMER = {
   MAX_CAP: 180,              // верхняя «крыша» (3 мин)
 };
 
+const ARENA_MAX_BETS_PER_ROUND = 20;
+
 const pool = new pg.Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false },
@@ -419,6 +421,16 @@ await pool.query(`
     user_id INT REFERENCES users(id),
     amount BIGINT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
+  );
+`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS arena_user_round (
+    round_id   INT NOT NULL,
+    user_id    INT NOT NULL REFERENCES users(id),
+    bets_used  INT NOT NULL DEFAULT 0,
+    refreshed  BOOLEAN NOT NULL DEFAULT FALSE,
+    PRIMARY KEY (round_id, user_id)
   );
 `);
 
@@ -1648,7 +1660,30 @@ app.get('/api/leaderboard/xp', async (req, res) => {
 });
 
 /* ========= Arena API ========= */
-app.get('/api/arena/state', (req, res) => {
+app.get('/api/arena/state', async (req, res) => {
+  let userLimits = null;
+  try {
+    const uid = Number(req.query.uid);
+    if (uid && arena.roundId) {
+      const u = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
+      const userId = u.rows[0]?.id;
+      if (userId) {
+        const r = await pool.query(
+          'SELECT bets_used, refreshed FROM arena_user_round WHERE round_id=$1 AND user_id=$2',
+          [arena.roundId, userId]
+        );
+        const used = r.rows[0]?.bets_used || 0;
+        const refreshed = r.rows[0]?.refreshed || false;
+        userLimits = {
+          remainingBets: Math.max(0, ARENA_MAX_BETS_PER_ROUND - used),
+          refreshed,
+        };
+      }
+    }
+  } catch (e) {
+    console.error('/api/arena/state', e);
+  }
+
   res.json({
     ok: true,
     phase: arena.phase,
@@ -1658,6 +1693,7 @@ app.get('/api/arena/state', (req, res) => {
     nextBid: arena.nextBid,
     leader: arena.leaderName ? { name: arena.leaderName } : null,
     lastWinnerTid: arena.phase === 'pause' ? arena.leaderTid : null,
+    userLimits,
   });
 });
 
@@ -1689,10 +1725,25 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
       await pool.query('ROLLBACK');
       return res.json({ ok:false, error:'INSUFFICIENT' });
     }
+    await pool.query(
+      'INSERT INTO arena_user_round(round_id, user_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+      [arena.roundId, userId]
+    );
+    const lim = await pool.query(
+      'SELECT bets_used FROM arena_user_round WHERE round_id=$1 AND user_id=$2 FOR UPDATE',
+      [arena.roundId, userId]
+    );
+    const used = lim.rows[0]?.bets_used || 0;
+    if (used >= ARENA_MAX_BETS_PER_ROUND) {
+      await pool.query('ROLLBACK');
+      return res.json({ ok:false, error:'ARENA_BETS_LIMIT' });
+    }
     await pool.query('UPDATE users SET balance=balance-$1, xp=xp+50 WHERE id=$2',
                      [arena.nextBid, userId]);
     await pool.query('INSERT INTO arena_bids(round_id,user_id,amount) VALUES($1,$2,$3)',
                      [arena.roundId, userId, arena.nextBid]);
+    await pool.query('UPDATE arena_user_round SET bets_used=bets_used+1 WHERE round_id=$1 AND user_id=$2',
+                     [arena.roundId, userId]);
     await pool.query('COMMIT');
 
     arena.bank += arena.nextBid;
@@ -1719,6 +1770,65 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
   } catch (e) {
     await pool.query('ROLLBACK').catch(()=>{});
     console.error('/api/arena/bid', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+app.post('/api/arena/refresh-check', async (req, res) => {
+  try {
+    const uid = Number(req.body?.uid);
+    if (!uid || !arena.roundId) {
+      return res.json({ ok:true, eligible:false, reason:'NO_REFERRAL', remaining:ARENA_MAX_BETS_PER_ROUND });
+    }
+    const u = await pool.query('SELECT id FROM users WHERE telegram_id=$1', [uid]);
+    const userId = u.rows[0]?.id;
+    if (!userId) return res.json({ ok:true, eligible:false, reason:'NO_REFERRAL', remaining:ARENA_MAX_BETS_PER_ROUND });
+
+    await pool.query('INSERT INTO arena_user_round(round_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [arena.roundId, userId]);
+    const aur = await pool.query('SELECT bets_used, refreshed FROM arena_user_round WHERE round_id=$1 AND user_id=$2', [arena.roundId, userId]);
+    const used = aur.rows[0]?.bets_used || 0;
+    const refreshed = aur.rows[0]?.refreshed || false;
+    const remaining = Math.max(0, ARENA_MAX_BETS_PER_ROUND - used);
+    if (refreshed) {
+      return res.json({ ok:true, eligible:false, reason:'ALREADY_USED', remaining });
+    }
+    const ref = await pool.query(
+      `SELECT 1 FROM referrals WHERE referrer_user_id=$1 AND created_at >= (SELECT started_at FROM arena_rounds WHERE id=$2) LIMIT 1`,
+      [userId, arena.roundId]
+    );
+    if (ref.rowCount > 0) {
+      return res.json({ ok:true, eligible:true, remaining });
+    }
+    return res.json({ ok:true, eligible:false, reason:'NO_REFERRAL', remaining });
+  } catch (e) {
+    console.error('/api/arena/refresh-check', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+app.post('/api/arena/refresh-apply', async (req, res) => {
+  try {
+    const uid = Number(req.body?.uid);
+    if (!uid || !arena.roundId) return res.json({ ok:false, error:'NOT_ELIGIBLE' });
+    await pool.query('BEGIN');
+    const u = await pool.query('SELECT id FROM users WHERE telegram_id=$1 FOR UPDATE', [uid]);
+    const userId = u.rows[0]?.id;
+    if (!userId) { await pool.query('ROLLBACK'); return res.json({ ok:false, error:'NOT_ELIGIBLE' }); }
+    await pool.query('INSERT INTO arena_user_round(round_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING', [arena.roundId, userId]);
+    const aur = await pool.query('SELECT bets_used, refreshed FROM arena_user_round WHERE round_id=$1 AND user_id=$2 FOR UPDATE', [arena.roundId, userId]);
+    const refreshed = aur.rows[0]?.refreshed || false;
+    if (refreshed) { await pool.query('ROLLBACK'); return res.json({ ok:false, error:'NOT_ELIGIBLE' }); }
+    const ref = await pool.query(
+      `SELECT 1 FROM referrals WHERE referrer_user_id=$1 AND created_at >= (SELECT started_at FROM arena_rounds WHERE id=$2) LIMIT 1`,
+      [userId, arena.roundId]
+    );
+    if (ref.rowCount === 0) { await pool.query('ROLLBACK'); return res.json({ ok:false, error:'NOT_ELIGIBLE' }); }
+    await pool.query('UPDATE arena_user_round SET bets_used=0, refreshed=TRUE WHERE round_id=$1 AND user_id=$2', [arena.roundId, userId]);
+    await pool.query('COMMIT');
+    return res.json({ ok:true, remaining: ARENA_MAX_BETS_PER_ROUND });
+  } catch (e) {
+    await pool.query('ROLLBACK').catch(()=>{});
+    console.error('/api/arena/refresh-apply', e);
     res.status(500).json({ ok:false, error:'SERVER' });
   }
 });

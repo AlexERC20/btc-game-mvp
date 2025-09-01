@@ -227,6 +227,8 @@
   <div id="dailyQuestStrip" class="daily-strip"></div>
   <button class="btn" id="bidBtn">Ставка $0</button>
   <div class="head" id="leader">Лидер: —</div>
+  <div class="head" id="betsLeft">осталось 20 ставок</div>
+  <div class="sub">Ставки в новом раунде обновляются у всех</div>
   <div class="levelcard" id="levelCard">
     <div class="level-head">
       <div class="level-title">Уровень <span id="lvlNum">1</span></div>
@@ -328,6 +330,19 @@
     <div class="btnrow"><button class="btnsm cancel" data-close>Закрыть</button></div>
   </div>
 
+<!-- SHEET: Обновить лимит -->
+<div class="sheet" id="sheetRefresh">
+  <h3>Обновить ставки в этом раунде</h3>
+  <p>Чтобы обновить лимит, пригласи друга по своей ссылке. Как только он зайдёт в игру — лимит снова 20 ставок в текущем раунде.</p>
+  <p>Помоги мне на арене, я хочу забрать весь банк!</p>
+  <p id="refreshLink"></p>
+  <div class="btnrow">
+    <button class="btnsm" id="refreshShare">Поделиться</button>
+    <button class="btnsm" id="refreshApply">Проверить</button>
+    <button class="btnsm cancel" data-close>Закрыть</button>
+  </div>
+</div>
+
   <!-- SHEET: Магазин -->
   <div class="sheet" id="sheetShop">
     <h3>Магазин</h3>
@@ -386,6 +401,7 @@ const lb24 = document.getElementById('lb24');
 backText.onclick = () => { window.location.href = '/'; };
 const bidBtn = document.getElementById('bidBtn');
 const leaderEl = document.getElementById('leader');
+const betsLeftEl = document.getElementById('betsLeft');
 const lvlNum = document.getElementById('lvlNum');
 const balInline = document.getElementById('balInline');
 const vopInline = document.getElementById('vopInline');
@@ -414,6 +430,10 @@ const sheetAd = document.getElementById('sheetAd');
 const sheetChatFeed = document.getElementById('sheetChatFeed');
 const sheetShop = document.getElementById('sheetShop');
 const shopTabs = document.getElementById('shopTabs');
+const sheetRefresh = document.getElementById('sheetRefresh');
+const refreshShare = document.getElementById('refreshShare');
+const refreshApply = document.getElementById('refreshApply');
+const refreshLink = document.getElementById('refreshLink');
 
 const openChannel = document.getElementById('openChannel');
 const starsPacks = document.getElementById('starsPacks');
@@ -432,6 +452,7 @@ let arenaMax = 0;
 let pauseMax = 0;
 let adState = {};
 let adPriceTimer = null;
+let remainingBets = 20;
 
 function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
 function normUser(u){ return '@'+String(u||'anon').replace(/^@+/, ''); }
@@ -477,7 +498,11 @@ function renderArena(st){
   const ss = st.secsLeft % 60;
   const statusTxt = st.phase==='idle'?'Ожидание ставки':st.phase==='pause'?'Пауза':'Идёт аукцион';
   ringStatus.textContent = `${String(mm).padStart(2,'0')}:${String(ss).padStart(2,'0')} · ${statusTxt}`;
-  bidBtn.textContent = 'Ставка $' + Number(st.nextBid||0).toLocaleString();
+  if(st.userLimits){
+    remainingBets = st.userLimits.remainingBets;
+  }
+  betsLeftEl.textContent = `осталось ${remainingBets} ставок`;
+  bidBtn.textContent = remainingBets>0 ? ('Ставка $' + Number(st.nextBid||0).toLocaleString()) : 'Обновить';
   bidBtn.disabled = st.phase === 'pause';
   leaderEl.textContent = 'Лидер: ' + (st.leader?.name ? normUser(st.leader.name) : '—');
 
@@ -505,7 +530,8 @@ function renderArena(st){
   arenaPhase = st.phase;
 }
 async function pollArena(){
-  const r = await fetch('/api/arena/state').then(r=>r.json()).catch(()=>null);
+  const url = uid ? `/api/arena/state?uid=${uid}` : '/api/arena/state';
+  const r = await fetch(url).then(r=>r.json()).catch(()=>null);
   if(r?.ok) renderArena(r);
 }
 async function pollAd(){
@@ -545,6 +571,10 @@ document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',
 
 bidBtn.addEventListener('click', async ()=>{
   if(bidBtn.disabled) return;
+  if(remainingBets<=0){
+    openRefreshSheet();
+    return;
+  }
   const oldBank = Number(bankEl.dataset.v||0);
   const r = await fetch('/api/arena/bid',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ initData: tg?.initData || '' })}).then(r=>r.json()).catch(()=>null);
   if(r?.ok){
@@ -553,6 +583,7 @@ bidBtn.addEventListener('click', async ()=>{
     loadProfile();
     try{ tg?.HapticFeedback?.impactOccurred('soft'); navigator?.vibrate?.(15); }catch{}
   } else if(r?.error==='INSUFFICIENT'){ alert('Недостаточно средств'); }
+  else if(r?.error==='ARENA_BETS_LIMIT'){ remainingBets=0; renderArena({ ...r, userLimits:{remainingBets:0} }); openRefreshSheet(); }
 });
 function animateBank(from,to){
   const start = performance.now();
@@ -579,6 +610,32 @@ rulesBtn.onclick = ()=> openSheet(sheetRules);
 starsBtn.onclick = ()=> openSheet(sheetStars);
 // Переход в магазин аналогично главной странице
 shopBtn.onclick = ()=>{ location.href = `/farm.html?uid=${encodeURIComponent(uid)}`; };
+
+async function openRefreshSheet(){
+  refreshLink.textContent = `https://t.me/${BOT_USERNAME}?start=${uid}`;
+  const r = await fetch('/api/arena/refresh-check',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>null);
+  if(r?.ok){
+    remainingBets = r.remaining;
+    refreshApply.disabled = !r.eligible;
+  }
+  openSheet(sheetRefresh);
+}
+refreshShare.onclick = ()=>{
+  const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
+  const text = 'Помоги мне на арене, я хочу забрать весь банк!';
+  if(navigator.share){ navigator.share({ text, url: link }).catch(()=>{}); }
+  else { alert(text+'\n'+link); }
+};
+refreshApply.onclick = async ()=>{
+  const r = await fetch('/api/arena/refresh-apply',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>null);
+  if(r?.ok){
+    remainingBets = r.remaining;
+    closeAllSheets();
+    pollArena();
+  } else {
+    alert('Пригласи и дождись, когда друг зайдёт в игру');
+  }
+};
 adWriteBtn.onclick = async ()=>{
   try{ tg?.HapticFeedback?.impactOccurred('light'); }catch{}
   adInput.value='';
