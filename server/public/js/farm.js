@@ -161,6 +161,6 @@ async function loadCurrent(){const s=await loadFarmState(currentType);renderStat
 
 function switchTab(type){currentType=type;document.querySelectorAll('.tab').forEach(b=>{if(b.dataset.type===type){b.classList.remove('btn-ghost');b.classList.add('btn-primary');}else{b.classList.remove('btn-primary');b.classList.add('btn-ghost');}});loadCurrent();}
 
-window.initFarmPage=function(){document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.type)));document.getElementById('btnClaim').addEventListener('click',()=>claim(currentType));document.getElementById('goPlay').addEventListener('click',()=>{location.href=`/index.html?uid=${encodeURIComponent(uid)}`});switchTab('usd');setInterval(loadCurrent,15000);};
+window.initFarmPage=function(){document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.type)));document.getElementById('btnClaim').addEventListener('click',()=>claim(currentType));document.getElementById('goPlay').addEventListener('click',()=>{location.href=uid?`/?uid=${encodeURIComponent(uid)}`:'/';});switchTab('usd');setInterval(loadCurrent,15000);};
 })();
 

@@ -1,0 +1,1401 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Classic — BTC Game</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+  :root{
+    --bg:#000; --text:#fff; --muted:#b9b9b9; --ring:#ff8c00;
+    --green:#1fa36a; --red:#c6423a; --card:#0b0b0b; --border:#1e1e1e; --chip:#121212;
+    --gap-xxs:6px; --gap-xs:8px; --gap-s:12px; --gap-m:16px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial}
+  .wrap{max-width:520px;margin:0 auto;padding:16px 14px 28px}
+  .price{font-size:24px;font-weight:800;text-align:center;margin-top:2px}
+  .sub{font-size:12px;color:var(--muted);text-align:center;margin:2px 0 8px}
+  .balance{text-align:center;font-size:16px;margin:4px 0 8px}
+
+  /* контейнер для вспышек */
+  .flash-target { position: relative; }
+
+  /* зелёная/красная вспышка рамки */
+  .flash-green, .flash-red {
+    box-shadow: 0 0 0 2px rgba(255,255,255,0);
+    animation-duration: 600ms;
+    animation-fill-mode: forwards;
+  }
+  @keyframes flashG {
+    0%   { box-shadow: 0 0 0 0 rgba(31,163,106,0.0); }
+    30%  { box-shadow: 0 0 0 4px rgba(31,163,106,0.9); }
+    100% { box-shadow: 0 0 0 0 rgba(31,163,106,0.0); }
+  }
+  @keyframes flashR {
+    0%   { box-shadow: 0 0 0 0 rgba(198,66,58,0.0); }
+    30%  { box-shadow: 0 0 0 4px rgba(198,66,58,0.9); }
+    100% { box-shadow: 0 0 0 0 rgba(198,66,58,0.0); }
+  }
+  .flash-green { animation-name: flashG; }
+  .flash-red   { animation-name: flashR;  }
+
+  /* всплывающие суммы */
+  .float-amount {
+    position: absolute; left: 50%; top: -8px; transform: translateX(-50%);
+    font-weight: 800; pointer-events: none; opacity: 0;
+    animation: floatUp 700ms ease-out forwards;
+    text-shadow: 0 1px 0 rgba(0,0,0,.6);
+  }
+  .float-plus  { color:#1fa36a; }
+  .float-minus { color:#c6423a; }
+
+  @keyframes floatUp {
+    0%   { transform: translate(-50%, 0);    opacity: 0; }
+    15%  { transform: translate(-50%, -6px); opacity: .95; }
+    100% { transform: translate(-50%, -28px); opacity: 0; }
+  }
+  .center{display:flex;justify-content:center;align-items:center;margin:8px 0}
+  .timer{position:relative;width:300px;height:300px}
+  .timer svg{width:100%;height:100%;display:block;transform:rotate(-90deg)}
+  /* стек контента внутри круга */
+  .inring-stack{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    pointer-events:none;
+  }
+
+  .inring-start{
+    font-size:14px; color:var(--muted);
+    margin-bottom:6px;
+  }
+
+  .inring-price{
+    font-size: var(--price-font, 40px);
+    font-weight:800;
+    letter-spacing:0.5px;
+    line-height:1;
+    color: currentColor;
+  }
+  @media (max-width:380px){ .inring-price{font-size:34px} }
+
+  .inring-bottom{
+    display:flex; align-items:center; gap:8px;
+    margin-top:8px;
+    font-size:16px; font-weight:800; color:#ddd;
+  }
+
+  .inring-dot{ opacity:.5 }
+
+  /* скрываем старые дубли */
+  #tleft{ display:none !important; }
+  #phase{ display:none !important; }
+  #timerUnder{ display:none !important; }
+  .bank{text-align:center;color:#fff;font-size:18px;margin-top:6px}
+  .daily-strip{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 10px;font-size:13px;display:flex;justify-content:space-between;align-items:center;margin:8px 0}
+  .row{display:flex;gap:14px;justify-content:center;margin:12px 0}
+  .btn{flex:1;border:none;border-radius:16px;padding:14px 0;color:#fff;font-size:20px;font-weight:800;cursor:pointer}
+  .btn:active{transform:translateY(1px) scale(.99)}
+  .btn[disabled]{opacity:.5;cursor:not-allowed} /* блок кликов, когда disabled */
+  .buy{background:var(--green)} .sell{background:var(--red)}
+
+  .menu{display:flex;gap:10px;justify-content:center;margin:8px 0 10px;flex-wrap:wrap}
+  .chipbtn{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-size:13px;color:#fff;cursor:pointer}
+
+  .history{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:4px 0 10px}
+  .chip{background:var(--chip);border:1px solid var(--border);border-radius:999px;padding:6px 10px;font-size:12px;display:flex;gap:6px;align-items:center}
+  .up{color:#5ad19c}.down{color:#ff6b6b}
+
+  .head{color:var(--muted);font-size:13px;margin:10px 0 6px;text-align:center}
+  .lb{display:grid;grid-template-columns:1fr;gap:8px}
+  .rank{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+  .rank .left{display:flex;gap:8px;align-items:center}
+  .badge{width:24px;height:24px;border-radius:999px;background:#222;display:flex;align-items:center;justify-content:center;font-weight:800}
+  
+  /* блокируем фон */
+  body.noscroll{overflow:hidden}
+
+  /* bottom sheets */
+  .sheet{position:fixed;left:0;right:0;bottom:0;background:#0b0b0b;border-top:1px solid var(--border);
+         border-radius:16px 16px 0 0;transform:translateY(100%);transition:transform .25s ease;
+         padding:14px 14px calc(18px + env(safe-area-inset-bottom));z-index:1000}
+  .sheet.open{transform:translateY(0)}
+  .sheet.kb{padding-bottom:calc(18px + var(--kb,0px) + env(safe-area-inset-bottom))}
+
+  /* бэкдроп */
+  .sheet-backdrop{position:fixed;inset:0;background:#0008;opacity:0;pointer-events:none;transition:opacity .2s;z-index:900}
+  .sheet-backdrop.show{opacity:1;pointer-events:auto}
+  .sheet h3{margin:6px 0 10px;font-size:16px}
+  .rowchips{display:flex;gap:8px;flex-wrap:wrap}
+  .chipopt{background:#121212;border:1px solid var(--border);border-radius:999px;padding:8px 12px;font-size:13px;cursor:pointer}
+  .chipopt.active{outline:2px solid var(--ring)}
+  .inputline{display:flex;gap:8px;margin:10px 0}
+  .inputline input{flex:1;background:#121212;border:1px solid var(--border);border-radius:10px;
+                   padding:10px;color:#fff;font-size:14px}
+  .sheet .btnrow{display:flex;gap:10px;margin-top:10px}
+  .sheet .btnrow .btnsm{flex:1;background:var(--green);border:none;border-radius:12px;color:#fff;padding:10px 0;font-weight:700}
+  .sheet .btnrow .btnsm.cancel{background:#333}
+  .btnsm[disabled]{ background:#333 !important; opacity:0.8; cursor:not-allowed; }
+  .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
+  .stat-row{display:flex;justify-content:space-between;gap:8px;margin:8px 0}
+  .stat-row .stat-label{color:var(--muted);font-size:13px}
+  .stat-row .stat-value{font-size:15px;font-weight:700}
+
+  #sheetChatFeed .feed{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
+  .msg{background:#121212;border:1px solid var(--border);border-radius:12px;padding:10px}
+  .msg .meta{color:#aaa;font-size:12px;margin-bottom:4px}
+  .msg .text{font-size:14px;line-height:1.3}
+
+  .adline{
+    background: var(--card);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:12px;
+    margin:8px 0 12px;
+    display:flex;
+    gap:12px;
+  }
+  .ad-left{ flex:1; }
+  .ad-top{ display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+  .crown{ font-size:20px; line-height:1 }
+  .ad-user{ font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .ad-text{
+    color:#ddd;
+    font-size:14px;
+    line-height:1.3;
+    overflow:hidden;
+    display:-webkit-box;
+    -webkit-line-clamp:2;
+    -webkit-box-orient:vertical;
+  }
+  .ad-actions{ display:flex; flex-direction:column; align-items:flex-end; gap:6px; }
+  .ad-price{ color:var(--muted); font-size:13px; text-align:right }
+  .ad-write{ padding:10px 14px }
+  .ad-info{ display:flex; justify-content:space-between; align-items:center; margin:6px 0 0; }
+  .ad-count{ color:var(--muted); font-size:13px }
+  .ad-enter{ color:var(--muted); font-size:13px }
+  .ad-text-change{ animation: adTextChange .3s ease-out }
+  @keyframes adTextChange{
+    from{ opacity:0; transform:translateY(4px); }
+    to{ opacity:1; transform:translateY(0); }
+  }
+
+  .card.profile{background:#0b0b0b;border:1px solid var(--border);border-radius:16px;padding:12px 14px;margin-top:10px}
+  .card.profile .row{display:flex;align-items:center}
+  .card.profile .between{justify-content:space-between}
+  .card.profile .title{font-weight:800}
+  .card.profile .badge{background:#121212;border:1px solid var(--border);border-radius:999px;padding:4px 10px;font-size:12px}
+  .xpbar{height:10px;background:#171717;border:1px solid #242424;border-radius:999px;overflow:hidden;margin:8px 0}
+  .xpbar .fill{height:100%;background:linear-gradient(90deg,#1fa36a,#45c987);width:0%;transition:width .35s ease}
+  .card.profile .muted{color:#b9b9b9;font-size:12px}
+
+  /* ===== accessibility ===== */
+  @media (prefers-reduced-motion: reduce) {
+    .flash-win, .shake-outbid, .crown-bounce, .ad-shimmer::before {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+
+  /* ===== базовая карточка ===== */
+  #adLine {
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* лёгкий постоянный шимер рамки */
+  .ad-shimmer::before {
+    content:"";
+    position:absolute; inset:-1px;
+    border-radius:inherit;
+    pointer-events:none;
+    background:
+      radial-gradient(60% 60% at 10% 10%, #ffffff18, transparent 60%) ,
+      radial-gradient(60% 60% at 90% 90%, #ffffff10, transparent 60%);
+    filter: blur(6px);
+    opacity:.0;
+    animation: shimmer 4s ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    0%,60%,100% { opacity:.0; }
+    20% { opacity:.35; }
+  }
+
+  /* вспышка победы */
+  .flash-win {
+    animation: flashWin 520ms ease-out;
+    box-shadow: 0 0 0 0 rgba(46, 204, 113, .55);
+  }
+  @keyframes flashWin {
+    0%   { box-shadow: 0 0 0 0 rgba(46, 204, 113, .8); border-color:#27ae60; }
+    50%  { box-shadow: 0 0 16px 6px rgba(46, 204, 113, .35); }
+    100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
+  }
+
+  /* встряска при перебитии */
+  .shake-outbid {
+    animation: shakeOutbid 420ms cubic-bezier(.36,.07,.19,.97);
+  }
+  @keyframes shakeOutbid {
+    10%, 90% { transform: translateX(-1px); }
+    20%, 80% { transform: translateX(2px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+  }
+
+  /* подпрыгивание короны при смене лидера */
+  .crown-bounce {
+    display:inline-block;
+    animation: crownBounce 600ms ease-out;
+    transform-origin: 50% 100%;
+  }
+  @keyframes crownBounce {
+    0%   { transform: translateY(0) scale(1) rotate(0); }
+    35%  { transform: translateY(-6px) scale(1.05) rotate(-6deg); }
+    60%  { transform: translateY(0)  scale(1) rotate(0); }
+    80%  { transform: translateY(-2px) scale(1.02);}
+    100% { transform: translateY(0)  scale(1); }
+  }
+
+  /* плавная подсветка цены при её изменении */
+  .ad-price-changed {
+    animation: pricePulse 600ms ease-out;
+  }
+  @keyframes pricePulse {
+    0%   { color:#fff; text-shadow: 0 0 0 rgba(255,255,255,0); }
+    50%  { color:#9be7a1; text-shadow: 0 0 6px rgba(155,231,161,.6); }
+    100% { color:#fff; text-shadow: 0 0 0 rgba(255,255,255,0); }
+  }
+
+  /* скрыть старый верхний баланс */
+  #bal { display: none; }
+
+  /* карточка уровня — выравнивание заголовка и баланса */
+  .levelcard { background: var(--card); border:1px solid var(--border); border-radius:16px; padding:14px; margin:12px 0; }
+  .level-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .level-title { font-weight:800; font-size:18px; }
+  .level-balance { color:#ddd; font-size:14px; white-space:nowrap; }
+
+  .level-bar { height:10px; background:#151515; border-radius:999px; overflow:hidden; margin:10px 0 6px; }
+  .level-fill { height:100%; width:0%; background:var(--green); }
+
+  .level-xp { color:#aaa; font-size:12px; }
+
+  /* меню — компактнее и под уровнем */
+  .menu { margin-top:8px; }
+
+  /* цена BTC внутри круга — уменьшить на 5% */
+  #price { transform: scale(0.95); transform-origin:center; }
+
+  #fwCanvas{
+    position:fixed; inset:0; z-index:9999; pointer-events:none; display:none;
+    backdrop-filter:brightness(0.9);
+  }
+
+  .result-banner{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:none; opacity:0; transform:scale(.9);
+    font-weight:900; letter-spacing:.5px; text-align:center;
+    text-shadow:0 6px 24px rgba(0,0,0,.45);
+    transition:opacity .25s ease, transform .25s ease;
+    font-size: clamp(32px, 8vw, 72px);
+  }
+  .result-banner.show{ opacity:1; transform:scale(1); }
+
+  .result-win{ color:#20d28a; }
+  .result-lose{ color:#ff6b6b; }
+
+.ring-flash{ filter: drop-shadow(0 0 16px currentColor) brightness(1.25); }
+/* Shop sheet tabs */
+.tabs{display:flex;gap:8px;margin:6px 0 10px}
+.tab-btn{flex:1;background:#121212;border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;color:#fff;cursor:pointer}
+.tab-btn.active{outline:2px solid var(--ring)}
+.tab-pane{display:none}
+.tab-pane.show{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="balance flash-target" id="bal">Баланс: $— • VOP: — 💎</div>
+  <div id="viewerBanner" style="display:none;text-align:center;margin:6px 0 10px;">
+    <div style="margin-bottom:6px">Открой в Telegram, чтобы играть</div>
+    <a id="viewerOpen" href="https://t.me/realpricebtc_bot?startapp=go" style="background:#1fa36a;color:#fff;padding:6px 12px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px;">Открыть бота</a>
+  </div>
+
+  <div class="center">
+    <div class="timer">
+      <svg viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet">
+        <circle cx="160" cy="160" r="140" stroke="#1f1f1f" stroke-width="14" fill="none"/>
+        <circle id="betArc" cx="160" cy="160" r="140"
+                stroke="#1fa36a" stroke-width="6" fill="none"
+                stroke-linecap="round" stroke-dasharray="879.645" stroke-dashoffset="0" opacity="0.35"/>
+        <circle id="ring" cx="160" cy="160" r="140" stroke="var(--ring)" stroke-width="14" fill="none"
+                stroke-linecap="round" stroke-dasharray="879.645" stroke-dashoffset="0"/>
+      </svg>
+
+      <!-- ЕДИНЫЙ стек внутри круга -->
+      <div class="inring-stack">
+        <div class="inring-start" id="startInRing">Старт: —</div>
+        <div class="inring-price" id="price">$—</div>
+        <div class="inring-bottom">
+          <span class="inring-timer" id="ringTimer">00:60</span>
+          <span class="inring-dot">•</span>
+          <span class="inring-phase" id="ringPhase">Ставки открыты</span>
+        </div>
+      </div>
+      <div class="result-banner" id="resultBanner" aria-live="polite"></div>
+    </div>
+  </div>
+  <div class="bank" id="bank">Банк: $0</div>
+  <div class="bank" id="myBet"></div>
+
+  <div class="row">
+    <button class="btn buy" id="buy">↑ BUY</button>
+    <button class="btn sell" id="sell">↓ SELL</button>
+  </div>
+  <div class="levelcard" id="levelCard">
+    <div class="level-head">
+      <div class="level-title">Уровень <span id="lvlNum">1</span></div>
+      <div class="level-balance">Баланс: <span id="balInline">$—</span> • VOP: <span id="vopInline">—</span> 💎</div>
+    </div>
+    <div class="level-bar">
+      <div class="level-fill" id="xpFill"></div>
+    </div>
+    <div class="level-xp" id="xpText">0 / 5 000 XP</div>
+  </div>
+
+  <div id="dailyQuestStrip" class="daily-strip"></div>
+
+  <div class="adline ad-shimmer" id="adLine">
+    <div class="ad-left">
+      <div class="ad-top">
+        <span class="crown">👑</span>
+        <span class="ad-user" id="adUser">@user</span>
+      </div>
+      <div class="ad-text" id="adText">Сообщение победителя…</div>
+    </div>
+    <div class="ad-actions">
+      <div class="ad-price" id="adPrice">Цена: $100</div>
+      <button class="chipbtn ad-write" id="adWrite">✍️ Написать</button>
+    </div>
+  </div>
+
+  <!-- меню: БЕЗ кнопки "Проверить" -->
+  <div class="menu">
+    <button class="chipbtn" id="cfgBtn">⚙️ Ставка</button>
+    <button class="chipbtn" id="topupBtn">Пополнение</button>
+    <button class="chipbtn" id="insBtn">Страховка</button>
+    <button class="chipbtn" id="statsBtn">Статистика</button>
+    <button class="chipbtn" id="chatFeedBtn">ЧАТ</button>
+    <button class="chipbtn" id="switchToArenaBtn">Арена</button>
+    <button class="chipbtn" id="starsBtn">Купить $</button>
+    <button class="chipbtn" id="shopBtn">Магазин<span id="farmPill" class="chip" style="display:none;margin-left:4px;background:var(--green);color:#000;font-weight:700"></span></button>
+  </div>
+  <div id="viewerHint" style="display:none;text-align:center;color:var(--muted);font-size:13px;margin:6px 0 10px;">Зайдите через Telegram WebApp, чтобы играть.</div>
+
+  <div class="head">Топ победителей за час</div>
+  <div class="lb" id="lb"></div>
+  <div class="history" id="hist"></div>
+</div>
+
+<canvas id="fwCanvas"></canvas>
+
+<!-- Backdrop -->
+<div class="sheet-backdrop" id="sheetBg"></div>
+
+<!-- SHEET: настройки ставки -->
+<div class="sheet" id="sheetStake">
+  <h3>Сумма ставки</h3>
+  <div class="rowchips" id="chips">
+    <button class="chipopt" data-v="50">$50</button>
+    <button class="chipopt" data-v="100">$100</button>
+    <button class="chipopt" data-v="250">$250</button>
+    <button class="chipopt" data-v="500">$500</button>
+    <button class="chipopt" data-v="1000">$1000</button>
+  </div>
+  <div class="inputline">
+    <input id="customAmt" type="number" min="50" step="1" placeholder="Другая сумма, $ (≥50)">
+  </div>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Отмена</button>
+    <button class="btnsm" id="cfgSave">Сохранить</button>
+  </div>
+</div>
+
+<!-- SHEET: пополнение (подписка/проверка/ежедневка/реф) -->
+<div class="sheet" id="sheetTopup">
+  <h3>Пополнение баланса</h3>
+  <p>• +$5000 — за подписку на канал @erc20coin (один раз)</p>
+  <p>• +$1000 — за ежедневный вход</p>
+  <p>• +$500 — за каждого друга по реф-ссылке</p>
+  <div class="btnrow">
+    <button class="btnsm" id="openChannel">Открыть канал</button>
+    <button class="btnsm" id="refBtn">+500$</button>
+  </div>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Закрыть</button>
+  </div>
+</div>
+
+<!-- SHEET: покупка Stars -->
+<div class="sheet" id="sheetStars">
+  <h3>Купить звёзды ⭐</h3>
+  <p>Выбери пакет, оплати в Telegram Stars — баланс обновится автоматически.</p>
+  <div class="rowchips" id="starsPacks">
+    <button class="chipopt" data-pack="100">100⭐ → $3 000</button>
+    <button class="chipopt" data-pack="500">500⭐ → $16 000</button>
+    <button class="chipopt" data-pack="1000">1000⭐ → $35 000</button>
+    <button class="chipopt" data-pack="10000">10000⭐ → $400 000</button>
+    <button class="chipopt" data-pack="30000">30000⭐ → $1 500 000</button>
+  </div>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Отмена</button>
+    <button class="btnsm" id="buyStars">Оплатить</button>
+  </div>
+</div>
+
+<!-- SHEET: страховки -->
+<div class="sheet" id="sheetIns">
+  <h3>Страховки</h3>
+  <p>Возвращают 50% от суммы проигрыша</p>
+  <p>1000⭐ → 100 страховок</p>
+  <p id="insCount">Доступно: 0</p>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Закрыть</button>
+    <button class="btnsm" id="buyIns">Купить за ⭐</button>
+  </div>
+</div>
+
+<!-- SHEET: статистика -->
+<div class="sheet" id="sheetStats">
+  <h3>Статистика</h3>
+  <div class="stat-row"><div class="stat-label">Побед:</div><div id="statsWins" class="stat-value">0</div></div>
+  <div class="stat-row"><div class="stat-label">Поражений:</div><div id="statsLosses" class="stat-value">0</div></div>
+  <div class="stat-row"><div class="stat-label">Онлайн:</div><div id="statsOnline" class="stat-value">0</div></div>
+  <div class="stat-row"><div class="stat-label">Приглашений:</div><div id="statsInv" class="stat-value">0</div></div>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Закрыть</button>
+  </div>
+</div>
+
+<!-- SHEET: аукцион сообщения -->
+<div class="sheet" id="sheetAd">
+  <h3>Ваше сообщение</h3>
+  <div class="inputline">
+    <input id="adInput" type="text" maxlength="50" placeholder="Сообщение (до 50 символов)">
+  </div>
+  <div class="ad-info">
+    <div class="ad-count" id="adCount">0/50</div>
+    <div class="ad-enter" id="adEnter">Цена сейчас: $100</div>
+  </div>
+  <div class="btnrow">
+    <button class="btnsm cancel" data-close>Отмена</button>
+    <button class="btnsm" id="adSend" disabled>Отправить</button>
+  </div>
+</div>
+
+<!-- SHEET: history of paid chat -->
+  <div class="sheet" id="sheetChatFeed">
+    <h3>история чата</h3>
+    <div id="chatFeed" class="feed"></div>
+    <div class="btnrow"><button class="btnsm cancel" data-close>Закрыть</button></div>
+  </div>
+
+  <!-- SHEET: Магазин -->
+  <div class="sheet" id="sheetShop">
+    <h3>Магазин</h3>
+
+    <div class="tabs" id="shopTabs">
+      <button class="tab-btn active" data-tab="boosts">Бусты</button>
+      <button class="tab-btn" data-tab="cosm">Косметика</button>
+      <button class="tab-btn" data-tab="events">События</button>
+      <button class="tab-btn" data-tab="clans">Кланы</button>
+    </div>
+
+    <div class="tab-pane show" id="tab-boosts">
+      <p>Скоро: x2 XP на 30/60 мин, комбо-бусты, сезонные задания.</p>
+    </div>
+    <div class="tab-pane" id="tab-cosm">
+      <p>Скоро: рамки профиля, цвет ника, салюты побед.</p>
+    </div>
+    <div class="tab-pane" id="tab-events">
+      <p>Скоро: мини-турниры, джекпоты недели, марафоны.</p>
+    </div>
+    <div class="tab-pane" id="tab-clans">
+      <p>Скоро: кланы, клановые бусты и рейтинги.</p>
+    </div>
+
+    <div class="btnrow">
+      <button class="btnsm cancel" data-close>Закрыть</button>
+    </div>
+  </div>
+
+<script>
+document.title = 'Classic — BTC Game';
+
+const BOT_USERNAME = 'realpricebtc_bot';
+const CHANNEL_LINK = 'https://t.me/erc20coin';
+
+const tg = window.Telegram?.WebApp;
+
+function go(url){
+  const uid = new URLSearchParams(location.search).get('uid');
+  location.href = uid ? `${url}?uid=${uid}` : url;
+}
+
+let lastResultId = null;
+
+function formatHandle(u){
+  if(!u) return '';
+  const name = String(u).trim();
+  return name.startsWith('@') ? name : '@'+name;
+}
+
+function vibSuccess(){
+  try{
+    Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success');
+    Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('heavy');
+  }catch(_){ }
+  if (navigator.vibrate) navigator.vibrate([20,40,20]);
+}
+function vibError(){
+  try{
+    Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('error');
+    Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('heavy');
+  }catch(_){ }
+  if (navigator.vibrate) navigator.vibrate([60,40,60]);
+}
+
+function showResultBanner({ youWin, amount }){
+  const banner = document.getElementById('resultBanner');
+  if (!banner) return;
+  banner.className = 'result-banner show ' + (youWin ? 'result-win' : 'result-lose');
+  banner.textContent = youWin ? 'YOU WON!' : 'YOU LOSE!';
+  try{
+    const ring = document.getElementById('ring');
+    ring?.classList.add('ring-flash');
+    ring?.style?.setProperty('color', youWin ? '#20d28a' : '#ff6b6b');
+    setTimeout(()=> ring?.classList.remove('ring-flash'), 1200);
+  }catch(_){ }
+  youWin ? vibSuccess() : vibError();
+
+  if (typeof amount === 'number'){
+    flyAmountChip(amount, youWin);
+  }
+
+  setTimeout(()=> banner.classList.remove('show'), 1600);
+}
+
+function flyAmountChip(amount, youWin){
+  const chip = document.createElement('div');
+  chip.textContent = (youWin?'+$':'-$') + Math.abs(amount).toLocaleString();
+  chip.style.cssText = `
+    position:absolute; left:50%; top:52%;
+    transform:translate(-50%,-50%); padding:.35rem .6rem;
+    border-radius:999px; font-weight:800; font-size:14px;
+    background:rgba(0,0,0,.6); border:1px solid #2b2b2b;
+    color:${youWin?'#20d28a':'#ff6b6b'}; opacity:0;
+    transition: transform .9s cubic-bezier(.2,.8,.2,1), opacity .9s;
+  `;
+  const host = document.querySelector('.timer') || document.body;
+  host.appendChild(chip);
+  requestAnimationFrame(()=>{
+    chip.style.opacity='1';
+    chip.style.transform='translate(-50%,-160%)';
+  });
+  setTimeout(()=> chip.remove(), 1100);
+}
+
+// Единая обёртка для POST — ВСЕГДА шлём initData
+async function api(path, payload={}) {
+  const initData = tg?.initData || '';
+  const r = await fetch(path, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ initData, ...payload })
+  }).then(r=>r.json()).catch(()=>({ok:false,error:'NET'}));
+  return r;
+}
+
+// ====== Точка входа фронта ======
+(async () => {
+  try { tg?.ready?.(); } catch {}
+  const uid = tg?.initDataUnsafe?.user?.id || null;
+  const username = formatHandle(tg?.initDataUnsafe?.user?.username) || null;
+  const initData = tg?.initData || '';
+  const IS_VIEWER = !uid;
+
+  let CURRENT_PHASE = 'idle'; // <-- глобально храним текущую фазу
+let INS_COUNT = 0;
+let lastShownSettlementKey = null;
+
+let adState = {
+  user: '',
+  text: '',
+  nextPrice: 100
+};
+
+let prevAd = null;
+let adPriceTimer = null;
+let selectedPack = null;
+
+// elements
+const priceEl = document.getElementById('price');
+const startInRing = document.getElementById('startInRing');
+const ringTimer   = document.getElementById('ringTimer');
+const ringPhase   = document.getElementById('ringPhase');
+const balEl   = document.getElementById('bal');
+const balInline = document.getElementById('balInline');
+const vopInline = document.getElementById('vopInline');
+const ring    = document.getElementById('ring');
+const betArc  = document.getElementById('betArc');
+const bankEl  = document.getElementById('bank');
+const myBetEl = document.getElementById('myBet');
+const buyBtn  = document.getElementById('buy');
+const sellBtn = document.getElementById('sell');
+const histEl  = document.getElementById('hist');
+const lbEl    = document.getElementById('lb');
+const adLine     = document.getElementById('adLine');
+const adUserEl   = document.getElementById('adUser');
+const adTextEl   = document.getElementById('adText');
+const adPriceEl  = document.getElementById('adPrice');
+const adWriteBtn = document.getElementById('adWrite');
+
+const refBtn  = document.getElementById('refBtn');
+const topupBtn= document.getElementById('topupBtn');
+const starsBtn= document.getElementById('starsBtn');
+const insBtn  = document.getElementById('insBtn');
+const statsBtn= document.getElementById('statsBtn');
+const chatFeedBtn = document.getElementById('chatFeedBtn');
+const switchToArenaBtn = document.getElementById('switchToArenaBtn');
+const cfgBtn  = document.getElementById('cfgBtn');
+const shopBtn = document.getElementById('shopBtn');
+const farmPill = document.getElementById('farmPill');
+
+// sheets
+const sheetBg     = document.getElementById('sheetBg');
+const sheetStake  = document.getElementById('sheetStake');
+const sheetTopup  = document.getElementById('sheetTopup');
+const sheetStars  = document.getElementById('sheetStars');
+const sheetIns    = document.getElementById('sheetIns');
+const sheetStats  = document.getElementById('sheetStats');
+const sheetAd     = document.getElementById('sheetAd');
+const sheetChatFeed = document.getElementById('sheetChatFeed');
+const sheetShop  = document.getElementById('sheetShop');
+const shopTabs   = document.getElementById('shopTabs');
+const chatFeed      = document.getElementById('chatFeed');
+
+// stake controls
+const chipsBox  = document.getElementById('chips');
+const customAmt = document.getElementById('customAmt');
+const cfgSave   = document.getElementById('cfgSave');
+
+// topup controls
+const openChannel = document.getElementById('openChannel');
+
+// stars controls
+const starsPacks = document.getElementById('starsPacks');
+const buyStars   = document.getElementById('buyStars');
+const insCountEl = document.getElementById('insCount');
+const buyIns     = document.getElementById('buyIns');
+const adInput    = document.getElementById('adInput');
+const adSend     = document.getElementById('adSend');
+const adCount    = document.getElementById('adCount');
+const adEnter    = document.getElementById('adEnter');
+
+const viewerBanner = document.getElementById('viewerBanner');
+const viewerHint   = document.getElementById('viewerHint');
+const viewerOpen   = document.getElementById('viewerOpen');
+
+document.addEventListener('DOMContentLoaded', () => {
+  const hist = document.getElementById('hist');
+  const lb   = document.getElementById('lb');
+  if (hist && lb && lb.parentNode) {
+    lb.parentNode.insertBefore(hist, lb.nextSibling);
+  }
+});
+
+if (IS_VIEWER) {
+  [buyBtn, sellBtn, cfgBtn, refBtn, topupBtn, insBtn, statsBtn, chatFeedBtn, switchToArenaBtn, starsBtn, adWriteBtn, buyStars, buyIns, adSend].forEach(b => b && (b.disabled = true));
+  viewerBanner.style.display = 'block';
+  viewerHint.style.display   = 'block';
+  viewerOpen.onclick = (e)=>{ e.preventDefault(); const link = `https://t.me/${BOT_USERNAME}?startapp=go`; try{ if(window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(link); else window.location.href = link; } catch{ window.location.href = link; } };
+  document.addEventListener('pointerdown', e => {
+    const b = e.target.closest('button');
+    if (b && b.disabled) alert('Доступно только в Telegram');
+  });
+}
+
+// нормализуем ник: гарантируем один '@'
+function normUser(u){
+  const name = String(u||'').replace(/^@+/, '');
+  return '@' + (name || 'anon');
+}
+
+// лёгкий haptic (если доступен в Telegram WebApp)
+function hapticImpact(style = 'light') {
+  const H = window.Telegram?.WebApp?.HapticFeedback;
+  try {
+    if (!H) return;
+    if (style === 'success') return H.notificationOccurred('success');
+    if (style === 'warning') return H.notificationOccurred('warning');
+    if (style === 'error')   return H.notificationOccurred('error');
+    H.impactOccurred(style); // 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'
+  } catch {}
+}
+
+// навешивает/снимает класс с автосбросом по окончании анимации
+function playOnce(el, cls){
+  if (!el) return;
+  el.classList.remove(cls);
+  // форс-reflow, чтобы перезапустить анимацию
+  // eslint-disable-next-line no-unused-expressions
+  el.offsetHeight;
+  el.classList.add(cls);
+  const off = () => { el.classList.remove(cls); el.removeEventListener('animationend', off); };
+  el.addEventListener('animationend', off);
+}
+
+function updateAdEnter(){
+  const price = Number(adState.nextPrice || 0);
+  if (adEnter) adEnter.textContent = 'Цена сейчас: $' + price.toLocaleString();
+}
+
+// отрисовка строки
+function renderAdLine() {
+  const line  = adLine;
+  const user  = adUserEl;
+  const text  = adTextEl;
+  const price = adPriceEl;
+
+  const newUser   = normUser(adState.user);
+  const newText   = (adState.text || '').replace(/\n/g, ' ').slice(0, 50);
+  const nextPrice = Number(adState.nextPrice || 0);
+
+  user.textContent  = newUser;
+  text.textContent  = newText || 'Пока пусто.';
+  price.textContent = 'Цена: $' + nextPrice.toLocaleString();
+  updateAdEnter();
+
+  line.classList.add('ad-shimmer');
+
+  if (prevAd) {
+    if (prevAd.user !== newUser) {
+      playOnce(line, 'shake-outbid');
+      const crown = line.querySelector('.crown');
+      if (crown) playOnce(crown, 'crown-bounce');
+      hapticImpact('medium');
+    }
+
+    if (prevAd.nextPrice !== nextPrice) {
+      playOnce(price, 'ad-price-changed');
+    }
+    if (prevAd.text !== newText) {
+      playOnce(text, 'ad-text-change');
+    }
+  }
+
+  prevAd = { user: newUser, nextPrice, text: newText };
+}
+renderAdLine();
+// модалка «написать» обработана в bindOnce()
+
+const CIRC = 2*Math.PI*140;
+const RLEN = CIRC;
+ring.setAttribute('stroke-dasharray', CIRC);
+
+// --- Haptic helpers (Telegram + fallback vibration)
+function hapticLight() {
+  try { Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light'); } catch {}
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+function hapticWin() {
+  try { Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('success'); } catch {}
+  if (navigator.vibrate) navigator.vibrate([20, 30, 20]);
+}
+function hapticLose() {
+  try { Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('error'); } catch {}
+  if (navigator.vibrate) navigator.vibrate([40, 40, 40]);
+}
+
+// --- DOM flash & float amount
+function flash(elem, type /* 'green' | 'red' */) {
+  if (!elem) return;
+  elem.classList.remove('flash-green','flash-red');
+  // force reflow
+  void elem.offsetWidth;
+  elem.classList.add(type === 'green' ? 'flash-green' : 'flash-red');
+  setTimeout(()=>elem.classList.remove('flash-green','flash-red'), 650);
+}
+
+function floatAmount(parent, text, plus /*true for +, false for -*/) {
+  if (!parent) return;
+  const span = document.createElement('span');
+  span.className = 'float-amount ' + (plus ? 'float-plus' : 'float-minus');
+  span.textContent = (plus ? '+' : '-') + '$' + Number(text||0).toLocaleString();
+  parent.appendChild(span);
+  setTimeout(()=>span.remove(), 750);
+}
+
+// helpers
+function fmt(n){ return '$'+Number(n||0).toLocaleString(); }
+function setBalanceVal(amount, vop){
+  const vopFmt = Number(vop||0).toLocaleString('ru-RU');
+  const txt = 'Баланс: ' + fmt(amount) + ' • VOP: ' + vopFmt + ' 💎';
+  if (balEl) balEl.textContent = txt;
+  if (balInline) balInline.textContent = fmt(amount);
+  if (vopInline) vopInline.textContent = vopFmt;
+}
+function renderProfile(p){
+  if (!p) return;
+  const lvlEl = document.getElementById('lvlNum');
+  if (lvlEl) lvlEl.textContent = p.level;
+  const prog = Math.max(0, Math.min(1, (p.level_progress || 0) / (p.level_threshold || 1)));
+  const xpFillEl = document.getElementById('xpFill');
+  if (xpFillEl) xpFillEl.style.width = (prog*100).toFixed(1)+'%';
+  const xpTextEl = document.getElementById('xpText');
+  if (xpTextEl) xpTextEl.textContent = `${Number(p.level_progress || 0).toLocaleString()} / ${Number(p.level_threshold || 0).toLocaleString()} XP`;
+}
+function phaseText(p){
+  if (p==='betting') return 'Ставки открыты';
+  if (p==='locked')  return 'Ставки закрыты';
+  if (p==='pause')   return 'Пауза';
+  return 'Ожидание';
+}
+function chip(h){
+  const dir = h.side==='BUY'?'↑ BUY':'↓ SELL';
+  const cls = h.side==='BUY'?'up':'down';
+  const pct = (h.pct>0?'+':'') + h.pct.toFixed(2) + '%';
+  return `<div class="chip"><span class="${cls}">${dir}</span><span class="${cls}">${pct}</span><span>${fmt(h.win)}</span></div>`;
+}
+
+// sheet helpers
+let openedSheet = null;
+function openSheet(el){
+  if (!el || openedSheet === el) return;
+  closeAllSheets();
+  el.classList.add('open');
+  sheetBg.classList.add('show');
+  document.body.classList.add('noscroll');
+  openedSheet = el;
+}
+function closeAllSheets(){
+  document.querySelectorAll('.sheet.open').forEach(s=>s.classList.remove('open'));
+  sheetBg.classList.remove('show');
+  document.body.classList.remove('noscroll');
+  if (adPriceTimer) { clearInterval(adPriceTimer); adPriceTimer = null; }
+  openedSheet = null;
+}
+
+// settings storage
+function getSettings(){
+  return { amount: Math.max(50, Number(localStorage.getItem('bet_amount')||50)) };
+}
+function setSettings(s){
+  localStorage.setItem('bet_amount', String(Math.max(50, s.amount||50)));
+}
+function highlightChips(val){
+  document.querySelectorAll('#chips .chipopt').forEach(b=>{
+    b.classList.toggle('active', Number(b.dataset.v)===Number(val));
+  });
+}
+
+function applyViewportPadding(){
+  const vv = window.visualViewport;
+  const kb = vv ? Math.max(0, window.innerHeight - vv.height) : 0;
+  document.documentElement.style.setProperty('--kb', kb + 'px');
+}
+if (window.visualViewport){
+  visualViewport.addEventListener('resize', applyViewportPadding);
+  visualViewport.addEventListener('scroll', applyViewportPadding);
+  applyViewportPadding();
+}
+document.addEventListener('focusin', e=>{
+  const s = e.target.closest('.sheet');
+  if (s) s.classList.add('kb');
+});
+document.addEventListener('focusout', e=>{
+  const s = e.target.closest('.sheet');
+  if (s) s.classList.remove('kb');
+});
+
+let bindingsDone = false;
+function bindOnce(){
+  if (bindingsDone) return;
+  bindingsDone = true;
+
+  sheetBg.addEventListener('click', closeAllSheets);
+  document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click', closeAllSheets));
+
+  buyBtn.onclick  = () => { hapticLight(); place('BUY'); };
+  sellBtn.onclick = () => { hapticLight(); place('SELL'); };
+  cfgBtn.onclick   = ()=>{ highlightChips(getSettings().amount); customAmt.value=''; openSheet(sheetStake); };
+  topupBtn.onclick = ()=> openSheet(sheetTopup);
+  insBtn.onclick   = ()=>{ insCountEl.textContent = 'Доступно: ' + INS_COUNT; openSheet(sheetIns); };
+  starsBtn.onclick = ()=> openSheet(sheetStars);
+  statsBtn.onclick = ()=>{ loadMyStats(); openSheet(sheetStats); };
+    chatFeedBtn.onclick = async ()=>{
+      await loadChatFeed();
+      openSheet(sheetChatFeed);
+    };
+    shopBtn.onclick = ()=>{ location.href = `/farm.html?uid=${encodeURIComponent(uid)}`; };
+    shopTabs.addEventListener('click', (e)=>{
+      const b = e.target.closest('.tab-btn'); if(!b) return;
+      shopTabs.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      const tab = b.dataset.tab;
+      sheetShop.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('show'));
+      sheetShop.querySelector(`#tab-${tab}`)?.classList.add('show');
+    });
+    switchToArenaBtn?.addEventListener('click', ()=>go('/'));
+  chipsBox.addEventListener('click', e=>{
+    const b = e.target.closest('.chipopt'); if (!b) return;
+    document.querySelectorAll('#chips .chipopt').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active'); customAmt.value='';
+  });
+  cfgSave.onclick = ()=>{
+    let val = Number(customAmt.value || 0);
+    if (!val){
+      const active = document.querySelector('#chips .chipopt.active');
+      val = active ? Number(active.dataset.v) : getSettings().amount;
+    }
+    if (val < 50) { alert('Минимальная ставка $50'); return; }
+    setSettings({ amount: Math.floor(val) });
+    closeAllSheets();
+    alert('Сохранено: $' + Math.floor(val));
+  };
+  openChannel.onclick = ()=>{
+    try{
+      if (window.Telegram?.WebApp?.openTelegramLink) Telegram.WebApp.openTelegramLink(CHANNEL_LINK);
+      else window.location.href = CHANNEL_LINK;
+    }catch(e){ window.location.href = CHANNEL_LINK; }
+  };
+  refBtn.onclick = ()=>{
+    const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
+    if (navigator.share){
+      navigator.share({ title:'BTC Game', text:'Залетай в игру!', url:link }).catch(()=>{});
+    } else {
+      alert('Твоя реф-ссылка:\n' + link + '\nЗа каждого друга +$500 после его первого входа.');
+    }
+  };
+  starsPacks.addEventListener('click', e=>{
+    const b = e.target.closest('.chipopt'); if (!b) return;
+    document.querySelectorAll('#starsPacks .chipopt').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    selectedPack = b.dataset.pack;
+  });
+  buyStars.onclick = async ()=>{
+    const pack = selectedPack || '100';
+    const resp = await api('/api/stars/create', { pack }).catch(()=>({ ok:false }));
+    if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
+
+    const open = Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
+      if (status === 'paid') {
+        await refreshBalance();
+        alert('Оплата успешна! Баланс обновлён.');
+      } else if (status === 'cancelled') {
+        alert('Платёж отменён');
+      } else if (status === 'failed') {
+        alert('Платёж не прошёл');
+      }
+    });
+    try { await open; await refreshBalance(); } catch {}
+    closeAllSheets();
+  };
+  buyIns.onclick = async ()=>{
+    const resp = await api('/api/insurance/create').catch(()=>({ ok:false }));
+    if (!resp.ok) { alert('Не удалось создать платёж.'); return; }
+
+    const open = Telegram?.WebApp?.openInvoice?.(resp.link, async (status) => {
+      if (status === 'paid') {
+        await refreshBalance();
+        alert('Покупка успешна!');
+      } else if (status === 'cancelled') {
+        alert('Платёж отменён');
+      } else if (status === 'failed') {
+        alert('Платёж не прошёл');
+      }
+    });
+    try { await open; await refreshBalance(); } catch {}
+    closeAllSheets();
+  };
+  adWriteBtn.onclick = async ()=>{
+    hapticImpact('light');
+    adInput.value = '';
+    adCount.textContent = '0/50';
+    adSend.disabled = true;
+    await adPoll();
+    openSheet(sheetAd);
+    adInput.focus();
+    adPriceTimer = setInterval(adPoll, 1000);
+  };
+  adInput.addEventListener('input', ()=>{
+    adInput.value = adInput.value.slice(0,50);
+    const len = adInput.value.length;
+    adCount.textContent = len + '/50';
+    adSend.disabled = len === 0;
+  });
+  adSend.onclick = async ()=>{
+    const text = adInput.value.trim().replace(/\n/g,' ').slice(0,50);
+    if (!text) return;
+    const r = await api('/api/shout/bid', { message:text }).catch(()=>({ ok:false }));
+    if (!r.ok) {
+      alert(r.error==='INSUFFICIENT_BALANCE' ? 'Недостаточно средств' : 'Цена изменилась, попробуйте снова');
+      await adPoll();
+      return;
+    }
+    closeAllSheets();
+    playOnce(adLine, 'flash-win');
+    hapticImpact('medium');
+    await adPoll();
+    await refreshBalance();
+  };
+}
+
+// api
+async function auth(){
+  const r = await fetch('/api/auth', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ uid, username })
+  }).then(r=>r.json()).catch(()=>({ok:false}));
+  if (r.ok) {
+    setBalanceVal(r.user.balance, r.user.vop_balance);
+    INS_COUNT = Number(r.user.insurance || 0);
+    if (insCountEl) insCountEl.textContent = 'Доступно: ' + INS_COUNT;
+    renderProfile(r.user);
+  }
+}
+async function refreshBalance(){
+  const r = await fetch('/api/auth', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ uid, username })
+  }).then(r=>r.json()).catch(()=>({ok:false}));
+  if (r.ok) {
+    setBalanceVal(r.user.balance, r.user.vop_balance);
+    INS_COUNT = Number(r.user.insurance || 0);
+    if (insCountEl) insCountEl.textContent = 'Доступно: ' + INS_COUNT;
+    renderProfile(r.user);
+  }
+}
+
+async function refreshFarmUsdPill(){
+  const r = await fetch(`/api/farm/usd/state?uid=${uid}`).then(r=>r.json()).catch(()=>({ok:false}));
+  if (r.ok && Number(r.claimable)>0){
+    farmPill.textContent = '+ $' + Number(r.claimable);
+    farmPill.style.display='inline';
+  } else {
+    farmPill.style.display='none';
+  }
+}
+
+async function refreshState(){
+  await refreshBalance();
+  await refreshFarmUsdPill();
+}
+async function leaderboard(){
+  const r = await fetch(`/api/leaderboard?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>({ok:false}));
+  if (!r.ok) return;
+  lbEl.innerHTML = (r.top||[]).map((x,i)=>`
+    <div class="rank">
+      <div class="left">
+        <div class="badge">${i+1}</div>
+        <div class="name">${x.name}</div>
+      </div>
+      <div class="val">${fmt(x.won)}</div>
+    </div>
+  `).join('') || '<div class="rank"><div class="left"><div class="badge">—</div><div class="name">ещё пусто</div></div><div class="val">$0</div></div>';
+}
+async function loadMyStats(){
+  const r = await fetch(`/api/my/stats?uid=${uid}`).then(r=>r.json()).catch(()=>({ok:false}));
+  if (!r.ok) return;
+  const s = r.stats;
+  document.getElementById('statsWins').textContent = s.wins;
+  document.getElementById('statsLosses').textContent = s.losses;
+  document.getElementById('statsOnline').textContent = s.online;
+  document.getElementById('statsInv').textContent = s.invites;
+  window.__lastWinRoundFromServer = s.last_win_round;
+}
+
+async function adPoll(){
+  const r = await fetch(`/api/shout?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>null);
+  if (!r || !r.ok) return;
+  const st = r.state || {};
+  adState = {
+    user: st.holder?.name || '',
+    text: st.message || '',
+    nextPrice: Number(st.next_price || 0)
+  };
+  renderAdLine();
+}
+
+let lastCelebratedRound = Number(localStorage.getItem('lastCelebratedRound')||0);
+async function maybeCelebrateWin(){
+  const r = await fetch(`/api/my/stats?uid=${uid}`).then(r=>r.json()).catch(()=>({ok:false}));
+  if (!r.ok) return;
+  const round = Number(r.stats.last_win_round||0);
+  if (round > 0 && round !== lastCelebratedRound){
+    lastCelebratedRound = round;
+    localStorage.setItem('lastCelebratedRound', String(round));
+    FW.start(2000);
+  }
+}
+
+// polling
+async function poll(){
+  const r = await fetch(`/api/round?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>null);
+  if (!r) return;
+
+  if (r.result && r.result.id !== lastResultId){
+    lastResultId = r.result.id;
+    showResultBanner({ youWin: r.result.youWin, amount: r.result.amount });
+    refreshBalance?.();
+    fetch('/api/result/ack', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ id: r.result.id, initData })
+    }).catch(()=>{});
+  }
+
+  renderProfile(r.user);
+
+  const len  = r.roundLen || 60;
+  const win  = r.betWindow || 20;
+  const zone = RLEN * (win/len);
+  betArc.setAttribute('stroke-dasharray', `${zone} ${RLEN-zone}`);
+  betArc.setAttribute('stroke-dashoffset', 0);
+
+  if (r.price){
+    if (priceEl){
+      priceEl.textContent = fmt(r.price);
+      priceEl.style.color = r.startPrice
+        ? (r.price > r.startPrice ? '#1fa36a' : (r.price < r.startPrice ? '#c6423a' : '#fff'))
+        : '#fff';
+    }
+    if (startInRing && r.startPrice){
+      startInRing.textContent = 'Старт: ' + Math.round(r.startPrice);
+    }
+  }
+
+  const secs = Math.max(r.secsLeft||0,0);
+  if (ringTimer) ringTimer.textContent = '00:' + String(secs).padStart(2,'0');
+
+  const progress = Math.max(0, Math.min(1, (len - secs)/len));
+  ring.style.transition='stroke-dashoffset .5s linear';
+  ring.setAttribute('stroke-dashoffset', RLEN*progress);
+
+  const bettingOpen = r.phase==='betting';
+  ring.setAttribute('stroke', bettingOpen ? '#1fa36a' : 'var(--ring)');
+
+  CURRENT_PHASE = r.phase || 'idle';         // фиксируем текущую фазу
+  if (ringPhase) ringPhase.textContent = phaseText(CURRENT_PHASE);
+  bankEl.textContent  = 'Банк: ' + fmt(r.bank);
+
+  if (!IS_VIEWER) {
+    const myId   = String(uid);
+    const myBuy  = (r.betsBuy  || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
+    const mySell = (r.betsSell || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
+    myBetEl.textContent = 'Твоя ставка: ' + fmt(myBuy + mySell);
+  } else {
+    myBetEl.textContent = '';
+  }
+
+  const open = CURRENT_PHASE === 'betting';
+  buyBtn.disabled  = IS_VIEWER || !open;
+  sellBtn.disabled = IS_VIEWER || !open;
+
+  const h = await fetch(`/api/history?initData=${encodeURIComponent(initData)}`).then(r=>r.json()).catch(()=>({history:[]}));
+  histEl.innerHTML = (h.history||[]).map(chip).join('');
+
+  if (!IS_VIEWER) await refreshBalance();
+  await leaderboard();
+  await adPoll();
+
+  // --- Result animation during pause
+  if (!IS_VIEWER && r.phase === 'pause' && r.lastSettlement) {
+    const key = JSON.stringify(r.lastSettlement);
+    if (key !== lastShownSettlementKey) {
+      lastShownSettlementKey = key;
+
+      // кто выиграл
+      const winSide = r.lastSettlement.side; // 'BUY' | 'SELL'
+      const myId = String(uid);
+
+      // моя выплата
+      const myPay = (r.lastSettlement.payouts || []).find(p => String(p.user) === myId)?.amount || 0;
+
+      // сколько я поставил на каждую сторону (в этом раунде)
+      const myBuy  = (r.betsBuy  || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
+      const mySell = (r.betsSell || []).filter(b => String(b.user) === myId).reduce((s,b)=>s+(b.amount||0),0);
+
+      // моя сумма проигрыша = мои ставки на проигравшей стороне
+      let myLose = 0;
+      if (winSide === 'BUY')  myLose = mySell;
+      if (winSide === 'SELL') myLose = myBuy;
+
+      // возможный возврат по страховке (если сервер его присылает)
+      let myRefund = 0;
+      const insList = r.lastSettlement.insuranceRefunds || [];
+      const meIns = insList.find(x => String(x.user) === myId);
+      if (meIns) myRefund = Number(meIns.refund || 0);
+
+      // Показываем анимации на блоке баланса
+      const target = document.getElementById('bal');
+
+      if (myPay > 0) {
+        flash(target, 'green');
+        floatAmount(target, myPay, true);
+        hapticWin();
+      } else if (myLose > 0) {
+        flash(target, 'red');
+        floatAmount(target, myLose, false);
+        hapticLose();
+
+        if (myRefund > 0) {
+          // небольшая задержка, чтобы минус и плюс не слились
+          setTimeout(()=>floatAmount(target, myRefund + ' (страховка)', true), 350);
+        }
+      }
+    }
+  }
+}
+
+// действия ставок
+async function place(side){
+  // защита от кликов вне окна ставок
+  if (CURRENT_PHASE !== 'betting') {
+    alert('Окно ставок закрыто');
+    return;
+  }
+
+  let amount = getSettings().amount || 50;
+  if (amount < 50) amount = 50;
+
+  const r = await api('/api/bet', { side, amount }).catch(()=>({ok:false,error:'SERVER'}));
+
+  if (!r.ok) {
+    const msg =
+      r.error==='BETTING_CLOSED' ? 'Окно ставок закрыто' :
+      r.error==='INSUFFICIENT_BALANCE' ? 'Недостаточно средств' :
+      r.error?.startsWith?.('MIN_BET_') ? `Минимальная ставка: $${r.error.split('_').pop()}` :
+      'Ошибка: '+(r.error||'UNKNOWN');
+    alert(msg);
+    return;
+  }
+  if (r.placed) setSettings({ amount: r.placed });
+  await poll();
+}
+async function loadChatFeed(){
+  const r = await fetch('/api/shout/history?limit=50').then(r=>r.json()).catch(()=>({ok:false,items:[]}));
+  if(!r.ok) { chatFeed.innerHTML = '<div class="msg"><div class="text">Не удалось загрузить.</div></div>'; return; }
+  chatFeed.innerHTML = r.items.map(it=>{
+    const raw = it.username || it.handle;
+    const user = raw ? formatHandle(raw) : 'Гость';
+    return `<div class="msg">
+       <div class="meta">${user} · $${Number(it.price||0).toLocaleString()} · ${new Date(it.created_at).toLocaleTimeString().slice(0,5)}</div>
+       <div class="text">${escapeHtml(it.text||'')}</div>
+     </div>`;
+  }).join('');
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":"&#39;"
+  }[m]));
+}
+
+// init
+bindOnce();
+if (!IS_VIEWER) await refreshState();
+
+window.addEventListener('storage', e=>{
+  if (e.key==='stateUpdated') refreshState();
+});
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState==='visible') refreshState();
+});
+poll();
+setInterval(poll, 1000);
+setInterval(maybeCelebrateWin, 3000);
+})();
+
+// ===== Fireworks (без библиотек)
+const FW = (() => {
+  const cnv = document.getElementById('fwCanvas');
+  const ctx = cnv.getContext('2d');
+  let W=0,H=0, rafId=null, t0=0, duration=1800;
+  const sparks = [];
+
+  function onResize(){ W = cnv.width = innerWidth * devicePixelRatio; H = cnv.height = innerHeight * devicePixelRatio; }
+  addEventListener('resize', onResize); onResize();
+
+  function burst(x,y,count=60){
+    for(let i=0;i<count;i++){
+      const a = Math.random()*Math.PI*2;
+      const v = (0.8+Math.random()*1.2) * (H/900);
+      sparks.push({
+        x, y,
+        vx: Math.cos(a)*v,
+        vy: Math.sin(a)*v,
+        life: 600 + Math.random()*600,
+        age: 0,
+        size: 2 + Math.random()*2,
+        hue: (Math.random()*60)+10
+      });
+    }
+  }
+
+  function step(ts){
+    const dt = ts - t0; t0 = ts;
+    ctx.clearRect(0,0,W,H);
+    // гравитация + рендер
+    for (let i=sparks.length-1;i>=0;i--){
+      const p = sparks[i];
+      p.age += dt;
+      p.vy += 0.0008 * dt * (H/900);
+      p.x += p.vx*dt/16;
+      p.y += p.vy*dt/16;
+      const alpha = Math.max(0,1 - p.age/p.life);
+      if (alpha<=0){ sparks.splice(i,1); continue; }
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = `hsl(${p.hue},100%,60%)`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+      ctx.fill();
+    }
+    if (performance.now() - __fwStartTime < duration || sparks.length>0){
+      rafId = requestAnimationFrame(step);
+    } else {
+      cnv.style.display='none';
+      cancelAnimationFrame(rafId);
+    }
+  }
+
+  let __fwStartTime = 0;
+  function start(ms=1800){
+    duration = ms;
+    cnv.style.display='block';
+    __fwStartTime = performance.now();
+    t0 = performance.now();
+    // 3 салюта из разных точек
+    const pr = devicePixelRatio;
+    burst(0.25*W, 0.55*H, 70);
+    burst(0.75*W, 0.60*H, 70);
+    burst(0.50*W, 0.40*H, 90);
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(step);
+    // лёгкая вибрация
+    if (navigator.vibrate) navigator.vibrate([40, 60, 40, 100]);
+  }
+
+return { start };
+})();
+</script>
+<script type="module" src="js/quests.js"></script>
+</body>
+</html>
