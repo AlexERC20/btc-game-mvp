@@ -15,7 +15,6 @@
   button,a,.tap{touch-action:manipulation}
   body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial}
   .wrap{max-width:520px;margin:24px auto 0;padding:16px 14px 28px}
-  .back-text{background:none;border:none;color:#fff;font-size:14px;padding:0;margin-bottom:6px;cursor:pointer}
   .page-title{font-size:28px;font-weight:800;text-align:center;margin:0 0 12px}
   .price{font-size:24px;font-weight:800;text-align:center;margin-top:2px}
   .sub{font-size:12px;color:var(--muted);text-align:center;margin:2px 0 8px}
@@ -214,7 +213,6 @@
 </head>
 <body>
 <div class="wrap">
-  <button class="back-text" id="backText">Назад</button>
   <div class="page-title">Арена</div>
   <div class="center">
     <div class="timer" id="timerWrap">
@@ -391,18 +389,11 @@ const tg = window.Telegram?.WebApp; tg?.expand();
 const uid = tg?.initDataUnsafe?.user?.id || null;
 const username = tg?.initDataUnsafe?.user?.username ? '@'+tg.initDataUnsafe.user.username : null;
 
-if (window.Telegram?.WebApp?.BackButton) {
-  Telegram.WebApp.BackButton.show();
-  Telegram.WebApp.onEvent('backButtonClicked', () => { window.location.href = '/'; });
-}
-
 const ring = document.getElementById('ring');
 const timerWrap = document.getElementById('timerWrap');
 const bankEl = document.getElementById('bank');
 const ringStatus = document.getElementById('ringStatus');
-const backText = document.getElementById('backText');
 const lb24 = document.getElementById('lb24');
-backText.onclick = () => { window.location.href = '/'; };
 const bidBtn = document.getElementById('bidBtn');
 const leaderEl = document.getElementById('leader');
 const betsLeftEl = document.getElementById('betsLeft');
