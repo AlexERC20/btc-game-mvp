@@ -190,6 +190,8 @@
   .sheet .btnrow .btnsm{flex:1;background:var(--green);border:none;border-radius:12px;color:#fff;padding:10px 0;font-weight:700}
   .sheet .btnrow .btnsm.cancel{background:#333}
   .btnsm[disabled]{ background:#333 !important; opacity:0.8; cursor:not-allowed; }
+  .sheet .btnrow .btn{flex:1;width:auto;border-radius:14px;padding:0 18px;font-weight:600;min-height:44px;font-size:16px}
+  .btn-primary{background:var(--green);color:#000;border:none}
   .sheet .share-wrap{flex:1;display:flex;flex-direction:column}
   .sheet .share-wrap .share-hint{color:var(--muted);font-size:12px;margin-top:4px;text-align:center}
   .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
@@ -280,7 +282,7 @@
 <!-- SHEET: Пополнение -->
 <div class="sheet" id="sheetTopup">
   <h3>Пополнение баланса</h3>
-  <p>• +$5000 — за подписку на канал @erc20coin (один раз)</p>
+  <p>• +$30 000 — за подписку на канал @erc20coin (один раз)</p>
   <p>• +$1000 — за ежедневный вход</p>
   <p>• +$500 — за каждого друга по реф-ссылке</p>
   <div class="btnrow">
@@ -297,11 +299,11 @@
   <h3>Купить звёзды ⭐</h3>
   <p>Выбери пакет, оплати в Telegram Stars — баланс обновится автоматически.</p>
   <div class="rowchips" id="starsPacks">
-    <button class="chipopt" data-pack="100">100⭐ → $3 000</button>
-    <button class="chipopt" data-pack="500">500⭐ → $16 000</button>
-    <button class="chipopt" data-pack="1000">1000⭐ → $35 000</button>
-    <button class="chipopt" data-pack="10000">10000⭐ → $400 000</button>
-    <button class="chipopt" data-pack="30000">30000⭐ → $1 500 000</button>
+    <button class="chipopt" data-pack="100">100⭐ → $30 000</button>
+    <button class="chipopt" data-pack="500">500⭐ → $160 000</button>
+    <button class="chipopt" data-pack="1000">1000⭐ → $350 000</button>
+    <button class="chipopt" data-pack="10000">10000⭐ → $4 000 000</button>
+    <button class="chipopt" data-pack="30000">30000⭐ → $15 000 000</button>
   </div>
   <div class="btnrow">
     <button class="btnsm cancel" data-close>Отмена</button>
@@ -339,7 +341,7 @@
   <p>Пригласи друга по своей ссылке. Как только он зайдёт — лимит снова 20 ставок в текущем раунде.</p>
   <div class="btnrow">
     <div class="share-wrap">
-      <button class="btnsm" id="refreshShare">Поделиться</button>
+      <button class="btn btn-primary" id="refreshShare">Поделиться</button>
     </div>
     <button class="btnsm cancel" data-close>Закрыть</button>
   </div>

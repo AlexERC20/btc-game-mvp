@@ -80,7 +80,7 @@ const ONLINE_WINDOW_SEC = 60;  // окно (секунд) для подсчёт�
 
 // бонусы и канал для проверки подписки
 const CHANNEL = process.env.CHANNEL || '@erc20coin';
-const SUBSCRIBE_BONUS = 5000; // разовый за подписку
+const SUBSCRIBE_BONUS_USD = 30_000; // разовый за подписку
 const DAILY_BONUS = 1000;     // ежедневный бонус
 
 // ==== FARM $ ====
@@ -651,11 +651,11 @@ await ensureBots();
 
 // ✅ Пакеты Stars: amount = число звёзд
 const STARS_PACKS = {
-  '100':   { stars: 100,    credit: 3_000 },
-  '500':   { stars: 500,    credit: 16_000 },
-  '1000':  { stars: 1000,   credit: 35_000 },
-  '10000': { stars: 10000,  credit: 400_000 },
-  '30000': { stars: 30000,  credit: 1_500_000 },
+  '100':   { stars: 100,    credit: 30_000 },
+  '500':   { stars: 500,    credit: 160_000 },
+  '1000':  { stars: 1000,   credit: 350_000 },
+  '10000': { stars: 10000,  credit: 4_000_000 },
+  '30000': { stars: 30000,  credit: 15_000_000 },
 };
 
 const INSURANCE_PACK = { count: 100, stars: 1000 };
@@ -2047,9 +2047,9 @@ app.post('/api/bonus/check', requireTgAuth, async (req, res) => {
       if (!claimed) {
         await pool.query(
           'UPDATE users SET balance=balance+$1, channel_bonus_claimed=TRUE WHERE telegram_id=$2',
-          [SUBSCRIBE_BONUS, uid]
+          [SUBSCRIBE_BONUS_USD, uid]
         );
-        added += SUBSCRIBE_BONUS;
+        added += SUBSCRIBE_BONUS_USD;
       }
     }
 
