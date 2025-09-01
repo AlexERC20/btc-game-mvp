@@ -8,7 +8,6 @@ import crypto from 'crypto';
 import { grantXpOnce, levelThreshold, xpSpentBeforeLevel, XP } from '../xp.mjs';
 import { PRICE_BUMP_STEP, calcPrice } from './shopMath.js';
 import {
-  FARM_TZ,
   BASE_USD_LIMIT,
   BONUS_PER_ACTIVE_FRIEND_USD,
   dayString,
@@ -875,7 +874,7 @@ function computeAccrual(kind, u, now, dailyCapOverride = null) {
 }
 
 async function activeFriendsToday(userId) {
-  const day = dayString(new Date(), FARM_TZ);
+  const day = dayString(todayUTC(), 'UTC');
   try {
     const { rows } = await pool.query(
       'SELECT COUNT(*)::int AS c FROM daily_friend_activity WHERE referrer_user_id=$1 AND activity_date=$2',
@@ -899,7 +898,7 @@ async function markFriendActivityOnBet(friendUserId, friendTid) {
     );
     const refId = rows[0]?.referrer_user_id;
     if (!refId || refId === friendUserId) return;
-    const day = dayString(new Date(), FARM_TZ);
+    const day = dayString(todayUTC(), 'UTC');
     await pool.query(
       `INSERT INTO daily_friend_activity(friend_user_id, referrer_user_id, activity_date, first_event_at)
        VALUES ($1,$2,$3,now())
@@ -914,6 +913,89 @@ async function markFriendActivityOnBet(friendUserId, friendTid) {
     console.error('markFriendActivityOnBet', e);
     throw e;
   }
+}
+
+async function upsertDailyCap(userId, day, baseCap, bonusCap, usedUsd) {
+  const dayStr = day.toISOString().slice(0, 10);
+  await pool.query(
+    `INSERT INTO daily_caps(user_id, day_utc, cap_usd_base, cap_usd_bonus, used_usd)
+       VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (user_id, day_utc) DO UPDATE
+       SET cap_usd_base=$3, cap_usd_bonus=$4, used_usd=$5`,
+    [userId, dayStr, baseCap, bonusCap, usedUsd]
+  );
+}
+
+async function getFarmUsdState(uid) {
+  await ensureUser(uid, null);
+  const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
+  const u = rows[0];
+  const now = new Date();
+  const today = todayUTC();
+  const dayStr = today.toISOString().slice(0, 10);
+  if (ensureDayBuckets('usd', u, today)) {
+    await pool.query('UPDATE users SET claimed_usd_today=0, claimed_usd_date=$2 WHERE id=$1', [u.id, dayStr]);
+  }
+  if (!u.last_claim_usd) {
+    await pool.query('UPDATE users SET last_claim_usd=now() WHERE id=$1', [u.id]);
+    u.last_claim_usd = new Date();
+  }
+  const active = await checkUsdActive(u.id);
+  if (ensureFriendBonus(u, today)) {
+    await pool.query('UPDATE users SET friend_bonus_usd_today=0, friend_bonus_date=$2 WHERE id=$1', [u.id, dayStr]);
+  }
+  const activeFriends = await activeFriendsToday(u.id);
+  const baseCap = u.base_daily_cap_usd ?? BASE_USD_LIMIT;
+  const bonusCap = u.friend_bonus_usd_today || 0;
+  const effectiveCap = baseCap + bonusCap;
+  await upsertDailyCap(u.id, today, baseCap, bonusCap, u.claimed_usd_today);
+  const accr = computeAccrual('usd', u, now, effectiveCap);
+  const upgrades = BOOSTERS_USD.map(up => {
+    const purchases = Number(u[`boost_t${up.tier}`] || 0);
+    const price = calcPrice(up.base, purchases);
+    const pricePerFp = Math.round(price / up.fp);
+    const mod = purchases % PRICE_BUMP_STEP;
+    const next = mod === 0 && purchases > 0 ? 0 : PRICE_BUMP_STEP - mod;
+    let canBuy = true, reason = null;
+    if (u.level < up.level) { canBuy = false; reason = 'LEVEL'; }
+    else if (u.balance < price) { canBuy = false; reason = 'BALANCE'; }
+    return {
+      id: up.id,
+      title: up.title,
+      fp: up.fp,
+      reqLevel: up.level,
+      price,
+      pricePerFp,
+      purchases_mod: mod,
+      next_bump_in: next,
+      canBuy,
+      reason
+    };
+  });
+  const hist = await pool.query("SELECT type, amount, meta, created_at FROM farm_history WHERE user_id=$1 AND type LIKE '%usd' ORDER BY id DESC LIMIT 10", [u.id]);
+  return {
+    ok: true,
+    active,
+    speed_usd_per_hour: accr.ratePerHour,
+    fp: u.fp_usd,
+    claimable: accr.claimable,
+    used_usd_today: u.claimed_usd_today,
+    cap_usd_base: baseCap,
+    cap_usd_bonus: bonusCap,
+    cap_usd_effective: effectiveCap,
+    active_friends_today: activeFriends,
+    friend_bonus_per_friend_usd: BONUS_PER_ACTIVE_FRIEND_USD,
+    offline_cap_hours: USD_OFFLINE_CAP_HOURS,
+    lastClaimAt: u.last_claim_usd,
+    upgrades,
+    history: hist.rows.map(r => ({ type: r.type, amount: Number(r.amount), ts: r.created_at, meta: r.meta })),
+    // backward compatibility
+    available_to_claim: accr.claimable,
+    speed_per_hour: accr.ratePerHour,
+    limit_today_used: u.claimed_usd_today,
+    limit_today_total: effectiveCap,
+    bonus_per_friend: BONUS_PER_ACTIVE_FRIEND_USD,
+  };
 }
 
 /* ========= Auction subsystem ========= */
@@ -1986,73 +2068,20 @@ app.post('/api/bonus/check', requireTgAuth, async (req, res) => {
 });
 
 /* ========= FARMING API ========= */
-app.get('/api/farm/usd/state', async (req, res) => {
-  const uid = Number(req.query.uid);
-  if (!uid) return res.json({ ok:false, error:'NO_UID' });
-  await ensureUser(uid, null);
-  const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
-  const u = rows[0];
-  const now = new Date();
-  const today = todayUTC();
-  if (ensureDayBuckets('usd', u, today)) {
-    await pool.query('UPDATE users SET claimed_usd_today=0, claimed_usd_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
+async function farmUsdHandler(req, res) {
+  try {
+    const uid = Number(req.query.uid);
+    if (!uid) return res.json({ ok:false, error:'NO_UID' });
+    const state = await getFarmUsdState(uid);
+    res.json(state);
+  } catch (e) {
+    console.error('/api/farm/usd', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
   }
-  if (!u.last_claim_usd) {
-    await pool.query('UPDATE users SET last_claim_usd=now() WHERE id=$1', [u.id]);
-    u.last_claim_usd = new Date();
-  }
-  const active = await checkUsdActive(u.id);
-  if (ensureFriendBonus(u, today)) {
-    await pool.query('UPDATE users SET friend_bonus_usd_today=0, friend_bonus_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
-  }
-  const activeFriends = await activeFriendsToday(u.id);
-  const baseCap = u.base_daily_cap_usd ?? BASE_USD_LIMIT;
-  const limitTodayTotal = baseCap + (u.friend_bonus_usd_today || 0);
-  const accr = computeAccrual('usd', u, now, limitTodayTotal);
-  const upgrades = BOOSTERS_USD.map(up=>{
-    const purchases = Number(u[`boost_t${up.tier}`] || 0);
-    const price = calcPrice(up.base, purchases);
-    const pricePerFp = Math.round(price / up.fp);
-    const mod = purchases % PRICE_BUMP_STEP;
-    const next = mod === 0 && purchases > 0 ? 0 : PRICE_BUMP_STEP - mod;
-    let canBuy = true, reason = null;
-    if (u.level < up.level) { canBuy=false; reason='LEVEL'; }
-    else if (u.balance < price) { canBuy=false; reason='BALANCE'; }
-    return {
-      id: up.id,
-      title: up.title,
-      fp: up.fp,
-      reqLevel: up.level,
-      price,
-      pricePerFp,
-      purchases_mod: mod,
-      next_bump_in: next,
-      canBuy,
-      reason
-    };
-  });
-  const hist = await pool.query("SELECT type, amount, meta, created_at FROM farm_history WHERE user_id=$1 AND type LIKE '%usd' ORDER BY id DESC LIMIT 10", [u.id]);
-  res.json({
-    ok:true,
-    active,
-    ratePerHour: accr.ratePerHour,
-    fp: u.fp_usd,
-    claimable: accr.claimable,
-    dailyCap: limitTodayTotal,
-    claimedToday: u.claimed_usd_today,
-    offlineCapHours: USD_OFFLINE_CAP_HOURS,
-    lastClaimAt: u.last_claim_usd,
-    upgrades,
-    history: hist.rows.map(r=>({ type:r.type, amount:Number(r.amount), ts:r.created_at, meta:r.meta })),
-    available_to_claim: accr.claimable,
-    speed_per_hour: accr.ratePerHour,
-    limit_today_used: u.claimed_usd_today,
-    limit_today_total: limitTodayTotal,
-    active_friends_today: activeFriends,
-    base_limit: BASE_USD_LIMIT,
-    bonus_per_friend: BONUS_PER_ACTIVE_FRIEND_USD,
-  });
-});
+}
+
+app.get('/api/farm/usd', farmUsdHandler);
+app.get('/api/farm/usd/state', farmUsdHandler);
 
 app.post('/api/farm/usd/claim', async (req, res) => {
   const uid = Number(req.body.uid);
@@ -2083,6 +2112,7 @@ app.post('/api/farm/usd/claim', async (req, res) => {
   const day = today.toISOString().slice(0,10);
   await pool.query('UPDATE users SET balance=balance+$1, last_claim_usd=now(), claimed_usd_today=claimed_usd_today+$1, claimed_usd_date=$3 WHERE id=$2', [amt, u.id, day]);
   await pool.query('INSERT INTO farm_history(user_id,type,amount) VALUES($1,$2,$3)', [u.id, 'claim_usd', amt]);
+  await upsertDailyCap(u.id, today, baseCap, u.friend_bonus_usd_today || 0, u.claimed_usd_today + amt);
   res.json({ ok:true, claimed:amt, newBalance: Number(u.balance)+amt });
 });
 
@@ -2276,8 +2306,9 @@ app.post('/api/referral/check-new-active-friends', async (req, res) => {
     );
     const u = rows[0];
     const today = todayUTC();
+    const dayStr = today.toISOString().slice(0,10);
     if (ensureFriendBonus(u, today)) {
-      await pool.query('UPDATE users SET friend_bonus_usd_today=0, friend_bonus_date=$2 WHERE id=$1', [u.id, today.toISOString().slice(0,10)]);
+      await pool.query('UPDATE users SET friend_bonus_usd_today=0, friend_bonus_date=$2 WHERE id=$1', [u.id, dayStr]);
     }
     const activeFriends = await activeFriendsToday(u.id);
     const already = Math.floor((u.friend_bonus_usd_today || 0) / BONUS_PER_ACTIVE_FRIEND_USD);
@@ -2287,7 +2318,8 @@ app.post('/api/referral/check-new-active-friends', async (req, res) => {
       await pool.query('UPDATE users SET friend_bonus_usd_today=friend_bonus_usd_today+$1 WHERE id=$2', [addedUsd, u.id]);
       console.log('friend_cap_bonus_applied', { user_id: u.id, count: newActiveCount, addedUsd });
     }
-    res.json({ newActiveCount, addedUsd });
+    const state = await getFarmUsdState(uid);
+    res.json({ newActiveCount, addedUsd, ...state });
   } catch (e) {
     console.error('/api/referral/check-new-active-friends', e);
     res.status(500).json({ newActiveCount:0, addedUsd:0, error:'SERVER' });
@@ -2303,7 +2335,7 @@ app.get('/api/referrals/stats/today', async (req, res) => {
     const userId = rows[0]?.id;
     if (!userId) return res.json({ ok:false, error:'NO_USER' });
     const total = await pool.query('SELECT COUNT(*)::int AS c FROM referrals WHERE referrer_user_id=$1', [userId]);
-    const day = dayString(new Date(), FARM_TZ);
+    const day = dayString(todayUTC(), 'UTC');
     let activeCount = 0;
     try {
       const active = await pool.query(

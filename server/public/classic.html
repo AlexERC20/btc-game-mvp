@@ -1083,7 +1083,7 @@ async function refreshBalance(){
 }
 
 async function refreshFarmUsdPill(){
-  const r = await fetch(`/api/farm/usd/state?uid=${uid}`).then(r=>r.json()).catch(()=>({ok:false}));
+  const r = await fetch(`/api/farm/usd?uid=${uid}`,{cache:'no-store',headers:{'Cache-Control':'no-store'}}).then(r=>r.json()).catch(()=>({ok:false}));
   if (r.ok && Number(r.claimable)>0){
     farmPill.textContent = '+ $' + Number(r.claimable);
     farmPill.style.display='inline';

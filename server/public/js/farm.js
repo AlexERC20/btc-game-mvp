@@ -22,7 +22,12 @@ function formatVop(n){return Number(n).toLocaleString('ru-RU')+' 💎';}
 function toast(msg){const t=document.createElement('div');t.textContent=msg;t.style.position='fixed';t.style.left='50%';t.style.bottom='20px';t.style.transform='translateX(-50%)';t.style.background='#333';t.style.padding='8px 12px';t.style.borderRadius='8px';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);}
 function haptic(kind){try{const h=window.Telegram?.WebApp?.HapticFeedback;if(!h)return;if(kind==='success'||kind==='error')h.notificationOccurred(kind);else h.impactOccurred('light');}catch(e){}}
 
-async function loadFarmState(type){return await fetch(`/api/farm/${type}/state?uid=${uid}`).then(r=>r.json()).catch(()=>({ok:false}));}
+async function loadFarmState(type){
+  const url = type==='usd'
+    ? `/api/farm/usd?uid=${uid}`
+    : `/api/farm/${type}/state?uid=${uid}`;
+  return await fetch(url,{cache:'no-store',headers:{'Cache-Control':'no-store'}}).then(r=>r.json()).catch(()=>({ok:false}));
+}
 
 let currentState=null;
 
@@ -41,7 +46,7 @@ async function claim(type){
       }
     haptic('success');
     localStorage.setItem('stateUpdated', Date.now());
-    loadCurrent();
+    refreshFarmCard();
   }else if(r && r.code==='NOT_ENOUGH_REFERRALS'){
     toast('Нужно 30 приглашённых');
     haptic('error');
@@ -64,7 +69,7 @@ async function claim(type){
     if(r.ok){
       toast(`Скорость +${up.fp} FP. Баланс: ${formatMoney(r.newBalance)}`);
       haptic('success');
-      loadCurrent();
+      refreshFarmCard();
     }else if(r.error==='BALANCE'){
       toast('Не хватает денег');
       haptic('error');
@@ -90,7 +95,7 @@ async function onIncreaseLimitClick(){
       try{
         const r=await fetch('/api/referral/check-new-active-friends',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uid})});
         const{ newActiveCount,addedUsd }=await r.json();
-        if(newActiveCount>0){hideFindingFriendSheet();toast(`Лимит увеличен на $${addedUsd}`);await loadCurrent();return;}
+        if(newActiveCount>0){hideFindingFriendSheet();toast(`Лимит увеличен на $${addedUsd}`);await refreshFarmCard();return;}
         if(Date.now()-startedAt<120000 && !stopPolling){pollTimer=setTimeout(poll,3000);}else{hideFindingFriendSheet();toast('Похоже, друг ещё не зашёл. Попробуй позже.');}
       }catch(e){hideFindingFriendSheet();toast('Сеть недоступна, повтори позже.');}
     };
@@ -148,9 +153,9 @@ async function onIncreaseLimitClick(){
 
     if(type==='usd'){
       const claimable = s.available_to_claim ?? s.claimable;
-      const ratePerHour = s.speed_per_hour ?? s.ratePerHour;
-      const used = s.limit_today_used ?? s.claimedToday;
-      const total = s.limit_today_total ?? s.dailyCap;
+      const ratePerHour = s.speed_usd_per_hour ?? s.speed_per_hour ?? s.ratePerHour;
+      const used = s.used_usd_today ?? s.limit_today_used ?? s.claimedToday;
+      const total = s.cap_usd_effective ?? s.limit_today_total ?? s.dailyCap;
       claimAmount.textContent=formatMoney(claimable);
       btnClaim.disabled=!(s.active&&claimable>0);
       btnClaim.classList.add('btn-success');
@@ -165,8 +170,9 @@ async function onIncreaseLimitClick(){
       const pct = total?Math.min(100,used/total*100):0;
       capBar.style.width=pct+'%';
       const n = s.active_friends_today||0;
-      const bonus = (s.bonus_per_friend||0)*n;
-      let bonusText = `Активные друзья сегодня: ${n}  •  +$${s.bonus_per_friend||0} за каждого`;
+      const bpf = s.friend_bonus_per_friend_usd || s.bonus_per_friend || 0;
+      const bonus = bpf*n;
+      let bonusText = `Активные друзья сегодня: ${n}  •  +$${bpf} за каждого`;
       if(n>0) bonusText += `  <span style="color:var(--success)">+$${bonus} к лимиту</span>`;
       friendsBonus.innerHTML = bonusText;
       incLimitBtn.onclick=(e)=>{e.preventDefault();openSheet(sheetShare);};
@@ -205,10 +211,10 @@ async function onIncreaseLimitClick(){
   }
 
 let currentType='usd';
-async function loadCurrent(){const s=await loadFarmState(currentType);renderState(currentType,s);}
+async function refreshFarmCard(){const s=await loadFarmState(currentType);renderState(currentType,s);}
 
-function switchTab(type){currentType=type;document.querySelectorAll('.tab').forEach(b=>{if(b.dataset.type===type){b.classList.remove('btn-ghost');b.classList.add('btn-primary');}else{b.classList.remove('btn-primary');b.classList.add('btn-ghost');}});loadCurrent();}
+function switchTab(type){currentType=type;document.querySelectorAll('.tab').forEach(b=>{if(b.dataset.type===type){b.classList.remove('btn-ghost');b.classList.add('btn-primary');}else{b.classList.remove('btn-primary');b.classList.add('btn-ghost');}});refreshFarmCard();}
 
-window.initFarmPage=function(){document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.type)));document.getElementById('btnClaim').addEventListener('click',()=>claim(currentType));document.getElementById('goPlay').addEventListener('click',()=>{location.href=uid?`/?uid=${encodeURIComponent(uid)}`:'/';});switchTab('usd');setInterval(loadCurrent,15000);};
+window.initFarmPage=function(){document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>switchTab(b.dataset.type)));document.getElementById('btnClaim').addEventListener('click',()=>claim(currentType));document.getElementById('goPlay').addEventListener('click',()=>{location.href=uid?`/?uid=${encodeURIComponent(uid)}`:'/';});switchTab('usd');setInterval(refreshFarmCard,15000);};
 })();
 
