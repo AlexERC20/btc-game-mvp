@@ -190,6 +190,8 @@
   .sheet .btnrow .btnsm{flex:1;background:var(--green);border:none;border-radius:12px;color:#fff;padding:10px 0;font-weight:700}
   .sheet .btnrow .btnsm.cancel{background:#333}
   .btnsm[disabled]{ background:#333 !important; opacity:0.8; cursor:not-allowed; }
+  .sheet .share-wrap{flex:1;display:flex;flex-direction:column}
+  .sheet .share-wrap .share-hint{color:var(--muted);font-size:12px;margin-top:4px;text-align:center}
   .sheet p{color:#ddd;font-size:13px;line-height:1.35;margin:6px 0}
 
   #sheetChatFeed .feed{max-height:60vh;overflow:auto;display:flex;flex-direction:column;gap:8px}
@@ -333,11 +335,12 @@
 <!-- SHEET: Обновить лимит -->
 <div class="sheet" id="sheetRefresh">
   <h3>Обновить ставки в этом раунде</h3>
-  <p>Чтобы обновить лимит, пригласи друга по своей ссылке. Как только он зайдёт в игру — лимит снова 20 ставок в текущем раунде.</p>
-  <p>Помоги мне на арене, я хочу забрать весь банк!</p>
-  <p id="refreshLink"></p>
+  <p>Пригласи друга по своей ссылке. Как только он зайдёт — лимит снова 20 ставок в текущем раунде.</p>
   <div class="btnrow">
-    <button class="btnsm" id="refreshShare">Поделиться</button>
+    <div class="share-wrap">
+      <button class="btnsm" id="refreshShare">Поделиться</button>
+      <span class="share-hint">Сообщение отправится с твоей ссылкой автоматически.</span>
+    </div>
     <button class="btnsm" id="refreshApply">Проверить</button>
     <button class="btnsm cancel" data-close>Закрыть</button>
   </div>
@@ -433,7 +436,6 @@ const shopTabs = document.getElementById('shopTabs');
 const sheetRefresh = document.getElementById('sheetRefresh');
 const refreshShare = document.getElementById('refreshShare');
 const refreshApply = document.getElementById('refreshApply');
-const refreshLink = document.getElementById('refreshLink');
 
 const openChannel = document.getElementById('openChannel');
 const starsPacks = document.getElementById('starsPacks');
@@ -490,6 +492,7 @@ function showBigBanner(text,color){
   document.body.appendChild(div);
   setTimeout(()=>div.remove(),1500);
 }
+function toast(msg){const t=document.createElement('div');t.textContent=msg;t.style.position='fixed';t.style.left='50%';t.style.bottom='20px';t.style.transform='translateX(-50%)';t.style.background='#333';t.style.padding='8px 12px';t.style.borderRadius='8px';t.style.zIndex='1000';document.body.appendChild(t);setTimeout(()=>t.remove(),2000);}
 function renderArena(st){
   const newBank = Number(st.bank||0);
   bankEl.textContent = fmt(newBank);
@@ -612,7 +615,6 @@ starsBtn.onclick = ()=> openSheet(sheetStars);
 shopBtn.onclick = ()=>{ location.href = `/farm.html?uid=${encodeURIComponent(uid)}`; };
 
 async function openRefreshSheet(){
-  refreshLink.textContent = `https://t.me/${BOT_USERNAME}?start=${uid}`;
   const r = await fetch('/api/arena/refresh-check',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>null);
   if(r?.ok){
     remainingBets = r.remaining;
@@ -622,9 +624,18 @@ async function openRefreshSheet(){
 }
 refreshShare.onclick = ()=>{
   const link = `https://t.me/${BOT_USERNAME}?start=${uid}`;
-  const text = 'Помоги мне на арене, я хочу забрать весь банк!';
-  if(navigator.share){ navigator.share({ text, url: link }).catch(()=>{}); }
-  else { alert(text+'\n'+link); }
+  const text = `Помоги мне на арене, я хочу забрать весь банк!\nПрисоединяйся: ${link}`;
+  if(window.Telegram?.WebApp?.openTelegramLink){
+    Telegram.WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`);
+  } else if(navigator.share){
+    navigator.share({ text }).catch(()=>{});
+  } else {
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(text).then(()=>toast('Текст приглашения скопирован')).catch(()=>{ alert(text); });
+    } else {
+      alert(text);
+    }
+  }
 };
 refreshApply.onclick = async ()=>{
   const r = await fetch('/api/arena/refresh-apply',{method:'POST',headers:{'Content-Type':'application/json'},body: JSON.stringify({ uid })}).then(r=>r.json()).catch(()=>null);
