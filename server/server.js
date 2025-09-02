@@ -10,10 +10,10 @@ import { PRICE_BUMP_STEP, calcPrice } from './shopMath.js';
 import {
   BASE_USD_LIMIT,
   BONUS_PER_ACTIVE_FRIEND_USD,
-  dayString,
 } from './farmUtils.js';
 import { runMigrations } from './migrate.js';
 import { seedTasks } from './seed_tasks.mjs';
+import { utcDayKey, startOfUtcDay, nextUtcMidnight } from './lib/time.js';
 
 function verifyInitData(initData, botToken) {
   try {
@@ -167,7 +167,7 @@ async function seedQuestTemplates(pool){
   }
 }
 
-function nextMidnightUTC(){ const d=new Date(); d.setUTCHours(24,0,0,0); return d; }
+function nextMidnightUTC(ts = Date.now()){ return new Date(nextUtcMidnight(ts)); }
 function nextWeekUTC(){ const d=new Date(); const w=d.getUTCDay()||7; d.setUTCDate(d.getUTCDate()+(8-w)); d.setUTCHours(0,0,0,0); return d; }
 function nextMonthUTC(){ const n=new Date(); return new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth()+1, 1, 0,0,0)); }
 
@@ -815,9 +815,8 @@ async function ensureUser(telegramId, username) {
   return u;
 }
 
-function todayUTC() {
-  const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+function todayUTC(ts = Date.now()) {
+  return new Date(startOfUtcDay(ts));
 }
 
 async function grantDailyIfNeeded(telegramId) {
@@ -909,11 +908,11 @@ function computeAccrual(kind, u, now, dailyCapOverride = null) {
 }
 
 async function activeFriendsToday(userId) {
-  const day = dayString(todayUTC(), 'UTC');
+  const dayKey = utcDayKey();
   try {
     const { rows } = await pool.query(
-      'SELECT COUNT(*)::int AS c FROM daily_friend_activity WHERE referrer_user_id=$1 AND activity_date=$2',
-      [userId, day]
+      'SELECT COUNT(*)::int AS c FROM daily_friend_activity WHERE referrer_user_id=$1 AND day_key_utc=$2',
+      [userId, dayKey]
     );
     return rows[0]?.c || 0;
   } catch (e) {
@@ -933,12 +932,14 @@ async function markFriendActivityOnBet(friendUserId, friendTid) {
     );
     const refId = rows[0]?.referrer_user_id;
     if (!refId || refId === friendUserId) return;
-    const day = dayString(todayUTC(), 'UTC');
+    const ts = Date.now();
+    const dayKey = utcDayKey(ts);
+    const dayStr = new Date(startOfUtcDay(ts)).toISOString().slice(0,10);
     const ins = await pool.query(
-      `INSERT INTO daily_friend_activity(friend_user_id, referrer_user_id, activity_date, first_event_at)
-       VALUES ($1,$2,$3,now())
+      `INSERT INTO daily_friend_activity(friend_user_id, referrer_user_id, activity_date, day_key_utc, first_event_at)
+       VALUES ($1,$2,$3,$4,now())
        ON CONFLICT (friend_user_id, activity_date) DO NOTHING`,
-      [friendUserId, refId, day]
+      [friendUserId, refId, dayStr, dayKey]
     );
     if (ins.rowCount > 0) {
       await trackTaskEvent(refId, 'friend_active_today', 1);
@@ -955,12 +956,13 @@ async function markFriendActivityOnBet(friendUserId, friendTid) {
 
 async function upsertDailyCap(userId, day, baseCap, bonusCap, usedUsd) {
   const dayStr = day.toISOString().slice(0, 10);
+  const dayKey = utcDayKey(day.getTime());
   await pool.query(
-    `INSERT INTO daily_caps(user_id, day_utc, cap_usd_base, cap_usd_bonus, used_usd)
-       VALUES ($1,$2,$3,$4,$5)
+    `INSERT INTO daily_caps(user_id, day_utc, day_key_utc, cap_usd_base, cap_usd_bonus, used_usd)
+       VALUES ($1,$2,$3,$4,$5,$6)
      ON CONFLICT (user_id, day_utc) DO UPDATE
-       SET cap_usd_base=$3, cap_usd_bonus=$4, used_usd=$5`,
-    [userId, dayStr, baseCap, bonusCap, usedUsd]
+       SET cap_usd_base=$4, cap_usd_bonus=$5, used_usd=$6, day_key_utc=$3`,
+    [userId, dayStr, dayKey, baseCap, bonusCap, usedUsd]
   );
 }
 
@@ -2386,12 +2388,12 @@ app.get('/api/referrals/stats/today', async (req, res) => {
     const userId = rows[0]?.id;
     if (!userId) return res.json({ ok:false, error:'NO_USER' });
     const total = await pool.query('SELECT COUNT(*)::int AS c FROM referrals WHERE referrer_user_id=$1', [userId]);
-    const day = dayString(todayUTC(), 'UTC');
+    const dayKey = utcDayKey();
     let activeCount = 0;
     try {
       const active = await pool.query(
-        'SELECT COUNT(*)::int AS c FROM daily_friend_activity WHERE referrer_user_id=$1 AND activity_date=$2',
-        [userId, day]
+        'SELECT COUNT(*)::int AS c FROM daily_friend_activity WHERE referrer_user_id=$1 AND day_key_utc=$2',
+        [userId, dayKey]
       );
       activeCount = active.rows[0]?.c || 0;
     } catch (e) {
@@ -2406,6 +2408,90 @@ app.get('/api/referrals/stats/today', async (req, res) => {
     console.error('/api/referrals/stats/today', e);
     res.status(500).json({ ok:false, error:'SERVER' });
   }
+});
+
+app.get('/v1/daily/summary', requireTgAuth, async (req, res) => {
+  try {
+    const nowTs = req.query.now ? new Date(req.query.now).getTime() : Date.now();
+    const dayKey = utcDayKey(nowTs);
+    const resetAtIso = new Date(nextUtcMidnight(nowTs)).toISOString();
+    const uid = req.tgUser.id;
+    const u = await ensureUser(uid, req.tgUser.username ? '@'+req.tgUser.username : null);
+    await ensureUserQuests(pool, u.id, Number(u.level || 0));
+    const expiresAt = new Date(nextUtcMidnight(nowTs));
+    const tRes = await pool.query(
+      `SELECT * FROM quest_templates WHERE scope='day' AND min_level <= $1 ORDER BY id`,
+      [u.level]
+    );
+    const tasks = [];
+    for (const t of tRes.rows) {
+      const uRes = await pool.query(
+        `SELECT id,progress,is_claimed,expires_at FROM user_quests
+         WHERE user_id=$1 AND template_id=$2 AND (expires_at IS NOT DISTINCT FROM $3)
+         LIMIT 1`,
+        [u.id, t.id, expiresAt]
+      );
+      let uq = uRes.rows[0];
+      if (!uq) {
+        const ins = await pool.query(
+          `INSERT INTO user_quests(user_id,template_id,expires_at)
+           VALUES ($1,$2,$3)
+           RETURNING id,progress,is_claimed,expires_at`,
+          [u.id, t.id, expiresAt]
+        );
+        uq = ins.rows[0];
+      }
+      tasks.push({
+        id: uq.id,
+        qkey: t.qkey,
+        title: t.title,
+        descr: t.descr,
+        goal: Number(t.goal),
+        progress: Number(uq.progress),
+        is_claimed: uq.is_claimed,
+        expires_at: uq.expires_at ? uq.expires_at.toISOString() : null,
+        reward: { type: t.reward_type, value: Number(t.reward_value) },
+        min_level: t.min_level
+      });
+    }
+    const usdState = await getFarmUsdState(uid);
+    const { rows } = await pool.query('SELECT * FROM users WHERE telegram_id=$1', [uid]);
+    const uu = rows[0];
+    const today = new Date(startOfUtcDay(nowTs));
+    if (ensureDayBuckets('vop', uu, today)) {
+      await pool.query('UPDATE users SET claimed_vop_today=0, claimed_vop_date=$2 WHERE id=$1', [uu.id, today.toISOString().slice(0,10)]);
+    }
+    const isUnlocked = uu.level >= VOP_MIN_LEVEL;
+    const vopUsed = isUnlocked ? uu.claimed_vop_today : 0;
+    const vopTotal = isUnlocked ? VOP_DAILY_CAP : 0;
+    res.json({
+      day_key: dayKey,
+      reset_at_iso: resetAtIso,
+      tasks,
+      tasks_available: tasks.length > 0,
+      limits: {
+        usd_limit_used: usdState.limit_today_used,
+        usd_limit_total: usdState.limit_today_total,
+        vop_limit_used: vopUsed,
+        vop_limit_total: vopTotal
+      }
+    });
+  } catch (e) {
+    console.error('/v1/daily/summary', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+app.get('/v1/debug/time', requireTgAuth, (req, res) => {
+  if (req.tgUser?.username !== 'ownagez') return res.status(403).json({ ok:false, error:'FORBIDDEN' });
+  const nowTs = req.query.now ? new Date(req.query.now).getTime() : Date.now();
+  res.json({
+    serverIso: new Date(nowTs).toISOString(),
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    utcDayKey: utcDayKey(nowTs),
+    startOfUtcDay: new Date(startOfUtcDay(nowTs)).toISOString(),
+    nextUtcMidnight: new Date(nextUtcMidnight(nowTs)).toISOString()
+  });
 });
 
 app.get('/api/tasks/active', requireTgAuth, async (req, res) => {

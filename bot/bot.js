@@ -6,6 +6,7 @@ import express from 'express';
 import { Telegraf, Markup } from 'telegraf';
 import pg from 'pg';
 import { grantXpOnce, XP } from '../xp.mjs';
+import { startOfUtcDay } from '../server/lib/time.js';
 
 const { BOT_TOKEN, WEBAPP_URL, DATABASE_URL, PORT = 8081 } = process.env;
 if (!BOT_TOKEN) throw new Error('BOT_TOKEN missing');
@@ -157,9 +158,8 @@ async function grantReferral(referrerTgId, referredTgId) {
   }
 }
 
-function todayUTC() {
-  const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+function todayUTC(ts = Date.now()) {
+  return new Date(startOfUtcDay(ts));
 }
 
 async function grantDailyIfNeeded(telegramId) {
