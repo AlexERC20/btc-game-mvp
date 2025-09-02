@@ -3,8 +3,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { WebSocket } from 'ws';
-import pg from 'pg';
 import crypto from 'crypto';
+import { pool } from './db.js';
 import { grantXpOnce, levelThreshold, xpSpentBeforeLevel, XP } from '../xp.mjs';
 import { PRICE_BUMP_STEP, calcPrice } from './shopMath.js';
 import {
@@ -13,7 +13,9 @@ import {
   dayString,
 } from './farmUtils.js';
 import { runMigrations } from './migrate.js';
-import { seedTasks } from './seed_tasks.mjs';
+import { seedTasks } from './scripts/seed_tasks.mjs';
+import { dailyKeyUTC, weeklyKeyUTC } from './tasks/utils.js';
+import { addTaskProgress } from './tasks/events.js';
 
 function verifyInitData(initData, botToken) {
   try {
@@ -137,11 +139,6 @@ const ARENA_TIMER = {
 
 const ARENA_MAX_BETS_PER_ROUND = 20;
 
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-});
-
 try {
   await runMigrations(pool);
   console.log('migrations applied');
@@ -221,30 +218,6 @@ async function addQuestProgress(userId, qkey, delta = 1) {
     if (!row.is_claimed) {
       await pool.query(`UPDATE user_quests SET progress=progress+$2 WHERE id=$1`, [row.id, delta]);
     }
-  }
-}
-
-function weekKey(date) {
-  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
-}
-
-async function trackTaskEvent(userId, event, count = 1) {
-  const { rows } = await pool.query('SELECT id, period, target_count FROM tasks WHERE event=$1 AND is_enabled', [event]);
-  if (!rows.length) return;
-  const now = new Date();
-  for (const t of rows) {
-    const periodKey = t.period === 'DAILY' ? now.toISOString().slice(0, 10) : weekKey(now);
-    await pool.query(
-      `INSERT INTO user_task_progress(user_id, task_id, period_key, progress)
-       VALUES($1,$2,$3,LEAST($4,$5))
-       ON CONFLICT (user_id, task_id, period_key) DO UPDATE
-         SET progress=LEAST(user_task_progress.progress+$4,$5)`,
-      [userId, t.id, periodKey, count, t.target_count]
-    );
   }
 }
 
@@ -941,7 +914,7 @@ async function markFriendActivityOnBet(friendUserId, friendTid) {
       [friendUserId, refId, day]
     );
     if (ins.rowCount > 0) {
-      await trackTaskEvent(refId, 'friend_active_today', 1);
+      await addTaskProgress(refId, 'friend_active', 1);
     }
   } catch (e) {
     if (e.message?.includes('relation') && e.message.includes('daily_friend_activity')) {
@@ -1084,7 +1057,7 @@ async function settleArenaRound() {
     client.release();
   }
 
-  await trackTaskEvent(arena.leaderUserId, 'arena_win', 1);
+  await addTaskProgress(arena.leaderUserId, 'arena_win', 1);
 
   // в паузу
   arena.phase = 'pause';
@@ -1962,7 +1935,7 @@ app.post('/api/arena/bid', requireTgAuth, async (req, res) => {
     // enforce maximum timer duration
     arena.secsLeft = Math.min(arena.secsLeft, ARENA_TIMER.MAX_CAP || Infinity);
     await markFriendActivityOnBet(userId, uid);
-    await trackTaskEvent(userId, 'arena_bid', 1);
+    await addTaskProgress(userId, 'arena_bid', 1);
 
     return res.json({ ok:true, bank:arena.bank, nextBid:arena.nextBid, secsLeft:arena.secsLeft });
   } catch (e) {
@@ -2415,24 +2388,29 @@ app.get('/api/tasks/active', requireTgAuth, async (req, res) => {
     const u = rows[0];
     if (!u) return res.json({ ok:false, tasks:[] });
     const now = new Date();
-    const dayKey = now.toISOString().slice(0,10);
-    const weekKeyVal = weekKey(now);
-    const tRes = await pool.query('SELECT * FROM tasks WHERE is_enabled AND visible_min_level <= $1', [u.level]);
+    const dayKey = dailyKeyUTC(now);
+    const weekKey = weeklyKeyUTC(now);
+    const tRes = await pool.query('SELECT * FROM tasks WHERE is_active AND min_level <= $1', [u.level]);
     const tasks = [];
     for (const t of tRes.rows) {
-      const periodKey = t.period === 'DAILY' ? dayKey : weekKeyVal;
-      const up = await pool.query('SELECT progress,is_claimed FROM user_task_progress WHERE user_id=$1 AND task_id=$2 AND period_key=$3', [u.id, t.id, periodKey]);
-      const prog = up.rows[0] || { progress:0, is_claimed:false };
+      const periodKey = t.period === 'daily' ? dayKey : weekKey;
+      const progRes = await pool.query(
+        `INSERT INTO user_task_progress (user_id, task_code, period, period_key, progress, goal, reward_usd, reward_vop, reward_limit_delta)
+         VALUES ($1,$2,$3,$4,0,$5,$6,$7,$8)
+         ON CONFLICT (user_id, task_code, period_key) DO UPDATE SET progress=user_task_progress.progress
+         RETURNING progress, goal, reward_usd, reward_vop, reward_limit_delta, claimed`,
+        [u.id, t.code, t.period, periodKey, t.goal, t.reward_usd, t.reward_vop, t.reward_limit_delta]
+      );
+      const p = progRes.rows[0];
       tasks.push({
-        id: t.id,
-        period: t.period,
+        code: t.code,
         title: t.title,
-        desc: t.desc,
-        event: t.event,
-        target_count: Number(t.target_count),
-        progress: Number(prog.progress),
-        is_claimed: prog.is_claimed,
-        reward: t.reward_json,
+        desc: t.description,
+        period: t.period,
+        progress: Number(p.progress),
+        goal: Number(p.goal),
+        reward: { usd: p.reward_usd, vop: p.reward_vop, limit_delta: p.reward_limit_delta },
+        claimed: p.claimed,
       });
     }
     res.json({ ok:true, tasks });
@@ -2443,48 +2421,100 @@ app.get('/api/tasks/active', requireTgAuth, async (req, res) => {
 });
 
 app.post('/api/tasks/claim', requireTgAuth, async (req, res) => {
-  const taskId = req.body?.task_id;
-  if (!taskId) return res.status(400).json({ ok:false, error:'NO_ID' });
+  const code = req.body?.code;
+  if (!code) return res.status(400).json({ ok:false, error:'NO_CODE' });
   try {
     const uid = req.tgUser.id;
-    const { rows } = await pool.query('SELECT id, balance, xp FROM users WHERE telegram_id=$1', [uid]);
+    const { rows } = await pool.query(
+      'SELECT id, balance, vop_balance, friend_bonus_usd_today, friend_bonus_date, task_bonus_usd_today, task_bonus_date, base_daily_cap_usd, claimed_usd_today FROM users WHERE telegram_id=$1',
+      [uid]
+    );
     const u = rows[0];
     if (!u) return res.status(400).json({ ok:false, error:'NO_USER' });
-    const tRes = await pool.query('SELECT * FROM tasks WHERE id=$1', [taskId]);
+    const tRes = await pool.query('SELECT code, period FROM tasks WHERE code=$1', [code]);
     const t = tRes.rows[0];
     if (!t) return res.status(400).json({ ok:false, error:'NO_TASK' });
     const now = new Date();
-    const periodKey = t.period === 'DAILY' ? now.toISOString().slice(0,10) : weekKey(now);
+    const periodKey = t.period === 'daily' ? dailyKeyUTC(now) : weeklyKeyUTC(now);
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const progRes = await client.query('SELECT progress,is_claimed FROM user_task_progress WHERE user_id=$1 AND task_id=$2 AND period_key=$3 FOR UPDATE', [u.id, taskId, periodKey]);
+      const progRes = await client.query(
+        'SELECT progress, goal, reward_usd, reward_vop, reward_limit_delta, claimed FROM user_task_progress WHERE user_id=$1 AND task_code=$2 AND period_key=$3 FOR UPDATE',
+        [u.id, code, periodKey]
+      );
       const prog = progRes.rows[0];
-      if (!prog || prog.progress < t.target_count) { await client.query('ROLLBACK'); return res.status(400).json({ ok:false, error:'NOT_COMPLETED' }); }
-      if (prog.is_claimed) { await client.query('ROLLBACK'); return res.status(400).json({ ok:false, error:'ALREADY_CLAIMED' }); }
-      let balanceDelta=0, xpDelta=0, limitDelta=0;
-      for (const r of t.reward_json || []) {
-        if (r.type === 'usd_bonus') balanceDelta += Number(r.amount || 0);
-        else if (r.type === 'xp_bonus') xpDelta += Number(r.amount || 0);
-        else if (r.type === 'limit_usd_delta') limitDelta += Number(r.amount || 0);
+      if (!prog || prog.progress < prog.goal) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ ok:false, error:'NOT_COMPLETED' });
       }
-      if (balanceDelta) await client.query('UPDATE users SET balance=balance+$1 WHERE id=$2', [balanceDelta, u.id]);
-      if (xpDelta) await client.query('UPDATE users SET xp=xp+$1 WHERE id=$2', [xpDelta, u.id]);
-      if (limitDelta) {
-        const day = now.toISOString().slice(0,10);
-        await client.query('UPDATE users SET task_bonus_usd_today=task_bonus_usd_today+$1, task_bonus_date=$3 WHERE id=$2', [limitDelta, u.id, day]);
+      if (prog.claimed) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ ok:false, error:'ALREADY_CLAIMED' });
       }
-      await client.query('UPDATE user_task_progress SET is_claimed=true WHERE user_id=$1 AND task_id=$2 AND period_key=$3', [u.id, taskId, periodKey]);
+      if (prog.reward_usd) await client.query('UPDATE users SET balance=balance+$1 WHERE id=$2', [prog.reward_usd, u.id]);
+      if (prog.reward_vop) await client.query('UPDATE users SET vop_balance=vop_balance+$1 WHERE id=$2', [prog.reward_vop, u.id]);
+      if (prog.reward_limit_delta) {
+        const day = dailyKeyUTC(now);
+        await client.query(
+          'UPDATE users SET task_bonus_usd_today=task_bonus_usd_today+$1, task_bonus_date=$3 WHERE id=$2',
+          [prog.reward_limit_delta, u.id, day]
+        );
+      }
+      await client.query('UPDATE user_task_progress SET claimed=true WHERE user_id=$1 AND task_code=$2 AND period_key=$3', [u.id, code, periodKey]);
       await client.query('COMMIT');
-      res.json({ ok:true, balance_delta:balanceDelta, xp_delta:xpDelta, limit_delta:limitDelta });
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
     } finally {
       client.release();
     }
+    const fresh = await pool.query(
+      'SELECT balance, vop_balance, friend_bonus_usd_today, friend_bonus_date, task_bonus_usd_today, task_bonus_date, base_daily_cap_usd, claimed_usd_today FROM users WHERE id=$1',
+      [u.id]
+    );
+    const nu = fresh.rows[0];
+    const today = new Date();
+    ensureFriendBonus(nu, today);
+    ensureTaskBonus(nu, today);
+    ensureDayBuckets('usd', nu, today);
+    const baseCap = nu.base_daily_cap_usd ?? BASE_USD_LIMIT;
+    const limitToday = baseCap + (nu.friend_bonus_usd_today || 0) + (nu.task_bonus_usd_today || 0);
+    res.json({
+      ok: true,
+      balance_usd: Number(nu.balance || 0),
+      balance_vop: Number(nu.vop_balance || 0),
+      limit_today: limitToday,
+      limit_used_today: Number(nu.claimed_usd_today || 0),
+    });
   } catch (e) {
     console.error('/api/tasks/claim', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+app.get('/api/tasks/debug', requireTgAuth, async (req, res) => {
+  if (req.tgUser?.username !== 'ownagez') {
+    return res.status(403).json({ ok:false, error:'FORBIDDEN' });
+  }
+  try {
+    const userId = Number(req.query.user_id);
+    const tasksRes = await pool.query('SELECT * FROM tasks WHERE is_active');
+    const out = {
+      tasks: tasksRes.rows,
+      dailyKeyUTC: dailyKeyUTC(),
+      weeklyKeyUTC: weeklyKeyUTC(),
+      now_utc: new Date().toISOString(),
+      now_server_tz: new Date().toString(),
+      env_tz: process.env.TZ || null,
+    };
+    if (userId) {
+      const progRes = await pool.query('SELECT * FROM user_task_progress WHERE user_id=$1 ORDER BY task_code, period_key', [userId]);
+      out.user_progress = progRes.rows;
+    }
+    res.json(out);
+  } catch (e) {
+    console.error('/api/tasks/debug', e);
     res.status(500).json({ ok:false, error:'SERVER' });
   }
 });
