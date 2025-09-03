@@ -80,6 +80,7 @@
     line-height:1;
     color: currentColor;
   }
+  .inring-price.stale{ color:#888; }
   @media (max-width:380px){ .inring-price{font-size:34px} }
 
   .inring-bottom{
@@ -646,6 +647,8 @@ let selectedPack = null;
 // elements
 const priceEl = document.getElementById('price');
 const startInRing = document.getElementById('startInRing');
+let startPrice = null;
+let lastPriceTs = 0;
 const ringTimer   = document.getElementById('ringTimer');
 const ringPhase   = document.getElementById('ringPhase');
 const balEl   = document.getElementById('bal');
@@ -1168,16 +1171,9 @@ async function poll(){
   betArc.setAttribute('stroke-dasharray', `${zone} ${RLEN-zone}`);
   betArc.setAttribute('stroke-dashoffset', 0);
 
-  if (r.price){
-    if (priceEl){
-      priceEl.textContent = fmt(r.price);
-      priceEl.style.color = r.startPrice
-        ? (r.price > r.startPrice ? '#1fa36a' : (r.price < r.startPrice ? '#c6423a' : '#fff'))
-        : '#fff';
-    }
-    if (startInRing && r.startPrice){
-      startInRing.textContent = 'Старт: ' + Math.round(r.startPrice);
-    }
+  if (startInRing && r.startPrice){
+    startPrice = r.startPrice;
+    startInRing.textContent = 'Старт: ' + Math.round(r.startPrice);
   }
 
   const secs = Math.max(r.secsLeft||0,0);
@@ -1322,6 +1318,35 @@ document.addEventListener('visibilitychange', ()=>{
 });
 poll();
 setInterval(poll, 1000);
+
+// price stream
+function connectPriceStream(){
+  const es = new EventSource('/v1/price/stream');
+  es.onmessage = (ev) => {
+    const d = JSON.parse(ev.data);
+    lastPriceTs = Date.now();
+    if (priceEl){
+      const price = Number(d.price || 0);
+      priceEl.textContent = fmt(price);
+      priceEl.style.color = startPrice
+        ? (price > startPrice ? '#1fa36a' : (price < startPrice ? '#c6423a' : '#fff'))
+        : '#fff';
+      priceEl.classList.remove('stale');
+    }
+  };
+  es.onerror = () => {};
+}
+connectPriceStream();
+setInterval(() => {
+  if (!lastPriceTs) return;
+  if (Date.now() - lastPriceTs > 5000){
+    priceEl.classList.add('stale');
+    if (!priceEl.textContent.endsWith('•')) priceEl.textContent += ' •';
+  } else {
+    priceEl.classList.remove('stale');
+    if (priceEl.textContent.endsWith(' •')) priceEl.textContent = priceEl.textContent.slice(0,-2);
+  }
+}, 1000);
 setInterval(maybeCelebrateWin, 3000);
 })();
 
