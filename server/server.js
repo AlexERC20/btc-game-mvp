@@ -2,8 +2,8 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { WebSocket } from 'ws';
 import crypto from 'crypto';
+import { createPriceFeed } from './priceFeed/index.js';
 import { pool } from './db.js';
 import { grantXpOnce, levelThreshold, xpSpentBeforeLevel, XP } from '../xp.mjs';
 import { PRICE_BUMP_STEP, calcPrice } from './shopMath.js';
@@ -68,9 +68,6 @@ app.use(express.static('public'));
 
 const PORT = process.env.PORT || 8080;
 const ASSET = process.env.ASSET || 'ETH';
-const BINANCE_WS =
-  process.env.BINANCE_WS ||
-  'wss://stream.binance.com:9443/ws/ethusdt@miniTicker';
 
 const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
 const BOT_USERNAME = process.env.BOT_USERNAME || 'realpricebtc_bot';
@@ -748,21 +745,12 @@ let state = {
 };
 const MAX_HIST = 10;
 
-/* ========= Цена (Binance WS) ========= */
-let ws = null;
-function connectPrice() {
-  ws = new WebSocket(BINANCE_WS);
-  ws.on('message', (raw) => {
-    try {
-      const d = JSON.parse(raw);
-      state.price = Number(d.c ?? d.lastPrice ?? d.p ?? d.k?.c);
-      if (!state.startPrice && state.phase !== 'idle') state.startPrice = state.price;
-    } catch {}
-  });
-  ws.on('close', () => setTimeout(connectPrice, 1000));
-  ws.on('error', () => ws.close());
-}
-connectPrice();
+/* ========= Цена (PriceFeed) ========= */
+const priceFeed = createPriceFeed();
+priceFeed.on('price', (p) => {
+  state.price = p;
+  if (!state.startPrice && state.phase !== 'idle') state.startPrice = p;
+});
 
 /* ========= Утилиты ========= */
 async function ensureUser(telegramId, username) {
@@ -1134,10 +1122,12 @@ setInterval(async () => {
 
 /* ========= Цикл раунда ========= */
 async function startRound() {
-  if (!state.price) return;
+  const lp = priceFeed.getLastPrice();
+  if (!lp) return;
   state.phase = 'betting';
   state.secsLeft = state.roundLen;
-  state.startPrice = state.price;
+  state.startPrice = lp;
+  state.price = lp;
   state.bankBuy = 0; state.bankSell = 0;
   state.betsBuy = []; state.betsSell = [];
   const r = await pool.query(
@@ -1417,6 +1407,32 @@ app.post('/api/bet', requireTgAuth, async (req, res) => {
     console.error(e);
     res.status(500).json({ ok:false, error:'SERVER' });
   }
+});
+
+// Price endpoints
+app.get('/v1/price', (req, res) => {
+  const price = priceFeed.getLastPrice();
+  const st = priceFeed.getStatus();
+  res.json({ price, provider: st.provider, asOf: new Date(st.lastMessageAt || 0).toISOString() });
+});
+
+app.get('/v1/price/status', (req, res) => {
+  res.json(priceFeed.getStatus());
+});
+
+app.get('/v1/price/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  const send = (p) => {
+    const st = priceFeed.getStatus();
+    res.write(`data: ${JSON.stringify({ price: p, provider: st.provider, asOf: new Date(st.lastMessageAt || Date.now()).toISOString() })}\n\n`);
+  };
+  const listener = (p) => send(p);
+  priceFeed.on('price', listener);
+  const lp = priceFeed.getLastPrice();
+  if (lp != null) send(lp);
+  req.on('close', () => priceFeed.off('price', listener));
 });
 
 // Состояние
