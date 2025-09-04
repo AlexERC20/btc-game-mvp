@@ -260,6 +260,7 @@
     <button class="chipbtn" id="topupBtn">Пополнение</button>
     <button class="chipbtn" id="chatFeedBtn">ЧАТ</button>
     <button class="chipbtn" id="rulesBtn">Правила</button>
+    <button class="chipbtn" id="spreadsBtn">Спреды</button>
     <button class="chipbtn" id="starsBtn">Купить $</button>
     <button class="chipbtn" id="shopBtn">Магазин</button>
   </div>
@@ -417,6 +418,7 @@ const rulesBtn = document.getElementById('rulesBtn');
 const starsBtn = document.getElementById('starsBtn');
 const shopBtn = document.getElementById('shopBtn');
 const switchToClassicBtn = document.getElementById('switchToClassicBtn');
+const spreadsBtn = document.getElementById('spreadsBtn');
 
 const sheetBg = document.getElementById('sheetBg');
 const sheetRules = document.getElementById('sheetRules');
@@ -442,6 +444,7 @@ const adEnter = document.getElementById('adEnter');
 const chatFeed = document.getElementById('chatFeed');
 
 switchToClassicBtn?.addEventListener('click', ()=>go('/classic.html'));
+spreadsBtn?.addEventListener('click', ()=>go('/spreads.html'));
 
 let selectedPack = null;
 let arenaPhase = 'idle';
