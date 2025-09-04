@@ -16,6 +16,7 @@ import { runMigrations } from './migrate.js';
 import { seedTasks } from './scripts/seed_tasks.mjs';
 import { dailyKeyUTC, weeklyKeyUTC } from './tasks/utils.js';
 import { addTaskProgress } from './tasks/events.js';
+import { startSpreadTracker, parseDexInput, USER_TRACK_LIMIT } from './spread.js';
 
 function verifyInitData(initData, botToken) {
   try {
@@ -142,6 +143,9 @@ try {
 } catch (e) {
   console.error('migrations failed', e);
 }
+
+// start spread tracker loop
+const spread = startSpreadTracker(pool);
 
 async function seedQuestTemplates(pool){
   const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM quest_templates');
@@ -2393,6 +2397,81 @@ app.get('/api/referrals/stats/today', async (req, res) => {
     res.json({ ok:true, total_friends: total.rows[0].c, active_friends_today: activeCount });
   } catch (e) {
     console.error('/api/referrals/stats/today', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+// === Spread tracking ===
+app.post('/api/spread/track', requireTgAuth, async (req, res) => {
+  const { exchange, symbol, dexUrlOrPair } = req.body || {};
+  if (!/^(binance|mexc)$/.test(exchange)) return res.json({ ok:false, error:'BAD_EXCHANGE' });
+  if (!/^[A-Z0-9]+USDT$/.test(symbol)) return res.json({ ok:false, error:'BAD_SYMBOL' });
+  const parsed = parseDexInput(dexUrlOrPair);
+  if (!parsed || !parsed.pair) return res.json({ ok:false, error:'BAD_DEX' });
+  const uid = req.tgUser.id;
+  try {
+    const count = await pool.query('SELECT COUNT(*)::int AS c FROM spread_tracks WHERE user_id=$1', [uid]);
+    if (count.rows[0].c >= USER_TRACK_LIMIT) return res.json({ ok:false, error:'TRACK_LIMIT' });
+    const existing = await pool.query('SELECT st.id, u.username FROM spread_tracks st LEFT JOIN users u ON st.user_id=u.id WHERE st.exchange=$1 AND st.symbol=$2 AND st.dex_pair=$3', [exchange, symbol, parsed.pair]);
+    if (existing.rowCount > 0) {
+      const ex = existing.rows[0];
+      return res.json({ ok:true, trackId: ex.id, creator: ex.username || null });
+    }
+    const ins = await pool.query('INSERT INTO spread_tracks(user_id,exchange,symbol,dex_pair,chain) VALUES ($1,$2,$3,$4,$5) RETURNING id', [uid, exchange, symbol, parsed.pair, parsed.chain]);
+    res.json({ ok:true, trackId: ins.rows[0].id });
+  } catch (e) {
+    console.error('/api/spread/track', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+app.get('/api/spread/list', requireTgAuth, async (req, res) => {
+  try {
+    const uid = req.tgUser.id;
+    const { rows } = await pool.query('SELECT id, exchange, symbol, dex_pair, chain, status FROM spread_tracks WHERE user_id=$1 ORDER BY id', [uid]);
+    const tracks = rows.map(r => ({ ...r, ...spread.state.get(r.id) }));
+    res.json({ ok:true, tracks });
+  } catch (e) {
+    console.error('/api/spread/list', e);
+    res.status(500).json({ ok:false, error:'SERVER' });
+  }
+});
+
+app.get('/api/spread/state', requireTgAuth, async (req, res) => {
+  const id = Number(req.query.trackId);
+  if (!id) return res.json({ ok:false, error:'NO_ID' });
+  const st = spread.state.get(id);
+  if (!st) return res.json({ ok:false, error:'NOT_FOUND' });
+  res.json({ ok:true, trackId:id, ...st });
+});
+
+app.get('/stream/spread', (req, res) => {
+  const id = Number(req.query.trackId);
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  const send = (u) => { if (u.trackId === id) res.write(`data: ${JSON.stringify(u)}\n\n`); };
+  spread.on('update', send);
+  const init = spread.state.get(id);
+  if (init) res.write(`data: ${JSON.stringify({ trackId:id, ...init })}\n\n`);
+  req.on('close', () => spread.off('update', send));
+});
+
+app.get('/api/spread/rewards', requireTgAuth, async (req, res) => {
+  try {
+    const uid = req.tgUser.id;
+    const { rows } = await pool.query(
+      `SELECT 
+         SUM(CASE WHEN reward_type='spread' THEN 1 ELSE 0 END)::int AS spread,
+         SUM(CASE WHEN reward_type='convergence' THEN 1 ELSE 0 END)::int AS convergence
+       FROM spread_rewards
+       WHERE user_id=$1 AND created_at::date = now()::date`,
+      [uid]
+    );
+    const r = rows[0] || { spread:0, convergence:0 };
+    res.json({ ok:true, spread:r.spread||0, convergence:r.convergence||0 });
+  } catch (e) {
+    console.error('/api/spread/rewards', e);
     res.status(500).json({ ok:false, error:'SERVER' });
   }
 });
