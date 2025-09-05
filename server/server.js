@@ -2457,6 +2457,28 @@ app.get('/stream/spread', (req, res) => {
   req.on('close', () => spread.off('update', send));
 });
 
+ codex/implement-mvp-for-spread-tracking-r2y7fb
+app.get('/api/spread/rewards', requireTgAuth, async (req, res) => {
+  try {
+    const uid = req.tgUser.id;
+    const { rows } = await pool.query(
+      `SELECT
+         SUM(CASE WHEN reward_type='spread' THEN 1 ELSE 0 END)::int AS spread,
+         SUM(CASE WHEN reward_type='convergence' THEN 1 ELSE 0 END)::int AS convergence
+       FROM spread_rewards
+       WHERE user_id=$1 AND created_at::date = now()::date`,
+      [uid],
+    );
+    const { spread = 0, convergence = 0 } = rows[0] || {};
+    res.json({ ok: true, spread, convergence });
+  } catch (e) {
+    console.error('/api/spread/rewards', e);
+    res.status(500).json({ ok: false, error: 'SERVER' });
+  }
+});
+
+
+main
 app.get('/api/tasks/active', requireTgAuth, async (req, res) => {
   try {
     const uid = req.tgUser.id;

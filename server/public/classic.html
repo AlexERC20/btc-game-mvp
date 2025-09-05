@@ -393,6 +393,7 @@
     <button class="chipbtn" id="statsBtn">Статистика</button>
     <button class="chipbtn" id="chatFeedBtn">ЧАТ</button>
     <button class="chipbtn" id="switchToArenaBtn">Арена</button>
+    <button class="chipbtn" id="spreadsBtn">Спреды</button>
     <button class="chipbtn" id="starsBtn">Купить $</button>
     <button class="chipbtn" id="shopBtn">Магазин<span id="farmPill" class="chip" style="display:none;margin-left:4px;background:var(--green);color:#000;font-weight:700"></span></button>
   </div>
@@ -675,6 +676,7 @@ const insBtn  = document.getElementById('insBtn');
 const statsBtn= document.getElementById('statsBtn');
 const chatFeedBtn = document.getElementById('chatFeedBtn');
 const switchToArenaBtn = document.getElementById('switchToArenaBtn');
+const spreadsBtn = document.getElementById('spreadsBtn');
 const cfgBtn  = document.getElementById('cfgBtn');
 const shopBtn = document.getElementById('shopBtn');
 const farmPill = document.getElementById('farmPill');
@@ -955,6 +957,7 @@ function bindOnce(){
       sheetShop.querySelector(`#tab-${tab}`)?.classList.add('show');
     });
     switchToArenaBtn?.addEventListener('click', ()=>go('/'));
+    spreadsBtn?.addEventListener('click', ()=>go('/spreads.html'));
   chipsBox.addEventListener('click', e=>{
     const b = e.target.closest('.chipopt'); if (!b) return;
     document.querySelectorAll('#chips .chipopt').forEach(x=>x.classList.remove('active'));
