@@ -70,7 +70,12 @@ const ALLOWED_METRIC = new Set(['count', 'usd', 'vop']);
 const ALLOWED_FREQ   = new Set(['once', 'daily', 'weekly']);
 
 function norm(t) {
-  const scope = (t.scope || 'user').toLowerCase();
+  const rawScope = (t.scope || '').toLowerCase();
+  if (rawScope && !ALLOWED_SCOPE.has(rawScope)) {
+    console.warn(`[seed][quest_templates] dirty scope "${t.scope}" -> 'user'`);
+  }
+  const scope = ALLOWED_SCOPE.has(rawScope) ? rawScope : 'user';
+
   const metric = (t.metric || 'count').toLowerCase();
   const frequency = (t.frequency || 'daily').toLowerCase();
 
@@ -78,7 +83,7 @@ function norm(t) {
     qkey: String(t.qkey || '').toLowerCase(),
     title: t.title || '',
     description: t.description ?? '',
-    scope: ALLOWED_SCOPE.has(scope) ? scope : 'user',
+    scope,
     goal: Number.isFinite(t.goal) && t.goal > 0 ? Math.trunc(t.goal) : 1,
     metric: ALLOWED_METRIC.has(metric) ? metric : 'count',
     reward_usd: t.reward_usd ?? 0,

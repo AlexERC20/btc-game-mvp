@@ -23,18 +23,10 @@ ALTER TABLE quest_templates
   ADD COLUMN IF NOT EXISTS limit_usd_delta INTEGER DEFAULT 0,
   ADD COLUMN IF NOT EXISTS type TEXT;
 
--- на случай старой логики — оставляем code, но делаем backfill из qkey
+-- keep legacy column `code` for backward compatibility
 ALTER TABLE quest_templates ADD COLUMN IF NOT EXISTS code TEXT;
 
--- backfill значений, чтобы не было NULL
-UPDATE quest_templates
-SET
-  qkey        = COALESCE(qkey, CONCAT(COALESCE(type,'daily'),':',COALESCE(code, regexp_replace(title,'\s+','_','g')))),
-  description = COALESCE(description, ''),
-  type        = COALESCE(type, 'daily'),
-  code        = COALESCE(code, qkey);
-
--- ограничения после backfill
+-- ensure critical columns are NOT NULL
 ALTER TABLE quest_templates
   ALTER COLUMN qkey SET NOT NULL,
   ALTER COLUMN description SET NOT NULL,
