@@ -19,9 +19,8 @@ import {
   utcDayKey, startOfUtcDay
 } from './utils/time.js';
 
-import {
-  ensureSchema, seedQuestTemplates
-} from './utils/schema.js';
+import { ensureSchema } from './utils/schema.js';
+import { seedQuestTemplates } from './utils/seed.js';
 
 // ===== Config =====
 const PORT = Number(process.env.PORT || 10000);

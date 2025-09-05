@@ -1,52 +1,61 @@
 export async function ensureSchema(pool) {
-  // Таблица активности друзей по дням (UTC)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS daily_friend_activity (
-      id BIGSERIAL PRIMARY KEY,
-      friend_user_id BIGINT NOT NULL,
-      referrer_user_id BIGINT NOT NULL,
-      activity_date DATE NOT NULL, -- UTC date
-      first_event_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (friend_user_id, activity_date)
-    );
-    CREATE INDEX IF NOT EXISTS idx_dfa_referrer_date
-      ON daily_friend_activity (referrer_user_id, activity_date);
-  `);
-
-  // Таблицы квестов/прогресса (если ещё не созданы)
+  // quest_templates: создать если нет
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quest_templates (
-      id SERIAL PRIMARY KEY,
-      title TEXT NOT NULL,
-      description TEXT NOT NULL,
-      reward_usd INT NOT NULL DEFAULT 0,
-      reward_vop INT NOT NULL DEFAULT 0,
-      active BOOLEAN NOT NULL DEFAULT TRUE
+      id           BIGSERIAL PRIMARY KEY,
+      title        TEXT        NOT NULL,
+      description  TEXT        NOT NULL DEFAULT '',
+      code         TEXT        UNIQUE,
+      reward_usd   INTEGER     NOT NULL DEFAULT 0,
+      reward_vop   INTEGER     NOT NULL DEFAULT 0,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
 
-  // --- quest_templates: добавить колонку code, если её нет ---
+  // Добавить недостающие колонки на старых базах
   await pool.query(`
     DO $$
     BEGIN
       IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'quest_templates' AND column_name = 'code'
+        WHERE table_name='quest_templates' AND column_name='description'
+      ) THEN
+        ALTER TABLE quest_templates ADD COLUMN description TEXT NOT NULL DEFAULT '';
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='quest_templates' AND column_name='code'
       ) THEN
         ALTER TABLE quest_templates ADD COLUMN code TEXT;
       END IF;
-    END$$;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='quest_templates' AND column_name='reward_usd'
+      ) THEN
+        ALTER TABLE quest_templates ADD COLUMN reward_usd INTEGER NOT NULL DEFAULT 0;
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='quest_templates' AND column_name='reward_vop'
+      ) THEN
+        ALTER TABLE quest_templates ADD COLUMN reward_vop INTEGER NOT NULL DEFAULT 0;
+      END IF;
+    END $$;
   `);
 
-  // Проставить code из title, если пусто/NULL
+  // Заполнить code и description, сделать уникальным/NOT NULL
   await pool.query(`
     UPDATE quest_templates
        SET code = lower(regexp_replace(title, '[^a-zA-Z0-9]+', '_', 'g'))
      WHERE (code IS NULL OR code = '');
-  `);
 
-  // Разрулить дубликаты code (добавить суффикс _2, _3, ...)
-  await pool.query(`
+    UPDATE quest_templates
+       SET description = COALESCE(description, '')
+     WHERE description IS NULL;
+
     WITH d AS (
       SELECT id, code, row_number() OVER (PARTITION BY code ORDER BY id) AS rn
       FROM quest_templates
@@ -55,26 +64,37 @@ export async function ensureSchema(pool) {
        SET code = q.code || '_' || d.rn
       FROM d
      WHERE q.id = d.id AND d.rn > 1;
-  `);
 
-  // Уникальный индекс для ON CONFLICT
-  await pool.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS quest_templates_code_uidx
       ON quest_templates(code);
-  `);
 
-  // Сделать NOT NULL (после заполнения)
-  await pool.query(`
     ALTER TABLE quest_templates
-      ALTER COLUMN code SET NOT NULL;
+      ALTER COLUMN code SET NOT NULL,
+      ALTER COLUMN description SET NOT NULL;
   `);
 
+  // daily_friend_activity: для лимитов по друзьям
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_friend_activity (
+      id               BIGSERIAL PRIMARY KEY,
+      friend_user_id   BIGINT       NOT NULL,
+      referrer_user_id BIGINT       NOT NULL,
+      activity_date    DATE         NOT NULL,
+      first_event_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+      UNIQUE (friend_user_id, activity_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS dfa_referrer_date_idx
+      ON daily_friend_activity (referrer_user_id, activity_date);
+  `);
+
+  // quest_daily: прогресс ежедневных квестов
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quest_daily (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT NOT NULL,
       quest_code TEXT NOT NULL,
-      day_key DATE NOT NULL, -- UTC date
+      day_key DATE NOT NULL,
       progress JSONB NOT NULL DEFAULT '{}'::jsonb,
       completed BOOLEAN NOT NULL DEFAULT FALSE,
       UNIQUE (user_id, quest_code, day_key)
@@ -84,16 +104,3 @@ export async function ensureSchema(pool) {
   `);
 }
 
-export async function seedQuestTemplates(pool) {
-  // Мягкий сид — не перезатирает
-  await pool.query(`
-    INSERT INTO quest_templates (code, title, description, reward_usd, reward_vop)
-    VALUES
-      ('ARENA_10_WINS', 'Выиграй 10 раз на Арене', 'Победи в 10 раундах Арены', 500, 0),
-      ('ARENA_100_BETS', 'Сделай 100 ставок на Арене', 'Любые направления', 500, 0),
-      ('ARENA_100_BUY', '100 ставок BUY', 'Только BUY в Арене', 300, 0),
-      ('ARENA_100_SELL', '100 ставок SELL', 'Только SELL в Арене', 300, 0),
-      ('INVITE_3', 'Пригласи 3 друга', 'Пусть зайдут в игру', 1000, 0)
-    ON CONFLICT (code) DO NOTHING;
-  `);
-}
