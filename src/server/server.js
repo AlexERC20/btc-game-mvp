@@ -9,6 +9,8 @@ import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
 const { Pool } = pg;
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 import { utcDayKey } from './utils/time.js';
 import { runMigrations } from './migrate.js';
@@ -31,6 +33,11 @@ const pool = new Pool({
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// static files
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = path.join(__dirname, 'public');
+app.use(express.static(PUBLIC_DIR));
 
 // health
 app.get('/healthz', (_req, res) => res.json({ ok: true, utcDayKey: utcDayKey() }));
