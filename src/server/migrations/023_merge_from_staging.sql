@@ -1,66 +1,36 @@
 -- 023_merge_from_staging.sql
--- Сливаем подготовленные данные из quest_templates_staging в боевую quest_templates.
-
-WITH src AS (
-  SELECT
-    s.code,
-    s.scope,
-    s.metric,
-    s.goal,
-    s.title,
-    s.descr AS description,
-    COALESCE(s.reward_usd, 0)       AS reward_usd,
-    COALESCE(s.cooldown_hours, 24)   AS cooldown_hours
-  FROM quest_templates_staging s
-)
+-- Переносим данные из staging в боевую таблицу, маппим имена и типы.
+-- Требования к целевой таблице: поля
+-- code, frequency, metric, goal, title, description, reward_type, reward_value, cooldown_hours
 
 INSERT INTO quest_templates (
   code,
-  qkey,
-  title,
-  description,
+  frequency,
   metric,
   goal,
+  title,
+  description,
   reward_type,
   reward_value,
-  scope,
-  frequency,
-  cooldown_hours,
-  active
+  cooldown_hours
 )
 SELECT
   s.code,
-  -- Пока берём qkey = code, чтобы не падать на NOT NULL/UNIQUE.
-  s.code AS qkey,
-  s.title,
-  s.description,
-  CASE WHEN s.metric IN ('count','usd','vop','text') THEN s.metric ELSE 'count' END,
+  s.scope::text            AS frequency,      -- 'oneoff'/'daily'/'weekly' уже нормализованы на шаге 021
+  s.metric,
   s.goal,
-  -- У нас в staging только reward_usd, поэтому тип 'USD'
-  'USD'::text AS reward_type,
-  -- КЛЮЧЕВАЯ СТРОКА: заполняем reward_value из reward_usd, не даём NULL
-  COALESCE(s.reward_usd, 0) AS reward_value,
-  -- Храним исходный scope (oneoff/daily/weekly)
-  CASE WHEN s.scope IN ('oneoff','daily','weekly') THEN s.scope ELSE 'oneoff' END AS scope,
-  -- frequency: нормализуем к once/daily/weekly
-  CASE s.scope
-    WHEN 'oneoff' THEN 'once'
-    WHEN 'daily'  THEN 'daily'
-    WHEN 'weekly' THEN 'weekly'
-    ELSE 'once'
-  END AS frequency,
-  s.cooldown_hours,
-  TRUE AS active
-FROM src s
-ON CONFLICT (code) DO UPDATE
-SET
-  title          = EXCLUDED.title,
-  description    = EXCLUDED.description,
+  s.title,
+  s.descr                  AS description,    -- staging.descr -> quest_templates.description
+  'USD'::text              AS reward_type,    -- у нас в staging только reward_usd
+  s.reward_usd::integer    AS reward_value,   -- не даём NULL, иначе NOT NULL нарушится
+  s.cooldown_hours::integer
+FROM quest_templates_staging s
+ON CONFLICT (code) DO UPDATE SET
+  frequency      = EXCLUDED.frequency,
   metric         = EXCLUDED.metric,
   goal           = EXCLUDED.goal,
+  title          = EXCLUDED.title,
+  description    = EXCLUDED.description,
   reward_type    = EXCLUDED.reward_type,
   reward_value   = EXCLUDED.reward_value,
-  scope          = EXCLUDED.scope,
-  frequency      = EXCLUDED.frequency,
-  cooldown_hours = EXCLUDED.cooldown_hours,
-  active         = TRUE;
+  cooldown_hours = EXCLUDED.cooldown_hours;
