@@ -1,9 +1,8 @@
 import { runMigrations } from './migrate.js';
-import { env } from './env.js';
 
 export { runMigrations };
 
-export async function ensureBootstrap(db, envConfig = env) {
+export async function ensureBootstrap(db, envConfig) {
   const client = await db.connect();
   let current;
   try {

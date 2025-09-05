@@ -1,13 +1,15 @@
-import './env.js';
+import { loadEnv } from './env.js';
 import fs from 'fs';
 import path from 'path';
 import { Pool } from 'pg';
+
+const env = loadEnv('migrate');
 
 const dir = path.join(process.cwd(), 'src', 'server', 'migrations');
 
 export async function runMigrations(pool) {
   const ownPool = !pool;
-  const db = pool || new Pool({ connectionString: process.env.DATABASE_URL });
+  const db = pool || new Pool({ connectionString: env.DATABASE_URL });
   const files = fs
     .readdirSync(dir)
     .filter(f => /^\d+_.+\.sql$/.test(f))

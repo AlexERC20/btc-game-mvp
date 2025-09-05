@@ -1,10 +1,9 @@
 import { Router } from 'express';
 import { pool } from '../db.js';
-import { env } from '../env.js';
 
 const router = Router();
 
-router.get('/api/diag', async (_req, res) => {
+router.get('/api/diag', async (req, res) => {
   try {
     const client = await pool.connect();
     try {
@@ -19,14 +18,13 @@ router.get('/api/diag', async (_req, res) => {
         betsCurrent = betsRes.rows[0].cnt;
         bankCurrent = Number(betsRes.rows[0].bank || 0);
       }
+      const env = req.app.locals.env || {};
       res.json({
         ok: true,
         env: {
-          publicUrl: env.PUBLIC_URL,
-          enableGameLoop: env.ENABLE_GAME_LOOP,
-          enablePriceFeed: env.ENABLE_PRICE_FEED,
-          enableBots: env.ENABLE_BOTS,
-          roundLengthSec: env.ROUND_LENGTH_SEC,
+          publicUrl: req.baseUrlExt,
+          botUsername: env.BOT_USERNAME,
+          nodeEnv: env.NODE_ENV,
         },
         db: {
           roundsTotal: roundsTotalRes.rows[0].cnt,

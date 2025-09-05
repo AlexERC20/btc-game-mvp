@@ -1,28 +1,34 @@
-import dotenv from 'dotenv';
-import process from 'process';
+function number(v, d) { const n = parseInt(v ?? '', 10); return Number.isFinite(n) ? n : d; }
 
-dotenv.config();
+const REQUIRED = {
+  // для миграций нужен только доступ к БД
+  migrate: ['DATABASE_URL'],
 
-const required = ['DATABASE_URL','PUBLIC_URL'];
-for (const k of required) {
-  if (!process.env[k]) {
-    console.error(`[env] Missing ${k}`);
-    process.exit(1);
-  }
-}
-
-export const env = {
-  NODE_ENV: process.env.NODE_ENV || 'development',
-  PUBLIC_URL: process.env.PUBLIC_URL,
-  DATABASE_URL: process.env.DATABASE_URL,
-  TG_BOT_TOKEN: process.env.TG_BOT_TOKEN || null,
-  WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || 'dev',
-  ENABLE_GAME_LOOP: process.env.ENABLE_GAME_LOOP === '1',
-  ENABLE_PRICE_FEED: process.env.ENABLE_PRICE_FEED === '1',
-  ENABLE_BOTS: process.env.ENABLE_BOTS === '1',
-  ROUND_LENGTH_SEC: Number(process.env.ROUND_LENGTH_SEC || 60),
-  API_ORIGIN: process.env.API_ORIGIN || null,
+  // для основного сервера — БД и токен бота;
+  // PUBLIC_URL желателен, но не обязателен (имеем фолбэк)
+  server: ['DATABASE_URL', 'TELEGRAM_BOT_TOKEN'],
 };
 
-console.log(`[env] PUBLIC_URL=${env.PUBLIC_URL}`);
-console.log(`[env] ENABLE_*: gameLoop=${env.ENABLE_GAME_LOOP?1:0} priceFeed=${env.ENABLE_PRICE_FEED?1:0} bots=${env.ENABLE_BOTS?1:0}`);
+export function loadEnv(profile = 'server') {
+  const e = {
+    NODE_ENV: process.env.NODE_ENV || 'production',
+    DATABASE_URL: process.env.DATABASE_URL || '',
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
+    BOT_USERNAME: process.env.BOT_USERNAME || process.env.TG_BOT_USERNAME || '',
+    TG_WEBHOOK_SECRET: process.env.TG_WEBHOOK_SECRET || '',
+    // PUBLIC_URL допускаем пустым — ниже будет фолбэк
+    PUBLIC_URL: process.env.PUBLIC_URL
+      || process.env.RENDER_EXTERNAL_URL
+      || '',
+    PORT: number(process.env.PORT, 10000),
+  };
+
+  const need = REQUIRED[profile] || [];
+  const missing = need.filter(k => !e[k]);
+  if (missing.length) {
+    throw new Error(`[env] Missing ${missing.join(', ')}`);
+  }
+  return e;
+}
+
+export const isProd = () => (process.env.NODE_ENV || 'production') === 'production';

@@ -1,4 +1,5 @@
-import '../src/server/env.js';
+import { loadEnv } from '../src/server/env.js';
+loadEnv('migrate');
 import quests from './quests.definitions.json' with { type: 'json' };
 
 // Normalize scope to whitelist
