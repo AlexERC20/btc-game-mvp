@@ -13,6 +13,7 @@ export async function runMigrations(pool) {
     .filter(f => /^\d+_.+\.sql$/.test(f))
     .sort();
 
+  let applied = 0;
   try {
     for (const f of files) {
       const sql = fs.readFileSync(path.join(dir, f), 'utf8');
@@ -27,6 +28,7 @@ export async function runMigrations(pool) {
           await client.query('COMMIT');
         }
         console.log(`[migrate] applied ${f}`);
+        applied++;
       } catch (e) {
         try {
           if (!/^\s*BEGIN\b/i.test(sql)) {
@@ -42,10 +44,13 @@ export async function runMigrations(pool) {
   } finally {
     if (ownPool) await db.end();
   }
+  return applied;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runMigrations().catch(e => {
+  runMigrations().then(n => {
+    console.log(`[migrate] applied ${n} files`);
+  }).catch(e => {
     console.error('[migrate] failed', e);
     process.exit(1);
   });
