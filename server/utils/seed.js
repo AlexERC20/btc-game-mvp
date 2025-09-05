@@ -117,11 +117,16 @@ async function upsertTemplate(pool, tpl) {
 
 export async function seedQuestTemplates(pool) {
   let count = 0;
-  for (const raw of TEMPLATES) {
-    const tpl = normalizeTemplate(raw);
-    if (!tpl.qkey) { console.error('[seed] skip empty qkey', raw); continue; }
-    await upsertTemplate(pool, tpl);
-    count++;
+  for (const t of TEMPLATES) {
+    const tpl = normalizeTemplate(t);
+    if (!tpl.qkey) { console.error('[seed] skip empty qkey', t); continue; }
+    try {
+      await upsertTemplate(pool, tpl);
+      count++;
+    } catch (e) {
+      console.error('[seed][quest_templates] bad row:', JSON.stringify(t), e.message);
+      throw e;
+    }
   }
   console.log(`[seed] quest_templates upserted: ${count}`);
   return count;
