@@ -1,5 +1,11 @@
-import WebSocket from 'ws';
+import { createRequire } from 'module';
 import EventEmitter from 'events';
+
+const require = createRequire(import.meta.url);
+let WebSocket = globalThis.WebSocket;
+try {
+  if (!WebSocket) WebSocket = require('ws');
+} catch {}
 
 export function createLegacyFeed(){
   const emitter = new EventEmitter();
