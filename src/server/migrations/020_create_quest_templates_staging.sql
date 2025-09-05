@@ -2,7 +2,6 @@
 CREATE TABLE IF NOT EXISTS quest_templates_staging (
   code            TEXT NOT NULL,
   scope           TEXT NOT NULL,
-  frequency       TEXT,
   metric          TEXT NOT NULL,
   goal            INTEGER NOT NULL,
   title           TEXT NOT NULL,
