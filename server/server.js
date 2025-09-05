@@ -1,10 +1,5 @@
 // ===== Bootstrap (UTC + env) =====
 import 'dotenv/config';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = path.dirname(__filename);
 
 // Гарантируем единый UTC-день на бэке
 process.env.TZ = 'UTC';
@@ -15,12 +10,9 @@ import cors from 'cors';
 import pg from 'pg';
 const { Pool } = pg;
 
-import {
-  utcDayKey, startOfUtcDay
-} from './utils/time.js';
-
-import { ensureSchema } from './utils/schema.js';
+import { utcDayKey } from './utils/time.js';
 import { seedQuestTemplates } from './utils/seed.js';
+import { runMigrations } from './migrate.js';
 
 // ===== Config =====
 const PORT = Number(process.env.PORT || 10000);
@@ -55,9 +47,8 @@ app.get('/v1/debug/time', async (_req, res) => {
   });
 });
 
-// ===== Startup sequence =====
-try {
-  await ensureSchema(pool);
+async function boot() {
+  await runMigrations(pool);
   await seedQuestTemplates(pool);
 
   // ... тут ваши остальные роуты / логика ...
@@ -65,10 +56,12 @@ try {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[srv] listening on :${PORT} (UTC day ${utcDayKey()})`);
   });
-} catch (e) {
+}
+
+boot().catch((e) => {
   console.error('[srv] startup failed:', e);
   process.exit(1);
-}
+});
 
 // Глобальные ловушки, чтобы видеть причину падения в Render
 process.on('unhandledRejection', (r) => console.error('[unhandledRejection]', r));
