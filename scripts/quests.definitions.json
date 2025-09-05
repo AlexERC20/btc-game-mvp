@@ -1,6 +1,5 @@
 [
   {
-    "qkey": "arena_bets_20",
     "code": "arena_bets_20",
     "title": "Сделай 20 ставок на Арене",
     "description": "",
@@ -13,7 +12,6 @@
     "meta": {}
   },
   {
-    "qkey": "classic_buys_100",
     "code": "classic_buys_100",
     "title": "Сделай 100 покупок в Классике",
     "description": "",
@@ -26,7 +24,6 @@
     "meta": {}
   },
   {
-    "qkey": "classic_sells_100",
     "code": "classic_sells_100",
     "title": "Сделай 100 продаж в Классике",
     "description": "",
@@ -39,7 +36,6 @@
     "meta": {}
   },
   {
-    "qkey": "arena_wins_10",
     "code": "arena_wins_10",
     "title": "Выиграй 10 раз на Арене",
     "description": "",
@@ -52,7 +48,6 @@
     "meta": {}
   },
   {
-    "qkey": "invite_3_friends",
     "code": "invite_3_friends",
     "title": "Пригласи 3 друзей",
     "description": "",
@@ -65,7 +60,6 @@
     "meta": {}
   },
   {
-    "qkey": "refresh_round_by_1_friend",
     "code": "refresh_round_by_1_friend",
     "title": "Обнови раунд другом",
     "description": "",
@@ -78,7 +72,6 @@
     "meta": {}
   },
   {
-    "qkey": "daily_login",
     "code": "daily_login",
     "title": "Зайди в игру",
     "description": "",
@@ -91,7 +84,6 @@
     "meta": {}
   },
   {
-    "qkey": "subscribe_channel",
     "code": "subscribe_channel",
     "title": "Подпишись на канал",
     "description": "",

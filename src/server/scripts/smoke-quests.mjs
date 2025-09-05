@@ -12,15 +12,15 @@ async function main() {
     const countRes = await client.query('SELECT COUNT(*)::int AS cnt FROM quest_templates');
     console.log('[smoke] quest_templates count:', countRes.rows[0]?.cnt);
 
-    const dupRes = await client.query(`SELECT qkey, COUNT(*) AS c FROM quest_templates GROUP BY qkey HAVING COUNT(*) > 1`);
-    if (dupRes.rows.length > 0) {
-      throw new Error('duplicate qkey: ' + JSON.stringify(dupRes.rows));
-    }
+      const dupRes = await client.query(`SELECT code, COUNT(*) AS c FROM quest_templates GROUP BY code HAVING COUNT(*) > 1`);
+      if (dupRes.rows.length > 0) {
+        throw new Error('duplicate code: ' + JSON.stringify(dupRes.rows));
+      }
 
-    const nullRes = await client.query(`SELECT COUNT(*)::int AS cnt FROM quest_templates WHERE description IS NULL OR scope IS NULL`);
-    if (nullRes.rows[0]?.cnt > 0) {
-      throw new Error('NULL description/scope rows: ' + nullRes.rows[0].cnt);
-    }
+      const nullRes = await client.query(`SELECT COUNT(*)::int AS cnt FROM quest_templates WHERE description IS NULL OR frequency IS NULL`);
+      if (nullRes.rows[0]?.cnt > 0) {
+        throw new Error('NULL description/frequency rows: ' + nullRes.rows[0].cnt);
+      }
 
     console.log('[smoke] ok');
   } finally {

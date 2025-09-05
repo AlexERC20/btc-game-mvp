@@ -38,7 +38,7 @@ export async function seedQuests(pool) {
     await client.query('BEGIN');
     for (const q of quests) {
       const scope = normalizeScope(q.scope);
-      const code = q.code || q.qkey;
+      const code = q.code;
       await client.query(
         `INSERT INTO quest_templates_staging
          (code, scope, metric, goal, title, descr, reward_usd, cooldown_hours)

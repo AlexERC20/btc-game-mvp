@@ -1,48 +1,110 @@
 export async function ensureSchema(pool) {
   // quest_templates: создать если нет
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS quest_templates (
-      id           BIGSERIAL PRIMARY KEY,
-      title        TEXT        NOT NULL,
-      description  TEXT        NOT NULL DEFAULT '',
-      code         TEXT        UNIQUE,
-      reward_usd   INTEGER     NOT NULL DEFAULT 0,
-      reward_vop   INTEGER     NOT NULL DEFAULT 0,
-      created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS quest_templates (
+        id             BIGSERIAL PRIMARY KEY,
+        code           TEXT        UNIQUE,
+        title          TEXT        NOT NULL,
+        description    TEXT        NOT NULL,
+        metric         TEXT        NOT NULL,
+        goal           INTEGER     NOT NULL,
+        reward_type    TEXT        NOT NULL DEFAULT 'USD',
+        reward_value   INTEGER     NOT NULL DEFAULT 0,
+        frequency      TEXT        NOT NULL DEFAULT 'once',
+        cooldown_hours INTEGER     NOT NULL DEFAULT 0,
+        active         BOOLEAN     NOT NULL DEFAULT TRUE,
+        type           TEXT        NOT NULL DEFAULT 'oneoff',
+        created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+    `);
 
   // Добавить недостающие колонки на старых базах
   await pool.query(`
     DO $$
     BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name='quest_templates' AND column_name='description'
-      ) THEN
-        ALTER TABLE quest_templates ADD COLUMN description TEXT NOT NULL DEFAULT '';
-      END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='description'
+        ) THEN
+          ALTER TABLE quest_templates ADD COLUMN description TEXT;
+        END IF;
 
-      IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name='quest_templates' AND column_name='code'
-      ) THEN
-        ALTER TABLE quest_templates ADD COLUMN code TEXT;
-      END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='code'
+        ) THEN
+          ALTER TABLE quest_templates ADD COLUMN code TEXT;
+        END IF;
 
-      IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name='quest_templates' AND column_name='reward_usd'
-      ) THEN
-        ALTER TABLE quest_templates ADD COLUMN reward_usd INTEGER NOT NULL DEFAULT 0;
-      END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='metric'
+        ) THEN
+          ALTER TABLE quest_templates ADD COLUMN metric TEXT NOT NULL DEFAULT 'count';
+        END IF;
 
-      IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name='quest_templates' AND column_name='reward_vop'
-      ) THEN
-        ALTER TABLE quest_templates ADD COLUMN reward_vop INTEGER NOT NULL DEFAULT 0;
-      END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='goal'
+        ) THEN
+          ALTER TABLE quest_templates ADD COLUMN goal INTEGER NOT NULL DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='reward_type'
+        ) THEN
+          ALTER TABLE quest_templates ADD COLUMN reward_type TEXT NOT NULL DEFAULT 'USD';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='reward_value'
+        ) THEN
+          ALTER TABLE quest_templates ADD COLUMN reward_value INTEGER NOT NULL DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='frequency'
+        ) THEN
+          ALTER TABLE quest_templates ADD COLUMN frequency TEXT NOT NULL DEFAULT 'once';
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='cooldown_hours'
+        ) THEN
+          ALTER TABLE quest_templates ADD COLUMN cooldown_hours INTEGER NOT NULL DEFAULT 0;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='active'
+        ) THEN
+          ALTER TABLE quest_templates ADD COLUMN active BOOLEAN NOT NULL DEFAULT TRUE;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='type'
+        ) THEN
+          ALTER TABLE quest_templates ADD COLUMN type TEXT NOT NULL DEFAULT 'oneoff';
+        END IF;
+
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='reward_usd'
+        ) THEN
+          ALTER TABLE quest_templates DROP COLUMN reward_usd;
+        END IF;
+
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name='quest_templates' AND column_name='qkey'
+        ) THEN
+          ALTER TABLE quest_templates DROP COLUMN qkey;
+        END IF;
     END $$;
   `);
 
@@ -65,13 +127,13 @@ export async function ensureSchema(pool) {
       FROM d
      WHERE q.id = d.id AND d.rn > 1;
 
-    CREATE UNIQUE INDEX IF NOT EXISTS quest_templates_code_uidx
-      ON quest_templates(code);
+      CREATE UNIQUE INDEX IF NOT EXISTS quest_templates_code_uidx
+        ON quest_templates(code);
 
-    ALTER TABLE quest_templates
-      ALTER COLUMN code SET NOT NULL,
-      ALTER COLUMN description SET NOT NULL;
-  `);
+      ALTER TABLE quest_templates
+        ALTER COLUMN code SET NOT NULL,
+        ALTER COLUMN description SET NOT NULL;
+    `);
 
   // daily_friend_activity: для лимитов по друзьям
   await pool.query(`
