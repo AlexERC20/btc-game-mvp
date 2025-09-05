@@ -25,9 +25,15 @@ export function parseWs(raw){
 }
 
 export async function fetchRest(){
-  const r = await fetch(restUrl, { timeout:5000 }).then(r=>r.json());
-  const p = Number(r.last);
-  return Number.isFinite(p) ? p : null;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 5000);
+  try {
+    const r = await fetch(restUrl, { signal: ctl.signal }).then(r=>r.json());
+    const p = Number(r.last);
+    return Number.isFinite(p) ? p : null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function connect(onPrice, onStatus){
