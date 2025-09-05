@@ -37,6 +37,26 @@ export async function runMigrations(externalPool) {
         }
       }
     }
+    // Diagnostic queries after migrations
+    const scopeVals = await client.query(`SELECT DISTINCT scope, COUNT(*) FROM quest_templates GROUP BY scope ORDER BY 2 DESC`);
+    console.log('[migrations] quest_templates scope:', scopeVals.rows);
+    const scopeCon = await client.query(`
+      SELECT conname, pg_get_constraintdef(c.oid) AS def
+      FROM pg_constraint c
+      JOIN pg_class t ON c.conrelid = t.oid
+      WHERE t.relname = 'quest_templates' AND conname LIKE '%scope%';
+    `);
+    console.log('[migrations] scope constraints:', scopeCon.rows);
+    const bad = await client.query(`
+      SELECT DISTINCT scope
+      FROM quest_templates
+      WHERE scope NOT IN ('daily','weekly','lifetime','season','global','once','one_off')
+    `);
+    if (bad.rowCount) {
+      console.error('[migrations] Invalid scope values:', bad.rows);
+      throw new Error('Invalid scope values after migrations');
+    }
+
   } finally {
     client.release();
     if (ownPool) await pool.end();
