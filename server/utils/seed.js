@@ -14,67 +14,64 @@ function normalizeTemplate(t) {
     qkey: String(t.qkey || '').toLowerCase(),
     title: t.title || '',
     description: t.description ?? '',
-    scope: t.scope || 'user',
+    scope: t.scope || 'user', // 'user' | 'global'
     goal: Number.isFinite(t.goal) ? t.goal : 1,
-    metric: t.metric || 'count',
+    metric: t.metric || 'count', // 'count' | 'usd' | 'vop'
     reward_usd: t.reward_usd ?? 0,
     reward_vop: t.reward_vop ?? 0,
-    frequency: t.frequency || 'daily',
+    frequency: t.frequency || 'daily', // 'once' | 'daily' | 'weekly'
     is_enabled: t.is_enabled ?? true,
     expires_at: t.expires_at ?? null,
   };
 }
 
+async function upsertTemplate(pool, tpl) {
+  const cols = [
+    'qkey','title','description','scope','goal','metric',
+    'reward_usd','reward_vop','frequency','is_enabled','expires_at'
+  ];
+  const vals = cols.map((_, i) => `$${i+1}`).join(',');
+  await pool.query(
+    `
+    INSERT INTO quest_templates (${cols.join(',')})
+    VALUES (${vals})
+    ON CONFLICT (qkey) DO UPDATE SET
+      title=EXCLUDED.title,
+      description=EXCLUDED.description,
+      scope=EXCLUDED.scope,
+      goal=EXCLUDED.goal,
+      metric=EXCLUDED.metric,
+      reward_usd=EXCLUDED.reward_usd,
+      reward_vop=EXCLUDED.reward_vop,
+      frequency=EXCLUDED.frequency,
+      is_enabled=EXCLUDED.is_enabled,
+      expires_at=EXCLUDED.expires_at
+    `,
+    cols.map(c => tpl[c])
+  );
+}
+
 export async function seedQuestTemplates(pool) {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
+  let count = 0;
+  for (const raw of TEMPLATES) {
+    const tpl = normalizeTemplate(raw);
+    if (!tpl.qkey) { console.error('[seed] skip empty qkey', raw); continue; }
+    await upsertTemplate(pool, tpl);
+    count++;
+  }
+  console.log(`[seed] quest_templates upserted: ${count}`);
+  return count;
+}
 
-    const UPSERT = `
-INSERT INTO quest_templates (qkey, title, description, scope, goal, metric, reward_usd, reward_vop, frequency, is_enabled, expires_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-ON CONFLICT (qkey) DO UPDATE
-SET title=EXCLUDED.title,
-    description=EXCLUDED.description,
-    scope=EXCLUDED.scope,
-    goal=EXCLUDED.goal,
-    metric=EXCLUDED.metric,
-    reward_usd=EXCLUDED.reward_usd,
-    reward_vop=EXCLUDED.reward_vop,
-    frequency=EXCLUDED.frequency,
-    is_enabled=EXCLUDED.is_enabled,
-    expires_at=EXCLUDED.expires_at;`;
-
-    let count = 0;
-    for (const raw of TEMPLATES) {
-      const tpl = normalizeTemplate(raw);
-      if (!tpl.qkey) {
-        console.error('[seed][quest_templates] skip: empty qkey', raw);
-        continue;
-      }
-      await client.query(UPSERT, [
-        tpl.qkey,
-        tpl.title,
-        tpl.description,
-        tpl.scope,
-        tpl.goal,
-        tpl.metric,
-        tpl.reward_usd,
-        tpl.reward_vop,
-        tpl.frequency,
-        tpl.is_enabled,
-        tpl.expires_at,
-      ]);
-      count++;
-    }
-
-    await client.query('COMMIT');
-    console.log(`[seed] quest_templates upserted: ${count}`);
-    return count;
-  } catch (e) {
-    await client.query('ROLLBACK');
-    throw e;
-  } finally {
-    client.release();
+export async function assertQuestTemplateShape(pool) {
+  const need = new Set(['qkey','title','description','scope','goal','metric','reward_usd','reward_vop','frequency','is_enabled','expires_at']);
+  const { rows } = await pool.query(`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name='quest_templates'
+  `);
+  const have = new Set(rows.map(r => r.column_name));
+  const missing = [...need].filter(c => !have.has(c));
+  if (missing.length) {
+    throw new Error(`[schema] quest_templates missing columns: ${missing.join(', ')}`);
   }
 }

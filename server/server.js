@@ -11,7 +11,7 @@ import pg from 'pg';
 const { Pool } = pg;
 
 import { utcDayKey } from './utils/time.js';
-import { seedQuestTemplates } from './utils/seed.js';
+import { seedQuestTemplates, assertQuestTemplateShape } from './utils/seed.js';
 import { runMigrations } from './migrate.js';
 
 // ===== Config =====
@@ -57,6 +57,7 @@ async function boot() {
   try {
     console.log('[migrations] start');
     await runMigrations(pool);
+    await assertQuestTemplateShape(pool);
     console.log('[migrations] done');
   } catch (e) {
     console.error('[migrations] failed', e);
