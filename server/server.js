@@ -2457,6 +2457,7 @@ app.get('/stream/spread', (req, res) => {
   req.on('close', () => spread.off('update', send));
 });
 
+ codex/implement-mvp-for-spread-tracking-r2y7fb
 app.get('/api/spread/rewards', requireTgAuth, async (req, res) => {
   try {
     const uid = req.tgUser.id;
@@ -2476,6 +2477,8 @@ app.get('/api/spread/rewards', requireTgAuth, async (req, res) => {
   }
 });
 
+
+main
 app.get('/api/tasks/active', requireTgAuth, async (req, res) => {
   try {
     const uid = req.tgUser.id;
