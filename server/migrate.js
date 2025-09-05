@@ -14,11 +14,6 @@ export async function runMigrations(externalPool) {
 
   const client = await pool.connect();
   try {
-    // Drop scope constraint up front to keep older migrations idempotent
-    await client.query(
-      'ALTER TABLE IF EXISTS quest_templates DROP CONSTRAINT IF EXISTS quest_templates_scope_chk;'
-    );
-
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const migrationsDir = path.join(__dirname, 'migrations');
     const files = (await fs.readdir(migrationsDir))

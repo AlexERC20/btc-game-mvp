@@ -63,6 +63,12 @@ async function boot() {
     process.exit(1);
   }
 
+  const disableCheck = process.env.DISABLE_QUEST_CHECK === '1';
+  if (disableCheck) {
+    console.warn('[seed] DISABLE_QUEST_CHECK is set, dropping constraint');
+    await pool.query("ALTER TABLE quest_templates DROP CONSTRAINT IF EXISTS quest_templates_scope_chk;");
+  }
+
   try {
     console.log('[seed] start');
     await seedQuestTemplates(pool);
@@ -70,6 +76,11 @@ async function boot() {
   } catch (e) {
     console.error('[seed] failed', e);
     process.exit(1);
+  }
+
+  if (disableCheck) {
+    await pool.query("ALTER TABLE quest_templates ADD CONSTRAINT quest_templates_scope_chk CHECK (scope IN ('user','global'));");
+    console.warn('[seed] quest_templates_scope_chk restored');
   }
 
   await start();
