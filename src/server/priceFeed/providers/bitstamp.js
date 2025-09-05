@@ -1,4 +1,10 @@
-import WebSocket from 'ws';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+let WebSocket = globalThis.WebSocket;
+try {
+  if (!WebSocket) WebSocket = require('ws');
+} catch {}
 
 export const name = 'bitstamp';
 export const symbol = process.env.PRICE_SYMBOL_BITSTAMP || 'btcusd';
