@@ -1,4 +1,4 @@
-import { env } from './env.js';
+import { loadEnv } from './env.js';
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -9,8 +9,8 @@ import health from './routes/health.js';
 import status from './routes/status.js';
 import diag from './routes/diag.js';
 import tgDebug from './routes/tg-debug.js';
-import { utcDayKey } from './utils/time.js';
 
+const env = loadEnv('server');
 process.env.TZ = 'UTC';
 
 const app = express();
@@ -19,6 +19,14 @@ if (env.API_ORIGIN) {
   app.use(cors({ origin: [env.API_ORIGIN, 'https://web.telegram.org', /\.telegram\.org$/] }));
 }
 app.use(express.json());
+
+app.locals.env = env;
+
+app.use((req, _res, next) => {
+  // базовый URL пригодится роутам/линкам
+  req.baseUrlExt = env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+  next();
+});
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -40,8 +48,6 @@ app.get('/api/sse', (req, res) => {
   }, 30000);
   req.on('close', () => clearInterval(timer));
 });
-
-const PORT = Number(process.env.PORT || 10000);
 
 const services = {
   startPriceFeed: () => {},
@@ -65,8 +71,9 @@ async function boot() {
     process.exit(1);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[srv] listening on :${PORT} (UTC day ${utcDayKey()})`);
+  app.listen(env.PORT, () => {
+    const shown = env.PUBLIC_URL || `http://localhost:${env.PORT}`;
+    console.log(`[boot] listening at ${shown}`);
   });
 }
 

@@ -1,4 +1,5 @@
-import '../src/server/env.js';
+import { loadEnv } from '../src/server/env.js';
+loadEnv('migrate');
 import { runMigrations } from '../src/server/migrate.js';
 import { seedQuests } from './seed-quests.js';
 
