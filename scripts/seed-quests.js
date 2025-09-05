@@ -31,7 +31,7 @@ export function normalizeScope(scope) {
   }
 }
 
-// Seed quest_templates table with normalized scopes
+// Seed quest_templates_staging table with normalized scopes
 export async function seedQuests(pool) {
   const client = await pool.connect();
   try {
@@ -40,31 +40,26 @@ export async function seedQuests(pool) {
       const scope = normalizeScope(q.scope);
       const code = q.code || q.qkey;
       await client.query(
-        `INSERT INTO quest_templates
-         (code, qkey, title, description, goal, metric, scope, reward_usd, weight, enabled, meta)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-         ON CONFLICT (code, scope) DO UPDATE SET
-           qkey = EXCLUDED.qkey,
-           title = EXCLUDED.title,
-           description = EXCLUDED.description,
-           goal = EXCLUDED.goal,
+        `INSERT INTO quest_templates_staging
+         (code, scope, metric, goal, title, descr, reward_usd, cooldown_hours)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (code) DO UPDATE SET
+           scope = EXCLUDED.scope,
            metric = EXCLUDED.metric,
+           goal = EXCLUDED.goal,
+           title = EXCLUDED.title,
+           descr = EXCLUDED.descr,
            reward_usd = EXCLUDED.reward_usd,
-           weight = EXCLUDED.weight,
-           enabled = EXCLUDED.enabled,
-           meta = EXCLUDED.meta`,
+           cooldown_hours = EXCLUDED.cooldown_hours`,
         [
           code,
-          q.qkey || code,
+          scope,
+          q.metric || 'count',
+          q.goal ?? 1,
           q.title || '',
           q.description || '',
-          q.goal ?? 1,
-          q.metric || 'count',
-          scope,
           q.reward_usd ?? 0,
-          q.weight ?? 100,
-          q.enabled ?? true,
-          q.meta ?? {},
+          q.cooldown_hours ?? 0,
         ]
       );
     }

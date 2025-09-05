@@ -1,33 +1,52 @@
-import 'dotenv/config';
+import './env.js';
 import fs from 'fs';
 import path from 'path';
 import { Pool } from 'pg';
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const dir = path.join(process.cwd(), 'src', 'server', 'migrations');
 
-export async function runMigrations(direction = 'up') {
-  const files = fs.readdirSync(dir)
+export async function runMigrations(pool) {
+  const ownPool = !pool;
+  const db = pool || new Pool({ connectionString: process.env.DATABASE_URL });
+  const files = fs
+    .readdirSync(dir)
     .filter(f => /^\d+_.+\.sql$/.test(f))
-    .sort((a, b) => parseInt(a) - parseInt(b));
+    .sort();
 
-  for (const f of files) {
-    const sql = fs.readFileSync(path.join(dir, f), 'utf8');
-    console.log(`[migrate] applying ${f}`);
-    await pool.query(sql);
+  try {
+    for (const f of files) {
+      const sql = fs.readFileSync(path.join(dir, f), 'utf8');
+      const client = await db.connect();
+      console.log(`[migrate] applying ${f}`);
+      try {
+        if (/^\s*BEGIN\b/i.test(sql)) {
+          await client.query(sql);
+        } else {
+          await client.query('BEGIN');
+          await client.query(sql);
+          await client.query('COMMIT');
+        }
+        console.log(`[migrate] applied ${f}`);
+      } catch (e) {
+        try {
+          if (!/^\s*BEGIN\b/i.test(sql)) {
+            await client.query('ROLLBACK');
+          }
+        } catch {}
+        console.error(`[migrate] failed ${f}`, e);
+        throw e;
+      } finally {
+        client.release();
+      }
+    }
+  } finally {
+    if (ownPool) await db.end();
   }
-  await pool.end();
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const cmd = process.argv[2];
-  if (cmd === 'down') {
-    console.error('[migrate] down direction not implemented');
+  runMigrations().catch(e => {
+    console.error('[migrate] failed', e);
     process.exit(1);
-  } else {
-    runMigrations('up').catch(e => {
-      console.error('[migrate] failed', e);
-      process.exit(1);
-    });
-  }
+  });
 }

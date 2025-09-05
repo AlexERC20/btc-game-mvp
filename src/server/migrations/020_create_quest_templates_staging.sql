@@ -1,11 +1,13 @@
 -- 020_create_quest_templates_staging.sql
 CREATE TABLE IF NOT EXISTS quest_templates_staging (
-  code            TEXT PRIMARY KEY,
+  code            TEXT NOT NULL,
   scope           TEXT NOT NULL,
+  frequency       TEXT,
   metric          TEXT NOT NULL,
   goal            INTEGER NOT NULL,
-  title           TEXT,
-  descr           TEXT,
-  reward_usd      INTEGER NOT NULL DEFAULT 0,
-  cooldown_hours  INTEGER NOT NULL DEFAULT 0
+  title           TEXT NOT NULL,
+  descr           TEXT NOT NULL,
+  reward_usd      INTEGER NOT NULL,
+  cooldown_hours  INTEGER NOT NULL,
+  CONSTRAINT quest_templates_staging_code_key UNIQUE (code)
 );
