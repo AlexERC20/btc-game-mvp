@@ -1,74 +1,69 @@
+const TEMPLATES = [
+  { qkey: 'arena_bets_20', title: 'Сделай 20 ставок на Арене', goal: 20 },
+  { qkey: 'classic_buys_100', title: 'Сделай 100 покупок в Классике', goal: 100 },
+  { qkey: 'classic_sells_100', title: 'Сделай 100 продаж в Классике', goal: 100 },
+  { qkey: 'arena_wins_10', title: 'Выиграй 10 раз на Арене', goal: 10 },
+  { qkey: 'invite_3_friends', title: 'Пригласи 3 друзей', goal: 3 },
+  { qkey: 'refresh_round_by_1_friend', title: 'Обнови раунд другом', goal: 1 },
+  { qkey: 'daily_login', title: 'Зайди в игру', goal: 1 },
+  { qkey: 'subscribe_channel', title: 'Подпишись на канал', goal: 1 },
+];
+
+function normalizeTemplate(t) {
+  return {
+    qkey: String(t.qkey || '').toLowerCase(),
+    title: t.title || '',
+    description: t.description ?? '',
+    scope: t.scope || 'user',
+    goal: Number.isFinite(t.goal) ? t.goal : 1,
+    metric: t.metric || 'count',
+    reward_usd: t.reward_usd ?? 0,
+    reward_vop: t.reward_vop ?? 0,
+    frequency: t.frequency || 'daily',
+    is_enabled: t.is_enabled ?? true,
+    expires_at: t.expires_at ?? null,
+  };
+}
+
 export async function seedQuestTemplates(pool) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
-    const tpl = ({ qkey, title, type, reward_usd, limit_usd_delta = 0, scope = 'user', description = '' }) => ({
-      qkey: qkey.toLowerCase(),
-      title,
-      type,
-      reward_usd,
-      limit_usd_delta,
-      scope,
-      description,
-    });
-
-    const templates = [
-      tpl({
-        qkey: 'daily:arena_10_wins',
-        title: 'Выиграй 10 раз на арене',
-        description: 'Победи 10 раз за сутки на арене',
-        type: 'daily',
-        reward_usd: 1000,
-        limit_usd_delta: 500,
-      }),
-      tpl({
-        qkey: 'daily:place_100_bets',
-        title: 'Сделай 100 ставок',
-        description: 'Любые ставки в любом режиме за сутки',
-        type: 'daily',
-        reward_usd: 800,
-        limit_usd_delta: 500,
-      }),
-      tpl({
-        qkey: 'oneoff:subscribe_channel',
-        title: 'Подписка на канал',
-        description: 'Подпишись на @erc20coin',
-        type: 'oneoff',
-        reward_usd: 30000,
-        limit_usd_delta: 0,
-      }),
-      tpl({
-        qkey: 'daily:invite_1_friend',
-        title: 'Пригласи 1 друга',
-        description: 'Друг должен зайти в игру',
-        type: 'daily',
-        reward_usd: 500,
-        limit_usd_delta: 500,
-      }),
-    ];
-
     const UPSERT = `
-INSERT INTO quest_templates (qkey, title, type, reward_usd, limit_usd_delta, scope, description)
-VALUES ($1,$2,$3,$4,$5,$6,$7)
+INSERT INTO quest_templates (qkey, title, description, scope, goal, metric, reward_usd, reward_vop, frequency, is_enabled, expires_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 ON CONFLICT (qkey) DO UPDATE
 SET title=EXCLUDED.title,
-    type=EXCLUDED.type,
-    reward_usd=EXCLUDED.reward_usd,
-    limit_usd_delta=EXCLUDED.limit_usd_delta,
+    description=EXCLUDED.description,
     scope=EXCLUDED.scope,
-    description=EXCLUDED.description;`;
+    goal=EXCLUDED.goal,
+    metric=EXCLUDED.metric,
+    reward_usd=EXCLUDED.reward_usd,
+    reward_vop=EXCLUDED.reward_vop,
+    frequency=EXCLUDED.frequency,
+    is_enabled=EXCLUDED.is_enabled,
+    expires_at=EXCLUDED.expires_at;`;
 
     let count = 0;
-    for (const t of templates) {
+    for (const raw of TEMPLATES) {
+      const tpl = normalizeTemplate(raw);
+      if (!tpl.qkey) {
+        console.error('[seed][quest_templates] skip: empty qkey', raw);
+        continue;
+      }
       await client.query(UPSERT, [
-        t.qkey,
-        t.title,
-        t.type,
-        t.reward_usd | 0,
-        t.limit_usd_delta | 0,
-        t.scope,
-        t.description,
+        tpl.qkey,
+        tpl.title,
+        tpl.description,
+        tpl.scope,
+        tpl.goal,
+        tpl.metric,
+        tpl.reward_usd,
+        tpl.reward_vop,
+        tpl.frequency,
+        tpl.is_enabled,
+        tpl.expires_at,
       ]);
       count++;
     }

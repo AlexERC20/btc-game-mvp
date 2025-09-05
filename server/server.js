@@ -47,6 +47,12 @@ app.get('/v1/debug/time', async (_req, res) => {
   });
 });
 
+async function start() {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[srv] listening on :${PORT} (UTC day ${utcDayKey()})`);
+  });
+}
+
 async function boot() {
   try {
     console.log('[migrations] start');
@@ -65,11 +71,7 @@ async function boot() {
     process.exit(1);
   }
 
-  // ... тут ваши остальные роуты / логика ...
-
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[srv] listening on :${PORT} (UTC day ${utcDayKey()})`);
-  });
+  await start();
 }
 
 boot().catch((e) => {
