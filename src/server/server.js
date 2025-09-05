@@ -1,5 +1,5 @@
 // ===== Bootstrap (UTC + env) =====
-import './env.js';
+import 'dotenv/config';
 
 // Гарантируем единый UTC-день на бэке
 process.env.TZ = 'UTC';

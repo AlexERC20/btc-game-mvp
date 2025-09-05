@@ -1,4 +1,4 @@
--- 024_reinstate_scope_check.sql
+-- 021_drop_scope_check_if_exists.sql
 DO $$
 DECLARE cname text;
 BEGIN
@@ -12,8 +12,4 @@ BEGIN
   IF cname IS NOT NULL THEN
     EXECUTE format('ALTER TABLE quest_templates DROP CONSTRAINT %I;', cname);
   END IF;
-
-  ALTER TABLE quest_templates
-    ADD CONSTRAINT quest_templates_scope_check
-    CHECK (scope IN ('daily','weekly','oneoff'));
 END$$;
