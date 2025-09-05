@@ -48,8 +48,22 @@ app.get('/v1/debug/time', async (_req, res) => {
 });
 
 async function boot() {
-  await runMigrations(pool);
-  await seedQuestTemplates(pool);
+  try {
+    console.log('[migrations] start');
+    await runMigrations(pool);
+    console.log('[migrations] done');
+  } catch (e) {
+    console.error('[migrations] failed', e);
+    process.exit(1);
+  }
+
+  try {
+    console.log('[seed] start');
+    await seedQuestTemplates(pool);
+  } catch (e) {
+    console.error('[seed] failed', e);
+    process.exit(1);
+  }
 
   // ... тут ваши остальные роуты / логика ...
 
