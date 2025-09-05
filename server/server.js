@@ -1,5 +1,7 @@
 // server/server.js
-import 'dotenv/config';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
@@ -17,6 +19,18 @@ import { seedTasks } from './scripts/seed_tasks.mjs';
 import { dailyKeyUTC, weeklyKeyUTC } from './tasks/utils.js';
 import { addTaskProgress } from './tasks/events.js';
 import { startSpreadTracker, parseDexInput, USER_TRACK_LIMIT } from './spread.js';
+
+// Load .env from repository root if present
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
+// --- ENV validation ---
+const REQUIRED_ENV = ['DATABASE_URL', 'BOT_TOKEN'];
+const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missing.length) {
+  console.error('[ENV] Missing required env vars:', missing.join(', '));
+  process.exit(1);
+}
 
 function verifyInitData(initData, botToken) {
   try {
@@ -67,7 +81,10 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-const PORT = process.env.PORT || 8080;
+// --- Healthcheck ---
+app.get('/healthz', (req, res) => res.status(200).send('ok'));
+
+const PORT = process.env.PORT || 3000;
 const ASSET = process.env.ASSET || 'ETH';
 
 const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
@@ -136,16 +153,7 @@ const ARENA_TIMER = {
 };
 
 const ARENA_MAX_BETS_PER_ROUND = 20;
-
-try {
-  await runMigrations(pool);
-  console.log('migrations applied');
-} catch (e) {
-  console.error('migrations failed', e);
-}
-
-// start spread tracker loop
-const spread = startSpreadTracker(pool);
+let spread;
 
 async function seedQuestTemplates(pool){
   const { rows } = await pool.query('SELECT COUNT(*)::int AS c FROM quest_templates');
@@ -231,8 +239,10 @@ export async function listTelegramIds() {
   return rows.map((r) => Number(r.telegram_id));
 }
 
-/* ========= DB bootstrap / миграции ========= */
-await pool.query(`
+async function init() {
+  try {
+    await runMigrations(pool);
+    await pool.query(`
   CREATE TABLE IF NOT EXISTS users(
     id SERIAL PRIMARY KEY,
     telegram_id BIGINT UNIQUE NOT NULL,
@@ -487,12 +497,43 @@ await pool.query(`
   );
 `);
 
-await pool.query(`
-  INSERT INTO shout_state(id) VALUES (1)
-  ON CONFLICT (id) DO NOTHING;
-`);
+    await pool.query(`
+      INSERT INTO shout_state(id) VALUES (1)
+      ON CONFLICT (id) DO NOTHING;
+    `);
 
-await seedQuestTemplates(pool);
+    await seedQuestTemplates(pool);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS daily_friend_activity (
+        id BIGSERIAL PRIMARY KEY,
+        friend_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        referrer_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        activity_date DATE NOT NULL,
+        first_event_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (friend_user_id, activity_date)
+      );
+      CREATE INDEX IF NOT EXISTS idx_dfa_ref_day ON daily_friend_activity (referrer_user_id, activity_date);
+      CREATE INDEX IF NOT EXISTS idx_dfa_friend_day ON daily_friend_activity (friend_user_id, activity_date);
+    `);
+
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT FALSE;`);
+    await pool.query(`ALTER TABLE bets  ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT FALSE;`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS bot_round_spend(
+        round_id INT PRIMARY KEY,
+        spent_by_user JSONB NOT NULL DEFAULT '{}'  -- {"userId": amount}
+      );
+    `);
+
+    spread = startSpreadTracker(pool);
+
+    console.log('[INIT] done');
+  } catch (err) {
+    console.error('[INIT] failed:', err);
+    process.exit(1);
+  }
+}
 
 
 // === BOTS MODULE START ===========================================
@@ -504,15 +545,6 @@ const BOTS_MAX_BETS_PER_ROUND = Number(process.env.BOTS_MAX_BETS_PER_ROUND || 3)
 const BOTS_IMBALANCE_BIAS = Number(process.env.BOTS_IMBALANCE_BIAS || 0.70); // 70% — в меньший банк
 const MIN_BET_SAFE = typeof MIN_BET === 'number' ? MIN_BET : 50; // подстраховка
 const DEBUG_BOTS = String(process.env.DEBUG_BOTS || 'true') === 'true';
-
-await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT FALSE;`);
-await pool.query(`ALTER TABLE bets  ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT FALSE;`);
-await pool.query(`
-  CREATE TABLE IF NOT EXISTS bot_round_spend(
-    round_id INT PRIMARY KEY,
-    spent_by_user JSONB NOT NULL DEFAULT '{}'  -- {"userId": amount}
-  );
-`);
 
 function clamp(n,a,b){ return Math.max(a, Math.min(b,n)); }
 
@@ -2457,7 +2489,6 @@ app.get('/stream/spread', (req, res) => {
   req.on('close', () => spread.off('update', send));
 });
 
- codex/implement-mvp-for-spread-tracking-r2y7fb
 app.get('/api/spread/rewards', requireTgAuth, async (req, res) => {
   try {
     const uid = req.tgUser.id;
@@ -2628,4 +2659,20 @@ app.post('/api/tasks/admin/seed', requireTgAuth, async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log('Server listening on', PORT));
+app
+  .listen(PORT, '0.0.0.0', () => console.log('[HTTP] listening on', PORT))
+  .on('error', (e) => {
+    console.error('[HTTP] listen error:', e);
+    process.exit(1);
+  });
+
+process.on('unhandledRejection', (e) => {
+  console.error('[FATAL] unhandledRejection:', e);
+  process.exit(1);
+});
+process.on('uncaughtException', (e) => {
+  console.error('[FATAL] uncaughtException:', e);
+  process.exit(1);
+});
+
+init();
