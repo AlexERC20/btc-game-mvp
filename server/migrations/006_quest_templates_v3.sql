@@ -1,3 +1,7 @@
+-- remove legacy scope constraint so backfills won't fail
+ALTER TABLE IF EXISTS quest_templates
+  DROP CONSTRAINT IF EXISTS quest_templates_scope_chk;
+
 -- create if missing
 CREATE TABLE IF NOT EXISTS quest_templates (
   id BIGSERIAL PRIMARY KEY,

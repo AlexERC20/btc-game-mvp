@@ -1,6 +1,6 @@
 BEGIN;
 
--- гарантируем нужные колонки
+-- гарантируем все нужные колонки (id уже есть)
 ALTER TABLE quest_templates
   ADD COLUMN IF NOT EXISTS qkey        TEXT,
   ADD COLUMN IF NOT EXISTS title       TEXT,
@@ -14,13 +14,19 @@ ALTER TABLE quest_templates
   ADD COLUMN IF NOT EXISTS is_enabled  BOOLEAN,
   ADD COLUMN IF NOT EXISTS expires_at  TIMESTAMPTZ;
 
--- нормализуем существующие записи
-UPDATE quest_templates SET scope='user' WHERE scope IS NULL OR scope NOT IN ('user','global');
-UPDATE quest_templates SET metric='count' WHERE metric IS NULL OR metric NOT IN ('count','usd','vop');
-UPDATE quest_templates SET frequency='daily' WHERE frequency IS NULL OR frequency NOT IN ('once','daily','weekly');
+-- нормализация существующих строк
+UPDATE quest_templates SET scope='user'
+WHERE scope IS NULL OR scope NOT IN ('user','global');
+
+UPDATE quest_templates SET metric='count'
+WHERE metric IS NULL OR metric NOT IN ('count','usd','vop');
+
+UPDATE quest_templates SET frequency='daily'
+WHERE frequency IS NULL OR frequency NOT IN ('once','daily','weekly');
+
 UPDATE quest_templates SET goal=1 WHERE goal IS NULL OR goal < 1;
 
--- дефолты/NOT NULL
+-- дефолты
 ALTER TABLE quest_templates
   ALTER COLUMN scope       SET DEFAULT 'user',
   ALTER COLUMN metric      SET DEFAULT 'count',
@@ -29,6 +35,7 @@ ALTER TABLE quest_templates
   ALTER COLUMN reward_usd  SET DEFAULT 0,
   ALTER COLUMN reward_vop  SET DEFAULT 0;
 
+-- NOT NULL для критичных полей
 ALTER TABLE quest_templates
   ALTER COLUMN qkey        SET NOT NULL,
   ALTER COLUMN title       SET NOT NULL,
@@ -38,11 +45,12 @@ ALTER TABLE quest_templates
   ALTER COLUMN metric      SET NOT NULL,
   ALTER COLUMN frequency   SET NOT NULL;
 
--- уникальность ключа
+-- уникальность по ключу квеста
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_indexes WHERE tablename='quest_templates' AND indexname='uq_quest_templates_qkey'
+    SELECT 1 FROM pg_indexes
+    WHERE tablename='quest_templates' AND indexname='uq_quest_templates_qkey'
   ) THEN
     CREATE UNIQUE INDEX uq_quest_templates_qkey ON quest_templates(qkey);
   END IF;

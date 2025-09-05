@@ -65,11 +65,11 @@ const TEMPLATES = [
   }
 ];
 
-const ALLOWED_SCOPE = new Set(['user', 'global']);
+const ALLOWED_SCOPE  = new Set(['user', 'global']);
 const ALLOWED_METRIC = new Set(['count', 'usd', 'vop']);
-const ALLOWED_FREQ = new Set(['once', 'daily', 'weekly']);
+const ALLOWED_FREQ   = new Set(['once', 'daily', 'weekly']);
 
-function normalizeTemplate(t) {
+function norm(t) {
   const scope = (t.scope || 'user').toLowerCase();
   const metric = (t.metric || 'count').toLowerCase();
   const frequency = (t.frequency || 'daily').toLowerCase();
@@ -115,16 +115,16 @@ async function upsertTemplate(pool, tpl) {
   );
 }
 
-export async function seedQuestTemplates(pool) {
+export async function seedQuestTemplates(pool, templates = TEMPLATES) {
   let count = 0;
-  for (const t of TEMPLATES) {
-    const tpl = normalizeTemplate(t);
-    if (!tpl.qkey) { console.error('[seed] skip empty qkey', t); continue; }
+  for (const raw of templates) {
+    const t = norm(raw);
+    if (!t.qkey) { console.error('[seed] skip empty qkey', raw); continue; }
     try {
-      await upsertTemplate(pool, tpl);
+      await upsertTemplate(pool, t);
       count++;
     } catch (e) {
-      console.error('[seed][quest_templates] bad row:', JSON.stringify(t), e.message);
+      console.error('[seed][quest_templates] bad row:', t, e.message);
       throw e;
     }
   }
