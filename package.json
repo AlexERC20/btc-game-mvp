@@ -1,0 +1,9 @@
+{
+  "name": "btc-game-mvp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "node server/migrate.js",
+    "seed:quests": "node scripts/seed-quests.js"
+  }
+}

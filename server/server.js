@@ -11,7 +11,6 @@ import pg from 'pg';
 const { Pool } = pg;
 
 import { utcDayKey } from './utils/time.js';
-import { seedQuestTemplates } from './utils/seed.js';
 import { runMigrations } from './migrate.js';
 
 // ===== Config =====
@@ -61,26 +60,6 @@ async function boot() {
   } catch (e) {
     console.error('[migrations] failed', e);
     process.exit(1);
-  }
-
-  const disableCheck = process.env.DISABLE_QUEST_CHECK === '1';
-  if (disableCheck) {
-    console.warn('[seed] DISABLE_QUEST_CHECK is set, dropping constraint');
-    await pool.query("ALTER TABLE quest_templates DROP CONSTRAINT IF EXISTS quest_templates_scope_chk;");
-  }
-
-  try {
-    console.log('[seed] start');
-    await seedQuestTemplates(pool);
-    console.log('[seed] done');
-  } catch (e) {
-    console.error('[seed] failed', e);
-    process.exit(1);
-  }
-
-  if (disableCheck) {
-    await pool.query("ALTER TABLE quest_templates ADD CONSTRAINT quest_templates_scope_chk CHECK (scope IN ('user','global'));");
-    console.warn('[seed] quest_templates_scope_chk restored');
   }
 
   await start();
