@@ -10,8 +10,8 @@
 
 ## Deploy на Render
 Web Service (server):
-- Root Directory: server
-- Start: node server.js
+- Root Directory: src/server
+- Start: node src/server/server.js
 - Env: DATABASE_URL, ASSET, BINANCE_WS, BOTS_ENABLED (optional bot settings in .env)
 
 Background Worker/Web Service (bot):
