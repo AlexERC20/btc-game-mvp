@@ -1,25 +1,89 @@
 const TEMPLATES = [
-  { qkey: 'arena_bets_20', title: 'Сделай 20 ставок на Арене', goal: 20 },
-  { qkey: 'classic_buys_100', title: 'Сделай 100 покупок в Классике', goal: 100 },
-  { qkey: 'classic_sells_100', title: 'Сделай 100 продаж в Классике', goal: 100 },
-  { qkey: 'arena_wins_10', title: 'Выиграй 10 раз на Арене', goal: 10 },
-  { qkey: 'invite_3_friends', title: 'Пригласи 3 друзей', goal: 3 },
-  { qkey: 'refresh_round_by_1_friend', title: 'Обнови раунд другом', goal: 1 },
-  { qkey: 'daily_login', title: 'Зайди в игру', goal: 1 },
-  { qkey: 'subscribe_channel', title: 'Подпишись на канал', goal: 1 },
+  {
+    qkey: 'arena_bets_20',
+    title: 'Сделай 20 ставок на Арене',
+    goal: 20,
+    scope: 'user',
+    metric: 'count',
+    frequency: 'daily'
+  },
+  {
+    qkey: 'classic_buys_100',
+    title: 'Сделай 100 покупок в Классике',
+    goal: 100,
+    scope: 'user',
+    metric: 'count',
+    frequency: 'daily'
+  },
+  {
+    qkey: 'classic_sells_100',
+    title: 'Сделай 100 продаж в Классике',
+    goal: 100,
+    scope: 'user',
+    metric: 'count',
+    frequency: 'daily'
+  },
+  {
+    qkey: 'arena_wins_10',
+    title: 'Выиграй 10 раз на Арене',
+    goal: 10,
+    scope: 'user',
+    metric: 'count',
+    frequency: 'daily'
+  },
+  {
+    qkey: 'invite_3_friends',
+    title: 'Пригласи 3 друзей',
+    goal: 3,
+    scope: 'user',
+    metric: 'count',
+    frequency: 'once'
+  },
+  {
+    qkey: 'refresh_round_by_1_friend',
+    title: 'Обнови раунд другом',
+    goal: 1,
+    scope: 'user',
+    metric: 'count',
+    frequency: 'daily'
+  },
+  {
+    qkey: 'daily_login',
+    title: 'Зайди в игру',
+    goal: 1,
+    scope: 'user',
+    metric: 'count',
+    frequency: 'daily'
+  },
+  {
+    qkey: 'subscribe_channel',
+    title: 'Подпишись на канал',
+    goal: 1,
+    scope: 'user',
+    metric: 'count',
+    frequency: 'once'
+  }
 ];
 
+const ALLOWED_SCOPE = new Set(['user', 'global']);
+const ALLOWED_METRIC = new Set(['count', 'usd', 'vop']);
+const ALLOWED_FREQ = new Set(['once', 'daily', 'weekly']);
+
 function normalizeTemplate(t) {
+  const scope = (t.scope || 'user').toLowerCase();
+  const metric = (t.metric || 'count').toLowerCase();
+  const frequency = (t.frequency || 'daily').toLowerCase();
+
   return {
     qkey: String(t.qkey || '').toLowerCase(),
     title: t.title || '',
     description: t.description ?? '',
-    scope: t.scope || 'user', // 'user' | 'global'
-    goal: Number.isFinite(t.goal) ? t.goal : 1,
-    metric: t.metric || 'count', // 'count' | 'usd' | 'vop'
+    scope: ALLOWED_SCOPE.has(scope) ? scope : 'user',
+    goal: Number.isFinite(t.goal) && t.goal > 0 ? Math.trunc(t.goal) : 1,
+    metric: ALLOWED_METRIC.has(metric) ? metric : 'count',
     reward_usd: t.reward_usd ?? 0,
     reward_vop: t.reward_vop ?? 0,
-    frequency: t.frequency || 'daily', // 'once' | 'daily' | 'weekly'
+    frequency: ALLOWED_FREQ.has(frequency) ? frequency : 'daily',
     is_enabled: t.is_enabled ?? true,
     expires_at: t.expires_at ?? null,
   };
