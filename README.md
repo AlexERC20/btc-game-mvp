@@ -9,12 +9,22 @@
 - Лидерборд победителей за сегодня (footer)
 
 ## Deploy на Render
-Web Service (server):
-- Root Directory: src/server
-- Start: node src/server/server.js
-- Env: DATABASE_URL, ASSET, BINANCE_WS, BOTS_ENABLED (optional bot settings in .env)
+### Web Service (server)
+- Build: `npm ci`
+- Pre-deploy: `node src/server/migrate.js`
+- Start: `node src/server/server.js`
+- Required env vars:
+  - `NODE_ENV=production`
+  - `PUBLIC_URL=https://btc-game-mvp.onrender.com`
+  - `DATABASE_URL=postgres://...`
+  - `TG_BOT_TOKEN=xxxxxxxxx`
+  - `WEBHOOK_SECRET=any-secret`
+  - `ENABLE_GAME_LOOP=1`
+  - `ENABLE_PRICE_FEED=1`
+  - `ENABLE_BOTS=1`
+  - `ROUND_LENGTH_SEC=60`
 
-Background Worker/Web Service (bot):
-- Root Directory: bot
-- Start: node bot.js
-- Env: BOT_TOKEN, WEBAPP_URL, DATABASE_URL
+### Background Worker/Web Service (bot)
+- Root Directory: `bot`
+- Start: `node bot.js`
+- Env: `BOT_TOKEN`, `WEBAPP_URL`, `DATABASE_URL`
