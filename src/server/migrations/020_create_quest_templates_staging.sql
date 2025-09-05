@@ -1,12 +1,11 @@
--- Create staging table for canonical quest templates
+-- 020_create_quest_templates_staging.sql
 CREATE TABLE IF NOT EXISTS quest_templates_staging (
-  code        TEXT PRIMARY KEY,
-  title       TEXT NOT NULL,
-  descr       TEXT NOT NULL,
-  scope       TEXT NOT NULL,
-  metric      TEXT NOT NULL,
-  goal        INTEGER NOT NULL,
-  reward_usd  INTEGER NOT NULL,
-  reward_vop  INTEGER NOT NULL,
-  qkey        TEXT NOT NULL
+  code            TEXT PRIMARY KEY,
+  scope           TEXT NOT NULL,
+  metric          TEXT NOT NULL,
+  goal            INTEGER NOT NULL,
+  title           TEXT,
+  descr           TEXT,
+  reward_usd      INTEGER NOT NULL DEFAULT 0,
+  cooldown_hours  INTEGER NOT NULL DEFAULT 0
 );

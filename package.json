@@ -5,8 +5,9 @@
   "engines": { "node": ">=18" },
   "scripts": {
     "build": "tsc -b || true",
-    "migrate": "node src/server/migrate.js",
-    "start": "node src/server/server.js",
+    "migrate": "node ./src/server/migrate.js up",
+    "migrate:down": "node ./src/server/migrate.js down",
+    "start": "node ./src/server/server.js",
     "seed:quests": "node scripts/seed-quests.js",
     "db:test-migrations": "node scripts/db-test-migrations.js"
   },

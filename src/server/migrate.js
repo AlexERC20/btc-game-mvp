@@ -1,69 +1,33 @@
-import './env.js';
-import fs from 'fs/promises';
+import 'dotenv/config';
+import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import pg from 'pg';
+import { Pool } from 'pg';
 
-// Run SQL migrations located in ./migrations
-export async function runMigrations(externalPool) {
-  const ownPool = !externalPool;
-  const pool = externalPool || new pg.Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-  });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const dir = path.join(process.cwd(), 'src', 'server', 'migrations');
 
-  const client = await pool.connect();
-  try {
-    const __dirname = path.dirname(fileURLToPath(import.meta.url));
-    const migrationsDir = path.join(__dirname, 'migrations');
-    const files = (await fs.readdir(migrationsDir))
-      .filter(f => f.endsWith('.sql'))
-      .sort();
+export async function runMigrations(direction = 'up') {
+  const files = fs.readdirSync(dir)
+    .filter(f => /^\d+_.+\.sql$/.test(f))
+    .sort((a, b) => parseInt(a) - parseInt(b));
 
-    for (const file of files) {
-      const sql = await fs.readFile(path.join(migrationsDir, file), 'utf8');
-      try {
-        await client.query('BEGIN');
-        await client.query(sql);
-        await client.query('COMMIT');
-        console.log(`${file} applied`);
-      } catch (e) {
-        await client.query('ROLLBACK');
-        if (e.message && /already exists/.test(e.message)) {
-          console.log(`${file} skipped`);
-        } else {
-          console.error(`migration ${file} failed`, e);
-          throw e;
-        }
-      }
-    }
-    // Diagnostic queries after migrations
-    const scopeVals = await client.query(`SELECT DISTINCT scope, COUNT(*) FROM quest_templates GROUP BY scope ORDER BY 2 DESC`);
-    console.log('[migrations] quest_templates scope:', scopeVals.rows);
-    const scopeCon = await client.query(`
-      SELECT conname, pg_get_constraintdef(c.oid) AS def
-      FROM pg_constraint c
-      JOIN pg_class t ON c.conrelid = t.oid
-      WHERE t.relname = 'quest_templates' AND conname LIKE '%scope%';
-    `);
-    console.log('[migrations] scope constraints:', scopeCon.rows);
-
-  } finally {
-    client.release();
-    if (ownPool) await pool.end();
+  for (const f of files) {
+    const sql = fs.readFileSync(path.join(dir, f), 'utf8');
+    console.log(`[migrate] applying ${f}`);
+    await pool.query(sql);
   }
+  await pool.end();
 }
 
-// Allow running as a standalone script
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runMigrations()
-    .then(() => {
-      console.log('migrations applied');
-      process.exit(0);
-    })
-    .catch(err => {
-      console.error('migrations failed', err);
+  const cmd = process.argv[2];
+  if (cmd === 'down') {
+    console.error('[migrate] down direction not implemented');
+    process.exit(1);
+  } else {
+    runMigrations('up').catch(e => {
+      console.error('[migrate] failed', e);
       process.exit(1);
     });
+  }
 }
-
