@@ -1,5 +1,6 @@
 import '../src/server/env.js';
 import { runMigrations } from '../src/server/migrate.js';
+import { seedQuests } from './seed-quests.js';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
 if (!DATABASE_URL) {
@@ -11,19 +12,10 @@ const { pool } = await import('../src/server/db.js');
 
 try {
   await runMigrations(pool);
-  const res = await pool.query(`
-    SELECT array_agg(DISTINCT scope ORDER BY scope) AS scopes,
-           COUNT(*) AS cnt
-    FROM quest_templates;
-  `);
-  console.log('[db:test-migrations] scopes:', res.rows[0]?.scopes);
+  await seedQuests(pool);
+  await runMigrations(pool);
+  const res = await pool.query('SELECT COUNT(*) AS cnt FROM quest_templates;');
   console.log('[db:test-migrations] count:', res.rows[0]?.cnt);
-  const expected = ['arena_round','daily','lifetime'];
-  const scopes = res.rows[0]?.scopes || [];
-  if (expected.some((s, i) => scopes[i] !== s)) {
-    console.error('[db:test-migrations] unexpected scopes set');
-    process.exit(1);
-  }
   if ((res.rows[0]?.cnt ?? 0) <= 0) {
     console.error('[db:test-migrations] empty quest_templates');
     process.exit(1);

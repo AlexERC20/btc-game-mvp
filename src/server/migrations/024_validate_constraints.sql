@@ -1,0 +1,4 @@
+-- 024_validate_constraints.sql
+ALTER TABLE quest_templates VALIDATE CONSTRAINT quest_templates_frequency_chk;
+ALTER TABLE quest_templates VALIDATE CONSTRAINT quest_templates_metric_chk;
+ALTER TABLE quest_templates VALIDATE CONSTRAINT quest_templates_reward_type_check;
