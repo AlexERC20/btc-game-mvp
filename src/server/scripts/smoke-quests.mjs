@@ -17,9 +17,9 @@ async function main() {
         throw new Error('duplicate code: ' + JSON.stringify(dupRes.rows));
       }
 
-      const nullRes = await client.query(`SELECT COUNT(*)::int AS cnt FROM quest_templates WHERE description IS NULL OR frequency IS NULL`);
+      const nullRes = await client.query(`SELECT COUNT(*)::int AS cnt FROM quest_templates WHERE description IS NULL OR scope IS NULL`);
       if (nullRes.rows[0]?.cnt > 0) {
-        throw new Error('NULL description/frequency rows: ' + nullRes.rows[0].cnt);
+        throw new Error('NULL description/scope rows: ' + nullRes.rows[0].cnt);
       }
 
     console.log('[smoke] ok');
