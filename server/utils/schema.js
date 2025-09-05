@@ -17,13 +17,56 @@ export async function ensureSchema(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS quest_templates (
       id SERIAL PRIMARY KEY,
-      code TEXT UNIQUE NOT NULL,
       title TEXT NOT NULL,
       description TEXT NOT NULL,
       reward_usd INT NOT NULL DEFAULT 0,
       reward_vop INT NOT NULL DEFAULT 0,
       active BOOLEAN NOT NULL DEFAULT TRUE
     );
+  `);
+
+  // --- quest_templates: добавить колонку code, если её нет ---
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'quest_templates' AND column_name = 'code'
+      ) THEN
+        ALTER TABLE quest_templates ADD COLUMN code TEXT;
+      END IF;
+    END$$;
+  `);
+
+  // Проставить code из title, если пусто/NULL
+  await pool.query(`
+    UPDATE quest_templates
+       SET code = lower(regexp_replace(title, '[^a-zA-Z0-9]+', '_', 'g'))
+     WHERE (code IS NULL OR code = '');
+  `);
+
+  // Разрулить дубликаты code (добавить суффикс _2, _3, ...)
+  await pool.query(`
+    WITH d AS (
+      SELECT id, code, row_number() OVER (PARTITION BY code ORDER BY id) AS rn
+      FROM quest_templates
+    )
+    UPDATE quest_templates q
+       SET code = q.code || '_' || d.rn
+      FROM d
+     WHERE q.id = d.id AND d.rn > 1;
+  `);
+
+  // Уникальный индекс для ON CONFLICT
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS quest_templates_code_uidx
+      ON quest_templates(code);
+  `);
+
+  // Сделать NOT NULL (после заполнения)
+  await pool.query(`
+    ALTER TABLE quest_templates
+      ALTER COLUMN code SET NOT NULL;
   `);
 
   await pool.query(`
