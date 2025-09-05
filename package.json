@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "migrate": "node server/migrate.js",
-    "seed:quests": "node scripts/seed-quests.js"
+    "seed:quests": "node scripts/seed-quests.js",
+    "db:test-migrations": "node scripts/db-test-migrations.js"
   }
 }

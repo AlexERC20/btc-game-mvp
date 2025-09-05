@@ -12,6 +12,7 @@ const { Pool } = pg;
 
 import { utcDayKey } from './utils/time.js';
 import { runMigrations } from './migrate.js';
+import { seedQuests } from '../scripts/seed-quests.js';
 
 // ===== Config =====
 const PORT = Number(process.env.PORT || 10000);
@@ -54,9 +55,20 @@ async function start() {
 
 async function boot() {
   try {
-    console.log('[migrations] start');
-    await runMigrations();
-    console.log('[migrations] done');
+    if (process.env.SKIP_MIGRATIONS === 'true') {
+      console.log('[migrations] skipped via SKIP_MIGRATIONS');
+    } else {
+      console.log('[migrations] start');
+      await runMigrations();
+      console.log('[migrations] done');
+      if (process.env.SKIP_QUEST_SEED === 'true') {
+        console.log('[seed] quest_templates skipped via SKIP_QUEST_SEED');
+      } else {
+        console.log('[seed] quest_templates start');
+        await seedQuests(pool);
+        console.log('[seed] quest_templates done');
+      }
+    }
   } catch (e) {
     console.error('[migrations] failed', e);
     process.exit(1);
