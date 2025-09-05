@@ -1,3 +1,4 @@
+import '../src/server/env.js';
 import quests from './quests.definitions.json' with { type: 'json' };
 
 // Normalize scope to whitelist
@@ -78,7 +79,7 @@ export async function seedQuests(pool) {
 
 // Allow running as standalone script
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { pool } = await import('../server/db.js');
+  const { pool } = await import('../src/server/db.js');
   seedQuests(pool)
     .then(() => {
       console.log('Seed quests: OK');
