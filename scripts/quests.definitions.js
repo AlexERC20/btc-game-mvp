@@ -1,0 +1,98 @@
+export const QUESTS = [
+  {
+    qkey: 'arena_bets_20',
+    title: 'Сделай 20 ставок на Арене',
+    description: '',
+    goal: 20,
+    metric: 'count',
+    scope: 'user',
+    reward_usd: 0,
+    weight: 100,
+    enabled: true,
+    meta: {}
+  },
+  {
+    qkey: 'classic_buys_100',
+    title: 'Сделай 100 покупок в Классике',
+    description: '',
+    goal: 100,
+    metric: 'count',
+    scope: 'user',
+    reward_usd: 0,
+    weight: 100,
+    enabled: true,
+    meta: {}
+  },
+  {
+    qkey: 'classic_sells_100',
+    title: 'Сделай 100 продаж в Классике',
+    description: '',
+    goal: 100,
+    metric: 'count',
+    scope: 'user',
+    reward_usd: 0,
+    weight: 100,
+    enabled: true,
+    meta: {}
+  },
+  {
+    qkey: 'arena_wins_10',
+    title: 'Выиграй 10 раз на Арене',
+    description: '',
+    goal: 10,
+    metric: 'count',
+    scope: 'user',
+    reward_usd: 0,
+    weight: 100,
+    enabled: true,
+    meta: {}
+  },
+  {
+    qkey: 'invite_3_friends',
+    title: 'Пригласи 3 друзей',
+    description: '',
+    goal: 3,
+    metric: 'count',
+    scope: 'user',
+    reward_usd: 0,
+    weight: 100,
+    enabled: true,
+    meta: {}
+  },
+  {
+    qkey: 'refresh_round_by_1_friend',
+    title: 'Обнови раунд другом',
+    description: '',
+    goal: 1,
+    metric: 'count',
+    scope: 'user',
+    reward_usd: 0,
+    weight: 100,
+    enabled: true,
+    meta: {}
+  },
+  {
+    qkey: 'daily_login',
+    title: 'Зайди в игру',
+    description: '',
+    goal: 1,
+    metric: 'count',
+    scope: 'user',
+    reward_usd: 0,
+    weight: 100,
+    enabled: true,
+    meta: {}
+  },
+  {
+    qkey: 'subscribe_channel',
+    title: 'Подпишись на канал',
+    description: '',
+    goal: 1,
+    metric: 'count',
+    scope: 'user',
+    reward_usd: 0,
+    weight: 100,
+    enabled: true,
+    meta: {}
+  }
+];
