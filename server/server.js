@@ -1,5 +1,4 @@
 // server/server.js
-import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
@@ -18,11 +17,22 @@ import { dailyKeyUTC, weeklyKeyUTC } from './tasks/utils.js';
 import { addTaskProgress } from './tasks/events.js';
 import { startSpreadTracker, parseDexInput, USER_TRACK_LIMIT } from './spread.js';
 
-// --- ENV validation ---
-const REQUIRED_ENV = ['DATABASE_URL', 'BOT_TOKEN'];
-const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
+// --- ENV bootstrap (do not override Render secrets) ---
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import dotenv from 'dotenv';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// dotenv НЕ переопределяет уже существующие переменные
+dotenv.config({ path: join(__dirname, '..', '.env'), override: false });
+
+// Валидация критичных ENV
+const REQUIRED_ENV = ['DATABASE_URL', 'BOT_TOKEN']; // добавьте при необходимости
+const missing = REQUIRED_ENV.filter(k => !process.env[k]);
 if (missing.length) {
-  console.error('[ENV] Missing required env vars:', missing.join(', '));
+  console.error('[ENV] Missing required variables:', missing.join(', '));
   process.exit(1);
 }
 
@@ -75,10 +85,8 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// --- Healthcheck ---
-app.get('/healthz', (req, res) => res.status(200).send('ok'));
-
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = '0.0.0.0';
 const ASSET = process.env.ASSET || 'ETH';
 
 const BOT_TOKEN = process.env.BOT_TOKEN; // нужен для createInvoiceLink
@@ -165,6 +173,24 @@ async function seedQuestTemplates(pool){
       [t.qkey,t.scope,t.title,t.descr,t.goal,t.reward_type,t.reward_value,t.min_level]
     );
   }
+}
+
+async function ensureSchema(pool) {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_friend_activity (
+      id BIGSERIAL PRIMARY KEY,
+      friend_user_id BIGINT NOT NULL,
+      referrer_user_id BIGINT NOT NULL,
+      activity_date DATE NOT NULL,
+      first_event_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (friend_user_id, referrer_user_id, activity_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_dfa_ref_date
+      ON daily_friend_activity (referrer_user_id, activity_date);
+  `);
+
+  // здесь же можно держать другие idempotent-миграции
+  // CREATE TABLE IF NOT EXISTS ...;
 }
 
 function nextMidnightUTC(){ const d=new Date(); d.setUTCHours(24,0,0,0); return d; }
@@ -496,20 +522,9 @@ await pool.query(`
       ON CONFLICT (id) DO NOTHING;
     `);
 
+    // --- one-shot schema and seeds order ---
+    await ensureSchema(pool);
     await seedQuestTemplates(pool);
-
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS daily_friend_activity (
-        id BIGSERIAL PRIMARY KEY,
-        friend_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        referrer_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        activity_date DATE NOT NULL,
-        first_event_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (friend_user_id, activity_date)
-      );
-      CREATE INDEX IF NOT EXISTS idx_dfa_ref_day ON daily_friend_activity (referrer_user_id, activity_date);
-      CREATE INDEX IF NOT EXISTS idx_dfa_friend_day ON daily_friend_activity (friend_user_id, activity_date);
-    `);
 
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT FALSE;`);
     await pool.query(`ALTER TABLE bets  ADD COLUMN IF NOT EXISTS is_bot BOOLEAN NOT NULL DEFAULT FALSE;`);
@@ -2653,20 +2668,25 @@ app.post('/api/tasks/admin/seed', requireTgAuth, async (req, res) => {
   }
 });
 
-app
-  .listen(PORT, '0.0.0.0', () => console.log('[HTTP] listening on', PORT))
-  .on('error', (e) => {
-    console.error('[HTTP] listen error:', e);
-    process.exit(1);
-  });
+// Глобальные ловушки (логируем и падаем, чтобы Render перезапустил)
+process.on('unhandledRejection', (err) => {
+  console.error('[FATAL] Unhandled rejection:', err);
+  process.exit(1);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+  process.exit(1);
+});
 
-process.on('unhandledRejection', (e) => {
-  console.error('[FATAL] unhandledRejection:', e);
+// Поднимаем HTTP
+app.listen(PORT, HOST, () => {
+  console.log(`[BOOT] Server ready on http://${HOST}:${PORT}`);
+}).on('error', (err) => {
+  console.error('[BOOT] Listener error:', err);
   process.exit(1);
 });
-process.on('uncaughtException', (e) => {
-  console.error('[FATAL] uncaughtException:', e);
-  process.exit(1);
-});
+
+// Опционально: дешёвый healthcheck
+app.get('/health', (req, res) => res.status(200).send('ok'));
 
 init();

@@ -1,15 +1,12 @@
 {
   "name": "btc-game-server",
-  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "license": "UNLICENSED",
-  "engines": { "node": ">=18.17 <21" },
+  "engines": { "node": ">=20.10.0" },
   "scripts": {
     "start": "node server.js",
-    "build": "echo \"no build step\"",
-    "render-build": "echo \"Render build\"",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "build": "echo \"no build step\""
   },
   "dependencies": {
     "cors": "^2.8.5",
