@@ -66,8 +66,8 @@ app.get('/admin/db/health', async (req, res) => {
       JOIN pg_class t ON c.conrelid = t.oid
       WHERE t.relname = 'quest_templates';
     `);
-      const frequencies = await client.query(`SELECT DISTINCT frequency FROM quest_templates ORDER BY frequency`);
-      res.json({ tables: tables.rows[0], constraints: constraints.rows, frequencies: frequencies.rows.map(r => r.frequency) });
+      const scopes = await client.query(`SELECT DISTINCT scope FROM quest_templates ORDER BY scope`);
+      res.json({ tables: tables.rows[0], constraints: constraints.rows, scopes: scopes.rows.map(r => r.scope) });
   } finally {
     client.release();
   }

@@ -10,7 +10,7 @@ export async function ensureSchema(pool) {
         goal           INTEGER     NOT NULL,
         reward_type    TEXT        NOT NULL DEFAULT 'USD',
         reward_value   INTEGER     NOT NULL DEFAULT 0,
-        frequency      TEXT        NOT NULL DEFAULT 'once',
+        scope          TEXT        NOT NULL DEFAULT 'once',
         cooldown_hours INTEGER     NOT NULL DEFAULT 0,
         active         BOOLEAN     NOT NULL DEFAULT TRUE,
         type           TEXT        NOT NULL DEFAULT 'oneoff',
@@ -66,9 +66,9 @@ export async function ensureSchema(pool) {
 
         IF NOT EXISTS (
           SELECT 1 FROM information_schema.columns
-          WHERE table_name='quest_templates' AND column_name='frequency'
+          WHERE table_name='quest_templates' AND column_name='scope'
         ) THEN
-          ALTER TABLE quest_templates ADD COLUMN frequency TEXT NOT NULL DEFAULT 'once';
+          ALTER TABLE quest_templates ADD COLUMN scope TEXT NOT NULL DEFAULT 'once';
         END IF;
 
         IF NOT EXISTS (
@@ -101,9 +101,9 @@ export async function ensureSchema(pool) {
 
         IF EXISTS (
           SELECT 1 FROM information_schema.columns
-          WHERE table_name='quest_templates' AND column_name='qkey'
+          WHERE table_name='quest_templates' AND column_name='frequency'
         ) THEN
-          ALTER TABLE quest_templates DROP COLUMN qkey;
+          ALTER TABLE quest_templates DROP COLUMN frequency;
         END IF;
     END $$;
   `);
