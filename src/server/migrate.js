@@ -1,63 +1,37 @@
-import { loadEnv } from './env.js';
-import fs from 'fs';
-import path from 'path';
-import { Pool } from 'pg';
+import 'dotenv/config';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Client } from 'pg';
 
-const env = loadEnv('migrate');
+async function run() {
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname  = path.dirname(__filename);
+  const sqlPath = path.join(__dirname, 'migrations', '040_squash_schema.sql');
+  const sql = fs.readFileSync(sqlPath, 'utf8');
 
-const dir = path.join(process.cwd(), 'src', 'server', 'migrations');
+  const client = new Client({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
 
-export async function runMigrations(pool) {
-  const ownPool = !pool;
-  const db = pool || new Pool({ connectionString: env.DATABASE_URL });
-  const files = fs
-    .readdirSync(dir)
-    .filter(f => /^\d+_.+\.sql$/.test(f))
-    .sort();
-
-  let applied = 0;
+  await client.connect();
   try {
-    for (const f of files) {
-      const sql = fs.readFileSync(path.join(dir, f), 'utf8');
-      const client = await db.connect();
-      console.log(`[migrate] applying ${f}`);
-      try {
-        if (/^\s*BEGIN\b/i.test(sql)) {
-          await client.query(sql);
-        } else {
-          await client.query('BEGIN');
-          await client.query(sql);
-          await client.query('COMMIT');
-        }
-        console.log(`[migrate] applied ${f}`);
-        applied++;
-      } catch (e) {
-        try {
-          if (!/^\s*BEGIN\b/i.test(sql)) {
-            await client.query('ROLLBACK');
-          }
-        } catch {}
-        const msg = e?.message || e;
-        console.error(`[migrate] failed in ${f}: ${msg}`);
-        if (e?.position) {
-          console.error(`[migrate] error position ${e.position}`);
-        }
-        throw e;
-      } finally {
-        client.release();
-      }
-    }
+    await client.query('BEGIN');
+    await client.query('SET search_path TO public');
+    await client.query(sql);
+    await client.query('COMMIT');
+    console.log('[migrate] schema is up-to-date');
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('[migrate] failed', err);
+    process.exit(1);
   } finally {
-    if (ownPool) await db.end();
+    await client.end();
   }
-  return applied;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runMigrations().then(n => {
-    console.log(`[migrate] applied ${n} files`);
-  }).catch(e => {
-    console.error('[migrate] failed', e);
-    process.exit(1);
-  });
+  run();
 }
+
