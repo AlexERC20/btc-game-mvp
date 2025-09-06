@@ -1,0 +1,13 @@
+-- 041_price_ticks_schema.sql
+
+ALTER TABLE price_ticks
+  ALTER COLUMN id TYPE BIGINT,
+  ALTER COLUMN id SET NOT NULL,
+  ALTER COLUMN price DROP IDENTITY IF EXISTS,
+  ALTER COLUMN price TYPE NUMERIC,
+  ALTER COLUMN price SET NOT NULL,
+  ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual',
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+CREATE INDEX IF NOT EXISTS price_ticks_created_at_idx
+  ON price_ticks (created_at DESC);
