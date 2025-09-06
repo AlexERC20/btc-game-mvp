@@ -26,7 +26,7 @@ router.get('/api/status', async (_req, res) => {
       const integrityRes = await Promise.all([
         client.query("SELECT COUNT(*)::int AS bad_frequency FROM quest_templates WHERE frequency NOT IN ('once','daily','weekly')"),
         client.query("SELECT COUNT(*)::int AS bad_reward_type FROM quest_templates WHERE reward_type NOT IN ('USD','VOP','XP')"),
-        client.query("SELECT COUNT(*)::int AS has_nulls FROM quest_templates WHERE code IS NULL OR scope IS NULL OR metric IS NULL OR goal IS NULL OR title IS NULL OR descr IS NULL OR frequency IS NULL OR active IS NULL OR reward_type IS NULL OR reward_value IS NULL"),
+        client.query("SELECT COUNT(*)::int AS has_nulls FROM quest_templates WHERE code IS NULL OR scope IS NULL OR metric IS NULL OR goal IS NULL OR title IS NULL OR description IS NULL OR frequency IS NULL OR active IS NULL OR reward_type IS NULL OR reward_value IS NULL"),
       ]);
       const result = {
         service: { state: svcRow.state },

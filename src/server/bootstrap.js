@@ -52,7 +52,7 @@ export async function ensureBootstrap(db, envConfig) {
   // Seed quest_templates if empty
   const { rows: qtCount } = await sql(db, 'SELECT COUNT(*)::int AS cnt FROM quest_templates');
   if (qtCount[0].cnt === 0) {
-    await sql(db, `INSERT INTO quest_templates(code, scope, metric, goal, title, descr)
+    await sql(db, `INSERT INTO quest_templates(code, scope, metric, goal, title, description)
                     VALUES('demo','global','demo',0,'Demo quest','') ON CONFLICT DO NOTHING`);
     console.log('[bootstrap] seeded quest_templates default');
   }

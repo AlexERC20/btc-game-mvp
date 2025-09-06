@@ -66,14 +66,14 @@ export async function seedQuests(pool) {
       const code = q.code;
       await client.query(
         `INSERT INTO quest_templates
-         (code, scope, metric, goal, title, descr, frequency, active, reward_type, reward_value, cooldown_hours)
+         (code, scope, metric, goal, title, description, frequency, active, reward_type, reward_value, cooldown_hours)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (code) DO UPDATE SET
            scope = EXCLUDED.scope,
            metric = EXCLUDED.metric,
            goal = EXCLUDED.goal,
            title = EXCLUDED.title,
-           descr = EXCLUDED.descr,
+           description = EXCLUDED.description,
            frequency = EXCLUDED.frequency,
            active = EXCLUDED.active,
            reward_type = EXCLUDED.reward_type,
