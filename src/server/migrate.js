@@ -37,7 +37,11 @@ export async function runMigrations(pool) {
             await client.query('ROLLBACK');
           }
         } catch {}
-        console.error(`[migrate] failed ${f}`, e);
+        const msg = e?.message || e;
+        console.error(`[migrate] failed in ${f}: ${msg}`);
+        if (e?.position) {
+          console.error(`[migrate] error position ${e.position}`);
+        }
         throw e;
       } finally {
         client.release();

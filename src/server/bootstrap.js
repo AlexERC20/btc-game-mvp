@@ -58,6 +58,12 @@ export async function ensureBootstrap(db, envConfig) {
                     VALUES('demo','global','demo',0,'Demo quest','') ON CONFLICT DO NOTHING`);
     console.log('[bootstrap] seeded quest_templates default');
   }
+  await sql(db, `
+    INSERT INTO service_state (skey, state)
+    VALUES ('bootstrap', 'ready')
+    ON CONFLICT (skey)
+    DO UPDATE SET state = EXCLUDED.state, updated_at = now();
+  `);
 
   await sql(db, `
     INSERT INTO service_status (name, ok, details)
