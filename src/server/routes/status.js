@@ -16,7 +16,10 @@ router.get('/api/status', async (_req, res) => {
       }
       const priceRes = await client.query('SELECT price FROM price_ticks ORDER BY id DESC LIMIT 1');
       const lastPrice = priceRes.rows[0]?.price || null;
+      const svcRes = await client.query('SELECT state FROM service_state WHERE id=TRUE');
+      const svcState = svcRes.rows[0]?.state || 'idle';
       const result = {
+        service: { state: svcState },
         round: round ? { id: round.id, state: round.state, endsAt: round.ends_at } : null,
         bank,
         lastPrice,
