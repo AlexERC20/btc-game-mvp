@@ -19,6 +19,11 @@ router.get('/api/diag', async (req, res) => {
         bankCurrent = Number(betsRes.rows[0].bank || 0);
       }
       const env = req.app.locals.env || {};
+      const integrityRes = await Promise.all([
+        client.query("SELECT COUNT(*)::int AS bad_frequency FROM quest_templates WHERE frequency NOT IN ('once','daily','weekly')"),
+        client.query("SELECT COUNT(*)::int AS bad_reward_type FROM quest_templates WHERE reward_type NOT IN ('USD','VOP','XP')"),
+        client.query("SELECT COUNT(*)::int AS has_nulls FROM quest_templates WHERE code IS NULL OR scope IS NULL OR metric IS NULL OR goal IS NULL OR title IS NULL OR descr IS NULL OR frequency IS NULL OR active IS NULL OR reward_type IS NULL OR reward_value IS NULL"),
+      ]);
       res.json({
         ok: true,
         env: {
@@ -32,6 +37,11 @@ router.get('/api/diag', async (req, res) => {
           priceTicks5m: priceTicksRes.rows[0].cnt,
           betsCurrent,
           bankCurrent,
+        },
+        integrity: {
+          badFrequency: integrityRes[0].rows[0].bad_frequency,
+          badRewardType: integrityRes[1].rows[0].bad_reward_type,
+          hasNulls: integrityRes[2].rows[0].has_nulls,
         }
       });
     } finally {

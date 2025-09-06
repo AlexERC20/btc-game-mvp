@@ -4,7 +4,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { pool } from './db.js';
-import { runMigrations, ensureBootstrap, startServices } from './bootstrap.js';
+import { ensureBootstrap, startServices } from './bootstrap.js';
 import health from './routes/health.js';
 import status from './routes/status.js';
 import diag from './routes/diag.js';
@@ -59,8 +59,6 @@ async function boot() {
   try {
     await pool.query('SELECT 1');
     console.log('[db] connected ok');
-    const applied = await runMigrations(pool);
-    console.log(`[migrate] applied ${applied} files`);
     const round = await ensureBootstrap(pool, env);
     if (round) {
       console.log(`[bootstrap] current round id=${round.id}, state=${round.state}, endsAt=${round.ends_at}`);
