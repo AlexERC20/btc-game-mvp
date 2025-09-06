@@ -28,6 +28,38 @@ CREATE TABLE IF NOT EXISTS quest_templates (
   active          BOOLEAN NOT NULL DEFAULT TRUE
 );
 
+-- 0) Гарантируем, что колонка есть
+ALTER TABLE quest_templates
+  ADD COLUMN IF NOT EXISTS frequency TEXT;
+
+-- 1) Нормализуем и заполняем дефолт
+UPDATE quest_templates
+SET frequency = CASE
+  WHEN lower(regexp_replace(coalesce(frequency, ''), '[-_\s]+', '', 'g')) IN
+       ('once','one','oneoff','oneshot','onetime','1x')   THEN 'once'
+  WHEN lower(regexp_replace(coalesce(frequency, ''), '[-_\s]+', '', 'g')) IN
+       ('weekly','week','7d')                             THEN 'weekly'
+  ELSE 'daily'  -- всё остальное в 'daily'
+END
+WHERE frequency IS NULL
+   OR lower(frequency) NOT IN ('once','daily','weekly');
+
+-- 2) Чистим/пересоздаём чек и NOT NULL
+ALTER TABLE quest_templates
+  DROP CONSTRAINT IF EXISTS quest_templates_frequency_chk;
+
+ALTER TABLE quest_templates
+  ADD CONSTRAINT quest_templates_frequency_chk
+  CHECK (frequency IN ('once','daily','weekly'));
+
+ALTER TABLE quest_templates
+  ALTER COLUMN frequency SET DEFAULT 'daily',
+  ALTER COLUMN frequency SET NOT NULL;
+
+-- 3) Валидация (теперь пройдёт)
+ALTER TABLE quest_templates
+  VALIDATE CONSTRAINT quest_templates_frequency_chk;
+
 -- 2) Синхронизируем "frequency" со "scope" (если колонка существует)
 ALTER TABLE quest_templates
   ALTER COLUMN frequency DROP NOT NULL;
