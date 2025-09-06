@@ -9,6 +9,7 @@ import health from './routes/health.js';
 import status from './routes/status.js';
 import diag from './routes/diag.js';
 import tgDebug from './routes/tg-debug.js';
+import debugRoutes from './routes/debug.js';
 
 const env = loadEnv('server');
 process.env.TZ = 'UTC';
@@ -36,6 +37,7 @@ app.use(health);
 app.use(status);
 app.use(diag);
 app.use(tgDebug);
+app.use(debugRoutes);
 
 app.get('/api/sse', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');

@@ -24,6 +24,22 @@
     - `ENABLE_GAME_LOOP=1` (off by default)
     - `ENABLE_PRICE_FEED=1` (off by default)
     - `ENABLE_BOTS=1` (off by default)
+    - `ADMIN_SECRET` — secret key for debug routes
+
+### Debug endpoints
+
+Set the `ADMIN_SECRET` environment variable to use debug routes.
+
+```
+export ADMIN_SECRET=your_secret
+```
+
+Example requests:
+
+```
+curl -H "X-Admin-Secret: $ADMIN_SECRET" -X POST https://.../api/debug/price -d '{"price":60000}' -H "Content-Type: application/json"
+curl -H "X-Admin-Secret: $ADMIN_SECRET" -X POST https://.../api/debug/round/start
+```
 
 ### Background Worker/Web Service (bot)
 - Root Directory: `bot`

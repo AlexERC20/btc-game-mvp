@@ -23,6 +23,7 @@ export function loadEnv(profile = 'server') {
     TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
     BOT_USERNAME: process.env.BOT_USERNAME || process.env.TG_BOT_USERNAME || '',
     TG_WEBHOOK_SECRET: process.env.TG_WEBHOOK_SECRET || '',
+    ADMIN_SECRET: process.env.ADMIN_SECRET || '',
     PUBLIC_URL,
     PORT: number(process.env.PORT, 10000),
     ROUND_LENGTH_SEC: number(process.env.ROUND_LENGTH_SEC, 60),
