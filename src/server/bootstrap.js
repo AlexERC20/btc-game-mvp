@@ -3,6 +3,7 @@ import { runMigrations } from './migrate.js';
 export { runMigrations };
 
 async function sql(db, text, params) {
+  console.log('[bootstrap.sql]', text, params);
   try {
     return await db.query(text, params);
   } catch (err) {
@@ -16,13 +17,6 @@ export async function ensureBootstrap(db, envConfig) {
   let current;
   try {
     await sql(client, 'BEGIN');
-
-    await sql(client, `CREATE TABLE IF NOT EXISTS service_state (
-      id boolean PRIMARY KEY DEFAULT TRUE,
-      state text NOT NULL DEFAULT 'idle',
-      updated_at timestamptz NOT NULL DEFAULT now()
-    )`);
-    await sql(client, `INSERT INTO service_state(id) VALUES (TRUE) ON CONFLICT (id) DO NOTHING`);
 
     const { rows: roundRows } = await sql(client, 'SELECT id, state, ends_at FROM rounds ORDER BY id DESC LIMIT 1 FOR UPDATE');
     const nowRes = await sql(client, 'SELECT now() AS now');
@@ -64,6 +58,15 @@ export async function ensureBootstrap(db, envConfig) {
                     VALUES('demo','global','demo',0,'Demo quest','') ON CONFLICT DO NOTHING`);
     console.log('[bootstrap] seeded quest_templates default');
   }
+
+  await sql(db, `
+    INSERT INTO service_status (name, ok, details)
+    VALUES ('server', TRUE, '{"bootstrap":"done"}'::jsonb)
+    ON CONFLICT (name) DO UPDATE SET
+      ok = EXCLUDED.ok,
+      details = EXCLUDED.details,
+      updated_at = now();
+  `);
   return current;
 }
 
