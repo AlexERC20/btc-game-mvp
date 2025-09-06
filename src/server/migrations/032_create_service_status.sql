@@ -1,4 +1,4 @@
--- 031_create_service_status.sql
+-- 032_create_service_status.sql
 
 CREATE TABLE IF NOT EXISTS service_status (
   name        TEXT PRIMARY KEY,
