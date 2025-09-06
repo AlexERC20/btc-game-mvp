@@ -32,7 +32,7 @@ export function normalizeScope(scope) {
   }
 }
 
-// Seed quest_templates_staging table with normalized scopes
+// Seed quest_templates table with normalized scopes
 export async function seedQuests(pool) {
   const client = await pool.connect();
   try {
@@ -41,16 +41,19 @@ export async function seedQuests(pool) {
       const scope = normalizeScope(q.scope);
       const code = q.code;
       await client.query(
-        `INSERT INTO quest_templates_staging
-         (code, scope, metric, goal, title, descr, reward_usd, cooldown_hours)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        `INSERT INTO quest_templates
+         (code, scope, metric, goal, title, descr, frequency, active, reward_type, reward_value, cooldown_hours)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (code) DO UPDATE SET
            scope = EXCLUDED.scope,
            metric = EXCLUDED.metric,
            goal = EXCLUDED.goal,
            title = EXCLUDED.title,
            descr = EXCLUDED.descr,
-           reward_usd = EXCLUDED.reward_usd,
+           frequency = EXCLUDED.frequency,
+           active = EXCLUDED.active,
+           reward_type = EXCLUDED.reward_type,
+           reward_value = EXCLUDED.reward_value,
            cooldown_hours = EXCLUDED.cooldown_hours`,
         [
           code,
@@ -59,6 +62,9 @@ export async function seedQuests(pool) {
           q.goal ?? 1,
           q.title || '',
           q.description || '',
+          q.frequency || 'once',
+          q.enabled !== false,
+          'USD',
           q.reward_usd ?? 0,
           q.cooldown_hours ?? 0,
         ]
