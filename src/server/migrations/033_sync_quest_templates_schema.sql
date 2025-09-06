@@ -96,13 +96,40 @@ BEGIN
   END IF;
 END$$;
 
--- 7) Актуальные CHECKи (без NOT VALID)
+-- 7) Актуальные CHECKи (часть может быть NOT VALID)
 ALTER TABLE quest_templates
   ADD CONSTRAINT quest_templates_metric_chk
     CHECK (metric IN ('count','usd','vop')),
   ADD CONSTRAINT quest_templates_frequency_chk
-    CHECK (frequency IN ('oneoff','daily','weekly')),
+    CHECK (frequency IN ('once','daily','weekly')) NOT VALID,
   ADD CONSTRAINT quest_templates_reward_type_check
     CHECK (reward_type IN ('USD','VOP','XP'));
+
+-- Нормализуем "frequency" к допустимым значениям, чтобы валидация не падала
+UPDATE quest_templates
+SET frequency = CASE
+  WHEN frequency ILIKE 'oneoff'      THEN 'once'
+  WHEN frequency ILIKE 'one-off'     THEN 'once'
+  WHEN frequency ILIKE 'one_time'    THEN 'once'
+  WHEN frequency ILIKE 'oneshot'     THEN 'once'
+  WHEN frequency ILIKE 'once'        THEN 'once'
+  WHEN frequency ILIKE 'day'         THEN 'daily'
+  WHEN frequency ILIKE 'daily'       THEN 'daily'
+  WHEN frequency ILIKE 'week'        THEN 'weekly'
+  WHEN frequency ILIKE 'weekly'      THEN 'weekly'
+  ELSE 'daily'
+END
+WHERE frequency IS NULL
+   OR frequency NOT IN ('once','daily','weekly');
+
+-- если раньше частота хранилась в колонке scope, можно подстраховаться:
+UPDATE quest_templates
+SET frequency = LOWER(scope)
+WHERE (frequency IS NULL OR frequency NOT IN ('once','daily','weekly'))
+  AND scope IN ('once','daily','weekly','oneoff');
+
+-- ✅ теперь валидация пройдет
+ALTER TABLE quest_templates
+  VALIDATE CONSTRAINT quest_templates_frequency_chk;
 
 COMMIT;
