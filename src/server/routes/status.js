@@ -16,13 +16,19 @@ router.get('/api/status', async (_req, res) => {
       }
       const priceRes = await client.query('SELECT price FROM price_ticks ORDER BY id DESC LIMIT 1');
       const lastPrice = priceRes.rows[0]?.price || null;
-      const svcRes = await client.query('SELECT state FROM service_state WHERE id=TRUE');
-      const svcState = svcRes.rows[0]?.state || 'idle';
+      const svcRes = await client.query("SELECT ok, details FROM service_status WHERE name='server'");
+      const svcRow = svcRes.rows[0] || {};
+      const qtRes = await client.query('SELECT active, COUNT(*)::int AS cnt FROM quest_templates GROUP BY active');
+      const quests = { enabled: 0, disabled: 0 };
+      for (const r of qtRes.rows) {
+        if (r.active) quests.enabled = r.cnt; else quests.disabled = r.cnt;
+      }
       const result = {
-        service: { state: svcState },
+        service: { ok: svcRow.ok ?? true, details: svcRow.details || {} },
         round: round ? { id: round.id, state: round.state, endsAt: round.ends_at } : null,
         bank,
         lastPrice,
+        quests,
       };
       console.log('[status] ok');
       res.json(result);
