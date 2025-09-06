@@ -62,15 +62,24 @@ export async function ensureBootstrap(db, envConfig) {
     ON CONFLICT (skey)
     DO UPDATE SET state = EXCLUDED.state, updated_at = now();
   `);
+  // ensure service_status table and baseline record
+  await sql(db, `CREATE TABLE IF NOT EXISTS service_status (
+    name       TEXT PRIMARY KEY,
+    state      TEXT NOT NULL DEFAULT 'booting',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`);
 
-  await sql(db, `
-    INSERT INTO service_status (name, ok, details)
-    VALUES ('server', TRUE, '{"bootstrap":"done"}'::jsonb)
-    ON CONFLICT (name) DO UPDATE SET
-      ok = EXCLUDED.ok,
-      details = EXCLUDED.details,
-      updated_at = now();
-  `);
+  await sql(db, `ALTER TABLE service_status
+    DROP CONSTRAINT IF EXISTS service_status_state_chk`);
+
+  await sql(db, `ALTER TABLE service_status
+    ADD CONSTRAINT service_status_state_chk
+    CHECK (state IN ('booting','ready','error'))`);
+
+  await sql(db, `INSERT INTO service_status (name, state)
+                VALUES ('srv', 'booting')
+                ON CONFLICT (name)
+                DO UPDATE SET state='booting', updated_at=now()`);
   return current;
 }
 
