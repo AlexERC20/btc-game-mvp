@@ -159,7 +159,7 @@ CREATE TABLE IF NOT EXISTS service_status (
   state      TEXT NOT NULL DEFAULT 'booting',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT service_status_state_chk
-    CHECK (state IN ('booting','ready','error'))
+    CHECK (state IN ('booting','migrating','ready','error'))
 );
 
 INSERT INTO service_status (name, state)
