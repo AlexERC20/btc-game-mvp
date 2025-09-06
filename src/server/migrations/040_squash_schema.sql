@@ -152,3 +152,16 @@ BEGIN
     ALTER TABLE quest_templates DROP COLUMN qkey;
   END IF;
 END $$;
+
+-- service_status table for clean deploy
+CREATE TABLE IF NOT EXISTS service_status (
+  name       TEXT PRIMARY KEY,
+  state      TEXT NOT NULL DEFAULT 'booting',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT service_status_state_chk
+    CHECK (state IN ('booting','ready','error'))
+);
+
+INSERT INTO service_status (name, state)
+VALUES ('srv','booting')
+ON CONFLICT (name) DO NOTHING;

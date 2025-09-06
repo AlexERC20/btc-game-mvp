@@ -16,8 +16,8 @@ router.get('/api/status', async (_req, res) => {
       }
       const priceRes = await client.query('SELECT price FROM price_ticks ORDER BY id DESC LIMIT 1');
       const lastPrice = priceRes.rows[0]?.price || null;
-      const svcRes = await client.query("SELECT ok, details FROM service_status WHERE name='server'");
-      const svcRow = svcRes.rows[0] || {};
+      const svcRes = await client.query("SELECT state FROM service_status WHERE name='srv'");
+      const svcRow = svcRes.rows[0] || { state: 'booting' };
       const qtRes = await client.query('SELECT active, COUNT(*)::int AS cnt FROM quest_templates GROUP BY active');
       const quests = { enabled: 0, disabled: 0 };
       for (const r of qtRes.rows) {
@@ -29,7 +29,7 @@ router.get('/api/status', async (_req, res) => {
         client.query("SELECT COUNT(*)::int AS has_nulls FROM quest_templates WHERE code IS NULL OR scope IS NULL OR metric IS NULL OR goal IS NULL OR title IS NULL OR descr IS NULL OR frequency IS NULL OR active IS NULL OR reward_type IS NULL OR reward_value IS NULL"),
       ]);
       const result = {
-        service: { ok: svcRow.ok ?? true, details: svcRow.details || {} },
+        service: { state: svcRow.state },
         round: round ? { id: round.id, state: round.state, endsAt: round.ends_at } : null,
         bank,
         lastPrice,
