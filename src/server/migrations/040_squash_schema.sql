@@ -51,9 +51,6 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'quest_templates_reward_type_check') THEN
     ALTER TABLE quest_templates DROP CONSTRAINT quest_templates_reward_type_check;
   END IF;
-  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'quest_templates_frequency_chk') THEN
-    ALTER TABLE quest_templates DROP CONSTRAINT quest_templates_frequency_chk;
-  END IF;
 END $$;
 
 ALTER TABLE quest_templates
@@ -64,15 +61,7 @@ ALTER TABLE quest_templates
   ADD CONSTRAINT quest_templates_reward_type_check
     CHECK (reward_type IN ('USD','VOP','XP')) NOT VALID;
 
-ALTER TABLE quest_templates
-  ADD CONSTRAINT quest_templates_frequency_chk
-    CHECK (frequency IN ('once','daily','weekly')) NOT VALID;
-
 -- 4) Чистим данные, которые могли нарушать новые чек-констрейнты
-UPDATE quest_templates
-SET frequency = 'daily'
-WHERE frequency NOT IN ('once','daily','weekly') OR frequency IS NULL;
-
 UPDATE quest_templates
 SET metric = 'count'
 WHERE metric NOT IN ('count','usd','vop') OR metric IS NULL;
@@ -85,10 +74,33 @@ UPDATE quest_templates
 SET reward_value = 0
 WHERE reward_value IS NULL OR reward_value < 0;
 
+-- Normalize legacy frequency values before validating the check
+UPDATE public.quest_templates
+SET frequency = CASE
+  WHEN frequency IS NULL OR btrim(frequency) = '' THEN 'once'
+  WHEN lower(frequency) IN ('oneoff','one-off','onceoff','one','one_time') THEN 'once'
+  WHEN lower(frequency) IN ('day') THEN 'daily'
+  WHEN lower(frequency) IN ('week') THEN 'weekly'
+  ELSE lower(frequency)
+END
+WHERE frequency IS NULL
+   OR frequency NOT IN ('once','daily','weekly')
+   OR lower(frequency) IN ('oneoff','one-off','onceoff','one','one_time','day','week');
+
+-- Recreate and validate the check constraint
+ALTER TABLE public.quest_templates
+  DROP CONSTRAINT IF EXISTS quest_templates_frequency_chk;
+
+ALTER TABLE public.quest_templates
+  ADD CONSTRAINT quest_templates_frequency_chk
+  CHECK (frequency = ANY (ARRAY['once','daily','weekly'])) NOT VALID;
+
+ALTER TABLE public.quest_templates
+  VALIDATE CONSTRAINT quest_templates_frequency_chk;
+
 -- 5) Валидируем констрейнты (когда данные уже починены)
 ALTER TABLE quest_templates VALIDATE CONSTRAINT quest_templates_metric_chk;
 ALTER TABLE quest_templates VALIDATE CONSTRAINT quest_templates_reward_type_check;
-ALTER TABLE quest_templates VALIDATE CONSTRAINT quest_templates_frequency_chk;
 
 -- 6) На всякий: убираем артефакты прошлых эпох
 -- 'state', 'qkey' и т. п. — если вдруг остались

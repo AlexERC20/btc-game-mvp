@@ -32,6 +32,30 @@ export function normalizeScope(scope) {
   }
 }
 
+// Normalize frequency to allowed values
+export function normalizeFrequency(freq) {
+  const f = String(freq || '').toLowerCase();
+  switch (f) {
+    case 'd':
+    case 'day':
+    case 'daily':
+      return 'daily';
+    case 'w':
+    case 'week':
+    case 'weekly':
+      return 'weekly';
+    case 'oneoff':
+    case 'one-off':
+    case 'onceoff':
+    case 'one':
+    case 'one_time':
+    case '':
+      return 'once';
+    default:
+      return 'once';
+  }
+}
+
 // Seed quest_templates table with normalized scopes
 export async function seedQuests(pool) {
   const client = await pool.connect();
@@ -62,7 +86,7 @@ export async function seedQuests(pool) {
           q.goal ?? 1,
           q.title || '',
           q.description || '',
-          q.frequency || 'once',
+          normalizeFrequency(q.frequency),
           q.enabled !== false,
           'USD',
           q.reward_usd ?? 0,
