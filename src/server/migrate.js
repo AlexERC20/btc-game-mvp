@@ -1,63 +1,39 @@
-import { loadEnv } from './env.js';
-import fs from 'fs';
-import path from 'path';
-import { Pool } from 'pg';
+// src/server/migrate.js
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import pg from 'pg';
 
-const env = loadEnv('migrate');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const dir = path.join(process.cwd(), 'src', 'server', 'migrations');
+const sqlFile = path.join(__dirname, 'migrations', '040_squash_schema.sql');
 
-export async function runMigrations(pool) {
-  const ownPool = !pool;
-  const db = pool || new Pool({ connectionString: env.DATABASE_URL });
-  const files = fs
-    .readdirSync(dir)
-    .filter(f => /^\d+_.+\.sql$/.test(f))
-    .sort();
+const { Client } = pg;
 
-  let applied = 0;
+// НЕ тащим сюда весь env, чтобы не падать на PUBLIC_URL и пр.
+// Берём только DATABASE_URL.
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error('[migrate] Missing DATABASE_URL');
+  process.exit(1);
+}
+
+async function run() {
+  const client = new Client({ connectionString: DATABASE_URL });
+  await client.connect();
+
   try {
-    for (const f of files) {
-      const sql = fs.readFileSync(path.join(dir, f), 'utf8');
-      const client = await db.connect();
-      console.log(`[migrate] applying ${f}`);
-      try {
-        if (/^\s*BEGIN\b/i.test(sql)) {
-          await client.query(sql);
-        } else {
-          await client.query('BEGIN');
-          await client.query(sql);
-          await client.query('COMMIT');
-        }
-        console.log(`[migrate] applied ${f}`);
-        applied++;
-      } catch (e) {
-        try {
-          if (!/^\s*BEGIN\b/i.test(sql)) {
-            await client.query('ROLLBACK');
-          }
-        } catch {}
-        const msg = e?.message || e;
-        console.error(`[migrate] failed in ${f}: ${msg}`);
-        if (e?.position) {
-          console.error(`[migrate] error position ${e.position}`);
-        }
-        throw e;
-      } finally {
-        client.release();
-      }
-    }
+    const sql = fs.readFileSync(sqlFile, 'utf8');
+    await client.query('SET search_path TO public;');
+    await client.query(sql);
+    console.log('[migrate] 040_squash_schema.sql applied ✅');
+  } catch (err) {
+    console.error('[migrate] failed:', err.message);
+    process.exitCode = 1;
   } finally {
-    if (ownPool) await db.end();
+    await client.end();
   }
-  return applied;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  runMigrations().then(n => {
-    console.log(`[migrate] applied ${n} files`);
-  }).catch(e => {
-    console.error('[migrate] failed', e);
-    process.exit(1);
-  });
-}
+run();

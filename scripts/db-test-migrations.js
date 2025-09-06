@@ -1,6 +1,5 @@
 import { loadEnv } from '../src/server/env.js';
 loadEnv('migrate');
-import { runMigrations } from '../src/server/migrate.js';
 import { seedQuests } from './seed-quests.js';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL || process.env.DATABASE_URL;
@@ -12,9 +11,9 @@ process.env.DATABASE_URL = DATABASE_URL;
 const { pool } = await import('../src/server/db.js');
 
 try {
-  await runMigrations(pool);
+  await import('../src/server/migrate.js');
   await seedQuests(pool);
-  await runMigrations(pool);
+  await import(`../src/server/migrate.js?${Date.now()}`);
   const res = await pool.query('SELECT COUNT(*) AS cnt FROM quest_templates;');
   console.log('[db:test-migrations] count:', res.rows[0]?.cnt);
   if ((res.rows[0]?.cnt ?? 0) <= 0) {
