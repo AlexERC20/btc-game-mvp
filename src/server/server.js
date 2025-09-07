@@ -11,7 +11,7 @@ import diag from './routes/diag.js';
 import tgDebug from './routes/tg-debug.js';
 import debugRoutes from './routes/debug.js';
 import { startPriceFeed } from './priceFeed/loop.js';
-import { roundHandler } from './routes/round.js';
+import roundRoute from './routes/round.js';
 
 const env = loadEnv('server');
 process.env.TZ = 'UTC';
@@ -41,7 +41,7 @@ app.use(diag);
 app.use(tgDebug);
 app.use(debugRoutes);
 
-app.get('/api/round', roundHandler);
+roundRoute(app, pool);
 
 app.get('/api/sse', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
