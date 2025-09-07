@@ -8,14 +8,10 @@ router.get('/api/diag', async (_req, res) => {
     const client = await pool.connect();
     try {
       const priceTicksRes = await client.query(
-        "SELECT COUNT(*)::int AS cnt FROM price_ticks WHERE created_at > now() - interval '5 minutes'"
+        "SELECT count(*)::int AS c FROM price_ticks WHERE created_at > now() - interval '5 minutes'"
       );
-      const priceTicks5m = priceTicksRes.rows[0].cnt;
-      const svcRes = await client.query(
-        "SELECT state FROM service_status WHERE name='srv'"
-      );
-      const svcState = svcRes.rows[0]?.state || 'booting';
-      const ok = priceTicks5m > 0 && ['ready', 'booting'].includes(svcState);
+      const priceTicks5m = priceTicksRes.rows[0].c;
+      const ok = priceTicks5m > 0;
       res.json({ priceTicks5m, ok });
     } finally {
       client.release();
