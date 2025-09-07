@@ -1,47 +1,36 @@
-# ETH Game — Final (Telegram WebApp + Bot)
+# Carousel MVP
 
-- Реальная цена ETH (Binance WS)
-- Раунды: 60c, окно ставок 10c, пауза 10c
-- Комиссия 10% только с проигравших
-- Регистрация через бота → сразу $10 000
-- Баланс ограничен: списание при ставке, пополнение только выигрышем
-- История последних исходов
-- Лидерборд победителей за сегодня (footer)
+Telegram WebApp for creating image carousels from text and photos.
 
-## Deploy на Render
-### Web Service (server)
-- Build: `npm ci`
-- Pre-deploy: `node src/server/migrate.js`
-- Start: `node src/server/server.js`
-- Env vars:
-  - required:
-    - `DATABASE_URL=postgres://...`
-    - `TELEGRAM_BOT_TOKEN=xxxxxxxxx`
-  - optional (have defaults):
-    - `PUBLIC_URL` — fallback `RENDER_EXTERNAL_URL` or empty
-    - `TG_WEBHOOK_SECRET` — empty string
-    - `ROUND_LENGTH_SEC=60`
-    - `ENABLE_GAME_LOOP=1` (off by default)
-    - `ENABLE_PRICE_FEED=1` (off by default)
-    - `ENABLE_BOTS=1` (off by default)
-    - `ADMIN_SECRET` — secret key for debug routes
+## Apps
 
-### Debug endpoints
+- `apps/webapp` – Vite + React frontend.
+- `apps/bot` – minimal aiogram bot that links to the WebApp.
 
-Set the `ADMIN_SECRET` environment variable to use debug routes.
+## Development
 
-```
-export ADMIN_SECRET=your_secret
+### WebApp
+
+```bash
+cd apps/webapp
+npm install
+npm run dev
 ```
 
-Example requests:
+### Bot
 
-```
-curl -H "X-Admin-Secret: $ADMIN_SECRET" -X POST https://.../api/debug/price -d '{"price":60000}' -H "Content-Type: application/json"
-curl -H "X-Admin-Secret: $ADMIN_SECRET" -X POST https://.../api/debug/round/start
+```bash
+cd apps/bot
+pip install -r requirements.txt
+BOT_TOKEN=... WEBAPP_URL=https://<org>.github.io/carousel/ python main.py
 ```
 
-### Background Worker/Web Service (bot)
-- Root Directory: `bot`
-- Start: `node bot.js`
-- Env: `BOT_TOKEN`, `WEBAPP_URL`, `DATABASE_URL`
+## Archive
+
+The code for the previous BTC game is preserved under the tag [`btc-game-last`](../../tree/btc-game-last).
+
+## License
+
+MIT
+
+Font files (Inter, Montserrat) are licensed under the [Open Font License](https://scripts.sil.org/OFL).
