@@ -10,6 +10,8 @@ import status from './routes/status.js';
 import diag from './routes/diag.js';
 import tgDebug from './routes/tg-debug.js';
 import debugRoutes from './routes/debug.js';
+import { startPriceFeed } from './priceFeed/loop.js';
+import { roundHandler } from './routes/round.js';
 
 const env = loadEnv('server');
 process.env.TZ = 'UTC';
@@ -39,6 +41,8 @@ app.use(diag);
 app.use(tgDebug);
 app.use(debugRoutes);
 
+app.get('/api/round', roundHandler);
+
 app.get('/api/sse', (req, res) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -52,7 +56,6 @@ app.get('/api/sse', (req, res) => {
 });
 
 const services = {
-  startPriceFeed: () => {},
   startGameLoop: () => {},
   startBots: () => {},
 };
@@ -65,6 +68,8 @@ async function boot() {
     if (round) {
       console.log(`[bootstrap] current round id=${round.id}, state=${round.state}, endsAt=${round.ends_at}`);
     }
+    await pool.query("UPDATE service_status SET state='ready', updated_at=now() WHERE name='srv'");
+    startPriceFeed({ db: pool });
     startServices(env, services);
   } catch (e) {
     console.error('[srv] startup failed:', e);

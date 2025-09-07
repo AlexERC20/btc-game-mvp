@@ -8,7 +8,7 @@ router.get('/api/status', async (_req, res) => {
     const client = await pool.connect();
     try {
       const priceRes = await client.query(
-        'SELECT price FROM price_ticks ORDER BY created_at DESC LIMIT 1'
+        'SELECT COALESCE(price_usd, price) AS price FROM price_ticks ORDER BY id DESC LIMIT 1'
       );
       const lastPrice = priceRes.rows[0]?.price ?? 60000;
       const roundRes = await client.query(
