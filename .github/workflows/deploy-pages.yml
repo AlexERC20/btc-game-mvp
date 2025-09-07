@@ -32,11 +32,12 @@ jobs:
         working-directory: apps/webapp
         run: npm run build
 
-      # ВАЖНО: новая версия pages-артефакта (v3)
-      - name: Upload artifact
+      # ВАЖНО: единственный upload! (НЕ добавляй upload-artifact)
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: apps/webapp/dist
+          # имя по умолчанию = github-pages (не меняем)
 
   deploy:
     needs: build
@@ -45,7 +46,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      # ВАЖНО: новая версия деплоя (v4)
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
