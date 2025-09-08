@@ -10,16 +10,19 @@ export async function renderSlide(opts: {
   total: number
   username: string
   backgroundDataURL?: string
+  theme?: 'light' | 'dark' | 'photo'
 }): Promise<Blob> {
   const { width:W, height:H, padding:PAD } = opts
   const cvs = document.createElement('canvas'); cvs.width = W; cvs.height = H
   const ctx = cvs.getContext('2d')!
 
   // фон
-  ctx.fillStyle = '#121212'; ctx.fillRect(0,0,W,H)
-
-  let avgLumUnderText = 0.1
-  if (opts.backgroundDataURL){
+  let avgLumUnderText = opts.theme === 'dark' ? 0.1 : 0.9
+  if (!opts.backgroundDataURL || opts.theme !== 'photo'){
+    ctx.fillStyle = opts.theme === 'dark' ? '#121212' : '#FFFFFF'
+    ctx.fillRect(0,0,W,H)
+  }
+  if (opts.backgroundDataURL && opts.theme==='photo'){
     const img = await loadImage(opts.backgroundDataURL)
     const r = Math.max(W/img.width, H/img.height)
     const w = img.width*r, h = img.height*r
