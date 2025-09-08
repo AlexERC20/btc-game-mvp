@@ -1,0 +1,12 @@
+.preview-list {
+  display: grid;
+  gap: 16px;
+  /* если у тебя горизонтальная лента – сделай flex + overflow-x */
+  /* overflow-y: auto;  // для вертикального скролла */
+  /* max-height: calc(100vh - 260px); // если нужно ограничить высоту секцией над списком */
+}
+
+.preview-list > * {
+  flex-shrink: 0; /* на всякий случай для flex-варианта */
+}
+
