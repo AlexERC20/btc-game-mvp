@@ -17,4 +17,42 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-seri
     overflow: hidden;
     background: #111;
   }
+
+  .preview-container {
+    position: relative;
+    width: 100%;
+    background: #000;
+    overflow: hidden;
+  }
+  .preview-container.carousel { aspect-ratio: 4 / 5; }
+  .preview-container.story { aspect-ratio: 9 / 16; }
+  @supports not (aspect-ratio: 1 / 1) {
+    .preview-container.carousel { padding-bottom: 125%; }
+    .preview-container.story { padding-bottom: 177.77%; }
+  }
+  .preview-container img,
+  .preview-container canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .preview-text {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 40px;
+    color: white;
+    font-size: 16px;
+    line-height: 1.4;
+    z-index: 2;
+  }
+  .preview-username {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    font-size: 14px;
+    opacity: 0.8;
+  }
 }
