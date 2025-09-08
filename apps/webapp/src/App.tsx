@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { splitIntoSlides } from './core/text-split'
+import { shareOrDownloadAll, downloadOne } from './core/export'
 import { renderSlide } from './core/render'
 import './styles/tailwind.css'
 
@@ -53,7 +54,7 @@ export default function App() {
   }
 
   const onSaveAll = async () => {
-    // рендерим/скачиваем последовательно
+    const blobs: Blob[] = []
     for (let i=0; i<slides.length; i++) {
       const bg = photos[i] || photos[photos.length-1] || '' // повторяем последнее, если фоток меньше
       const blob = await renderSlide({
@@ -62,22 +63,28 @@ export default function App() {
         fontSize: slides[i].fontSize,
         lineHeight: slides[i].lineHeight,
         padding: slides[i].padding,
-        width: 1080,
-        height: 1350,
-        pageIndex: i+1,
-        total: slides.length,
-        username,
+        width: 1080, height: 1350,
+        pageIndex: i+1, total: slides.length, username,
         backgroundDataURL: bg
       })
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = `slide_${String(i+1).padStart(2,'0')}.jpg`
-      document.body.appendChild(a)
-      a.click()
-      a.remove()
-      URL.revokeObjectURL(a.href)
-      await delay(120) // чтобы iOS не «слиплась»
+      blobs.push(blob)
     }
+    await shareOrDownloadAll(blobs)
+  }
+
+  const onShareOne = async () => {
+    if (!slides.length) return
+    const bg = photos[0] || photos[photos.length-1] || ''
+    await downloadOne(await renderSlide({
+      lines: slides[0].lines,
+      fontFamily: slides[0].fontFamily,
+      fontSize: slides[0].fontSize,
+      lineHeight: slides[0].lineHeight,
+      padding: slides[0].padding,
+      width: 1080, height: 1350,
+      pageIndex: 1, total: slides.length, username,
+      backgroundDataURL: bg
+    }))
   }
 
   return (
@@ -127,6 +134,9 @@ export default function App() {
               <button className="px-4 py-2 rounded-xl bg-neutral-800 border border-neutral-700 text-sm" onClick={onSaveAll} disabled={!slides.length}>
                 Save all
               </button>
+              <button className="px-4 py-2 rounded-xl bg-neutral-800 border border-neutral-700 text-sm" onClick={onShareOne} disabled={!slides.length}>
+                Share
+              </button>
             </div>
           </div>
 
@@ -174,6 +184,5 @@ export default function App() {
   )
 }
 
-function delay(ms:number){ return new Promise(r=>setTimeout(r,ms)) }
 async function blobToDataURL(b: Blob){ return new Promise<string>(res=>{ const r=new FileReader(); r.onload=()=>res(String(r.result)); r.readAsDataURL(b) })}
 

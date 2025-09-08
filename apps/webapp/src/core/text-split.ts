@@ -79,9 +79,11 @@ export function splitIntoSlides(p: Params){
     size -= 2 // уменьшаем кегль и пытаемся снова
   }
 
-  // если всё ещё перебор, ограничим количеством страниц
-  if (slides.length > p.maxSlides) slides = slides.slice(0, p.maxSlides)
-
+  // если перебор
+  if (slides.length > p.maxSlides) {
+    // если пользователь выбрал "auto" (мы передаём 10), оставляем 10
+    slides = slides.slice(0, p.maxSlides)
+  }
   return slides
 }
 
