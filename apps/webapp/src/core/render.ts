@@ -1,169 +1,139 @@
-import type { Slide } from "../types";
+export type RenderOptions = {
+  w: number; h: number;
+  img: HTMLImageElement;
+  template: "photo" | "light" | "dark";
+  text: {
+    heading?: string;
+    body?: string;
+    align: "top" | "bottom";
+    color: string;
+    headingMatchesBody: boolean;
+    fontSize: number;        // px при базовой ширине 1080
+    lineHeight: number;      // множитель, напр. 1.25
+    hyphenate?: boolean;
+  };
+  username: string;          // без @ — добавим сами
+  page: { index: number; total: number; showArrow: boolean };
+};
 
-export async function renderSlide(opts: {
-  lines: string[]
-  width: number
-  height: number
-  padding: number
-  fontFamily: string
-  fontSize: number
-  lineHeight: number
-  pageIndex: number
-  total: number
-  username: string
-  backgroundDataURL?: string
-  title?: string
-  subtitle?: string
-  theme?: "light" | "dark" | "photo"
-  accent?: string
-  textPosition?: 'top'|'bottom'
-  matchHeaderBody?: boolean
-  footerColor?: string
-  titleColor?: string
-}): Promise<Blob> {
-  const { width: W, height: H, padding: PAD } = opts
-  const cvs = document.createElement("canvas")
-  cvs.width = W; cvs.height = H
-  const ctx = cvs.getContext("2d")!
+export type SlideRenderModel = Omit<RenderOptions, "w" | "h">;
 
-  // фон, если нет фото/или тема не photo
-  if (!opts.backgroundDataURL || opts.theme !== "photo") {
-    ctx.fillStyle = opts.theme === "dark" ? "#121212" : "#FFFFFF"
-    ctx.fillRect(0,0,W,H)
+const BASE_W = 1080;                 // 4:5 как в инсте фиде
+
+const scale = (w:number, v:number)=> Math.round(v*w/BASE_W);
+
+export function renderSlide(ctx: CanvasRenderingContext2D, o: RenderOptions) {
+  const { w, h } = o;
+
+  // 0) Очистка без чёрной заливки
+  ctx.clearRect(0, 0, w, h);
+
+  // 1) Фон/фото
+  ctx.save();
+  if (o.template === "photo") {
+    // Кадрирование по cover
+    const r = Math.max(w/o.img.width, h/o.img.height);
+    const dw = Math.round(o.img.width*r);
+    const dh = Math.round(o.img.height*r);
+    ctx.drawImage(o.img, Math.round((w-dw)/2), Math.round((h-dh)/2), dw, dh);
+  } else {
+    ctx.fillStyle = o.template === "dark" ? "#0b0b0b" : "#f5f5f7";
+    ctx.fillRect(0,0,w,h);
+    const r = Math.max(w/o.img.width, h/o.img.height);
+    const dw = Math.round(o.img.width*r);
+    const dh = Math.round(o.img.height*r);
+    ctx.globalAlpha = 0.12;
+    ctx.drawImage(o.img, Math.round((w-dw)/2), Math.round((h-dh)/2), dw, dh);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+
+  // 2) Паддинги и безопасная зона под ник
+  const pad = scale(w, 48);
+  const nameFs = scale(w, 36);
+  const bottomSafe = Math.ceil(nameFs*1.6) + pad; // высота ника + запас
+
+  // 3) Текст
+  const textColor = o.text.color;
+  ctx.fillStyle = textColor;
+  ctx.textBaseline = "alphabetic";
+
+  const bodyFs = scale(w, o.text.fontSize);
+  const lh = o.text.lineHeight;
+
+  // Заголовок: цвет как у текста если включено
+  if (o.text.heading) {
+    ctx.font = `600 ${Math.round(bodyFs*1.05)}px Inter, system-ui, -apple-system`;
+  } else {
+    ctx.font = `${bodyFs}px Inter, system-ui, -apple-system`;
   }
 
-  let avgLumUnderText = 0.1
-  if (opts.backgroundDataURL) {
-    const img = await loadImage(opts.backgroundDataURL)
-    const r = Math.max(W/img.width, H/img.height)
-    const w = img.width*r, h = img.height*r
-    const x = (W-w)/2, y = (H-h)/2
-    ctx.drawImage(img, x,y,w,h)
+  const maxWidth = w - pad*2;
+  const topY = pad;
+  const bottomLimit = h - bottomSafe; // ВАЖНО: не залезать на ник
 
-    // средняя яркость под текстовой областью
-    const sx = PAD, sy = PAD, sw = W-PAD*2, sh = H-PAD*2
-    const data = ctx.getImageData(sx,sy,sw,sh).data
-    let sum = 0
-    for (let i=0;i<data.length;i+=4){
-      const r=data[i], g=data[i+1], b=data[i+2]
-      sum += (0.2126*r + 0.7152*g + 0.0722*b)/255
+  const lines: string[] = layoutParagraph(
+    ctx, `${o.text.heading ? o.text.heading+"\n" : ""}${o.text.body ?? ""}`,
+    maxWidth, Math.round(bodyFs*lh)
+  );
+
+  const blockHeight = lines.length * Math.round(bodyFs*lh);
+  let startY = o.text.align === "bottom"
+    ? Math.max(topY, bottomLimit - blockHeight)
+    : Math.min(topY + blockHeight, bottomLimit) - blockHeight;
+
+  for (const line of lines) {
+    ctx.fillText(line, pad, startY);
+    startY += Math.round(bodyFs*lh);
+    if (startY > bottomLimit) break;  // safety
+  }
+
+  // 4) Ник (всегда поверх и в одном месте)
+  drawUsername(ctx, `@${o.username}`, pad, h - pad, nameFs);
+
+  // 5) Номер слайда и стрелка
+  drawPager(ctx, o.page.index, o.page.total, w - pad, h - pad, nameFs, o.page.showArrow);
+}
+
+export async function renderSlideBlob(o: RenderOptions): Promise<Blob> {
+  const cnv = document.createElement('canvas');
+  cnv.width = o.w; cnv.height = o.h;
+  const ctx = cnv.getContext('2d')!;
+  renderSlide(ctx, o);
+  return await new Promise<Blob>(res => cnv.toBlob(b=>res(b!), 'image/jpeg', 0.95)!);
+}
+
+function layoutParagraph(ctx: CanvasRenderingContext2D, text: string, maxW: number, lineStep: number){
+  const words = text.replace(/\r/g,"").split(/\s+/);
+  const lines:string[] = [];
+  let cur = "";
+  for (const w of words){
+    const test = cur ? cur + " " + w : w;
+    if (ctx.measureText(test).width <= maxW) {
+      cur = test;
+    } else {
+      if (cur) lines.push(cur);
+      cur = w;
     }
-    avgLumUnderText = sum / (data.length/4)
-
-    // динамический оверлей (в светлой теме делаем слабее)
-    if (opts.theme !== "light") {
-      const overlay = clamp(0.15 + (avgLumUnderText-0.4)*0.4, 0.15, 0.32)
-      ctx.fillStyle = `rgba(0,0,0,${overlay.toFixed(3)})`
-      ctx.fillRect(0,0,W,H)
-    }
   }
-
-  // нижний градиент для читаемости текста
-  const grad = ctx.createLinearGradient(0, H*0.65, 0, H)
-  grad.addColorStop(0, "rgba(0,0,0,0)")
-  grad.addColorStop(1, "rgba(0,0,0,0.28)")
-  ctx.fillStyle = grad
-  ctx.fillRect(0, 0, W, H)
-
-  const textIsLight = avgLumUnderText < 0.5 || opts.theme === "dark"
-  const bodyColor = textIsLight ? "#F5F5F5" : "#111111"
-  const subColor  = textIsLight ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.8)"
-  const titleColor = opts.matchHeaderBody ? bodyColor : (opts.titleColor ?? bodyColor)
-
-  ctx.textAlign = "left"
-  ctx.textBaseline = "top"
-
-  // HERO title (фиолетовая плашка)
-  let yCursor = PAD
-  if (opts.title){
-    const pillPadX=22, pillPadY=12
-    const titleSize = Math.round(opts.fontSize*1.0)
-    const titleLH = Math.round(titleSize*1.15)
-    ctx.font = `${titleSize}px ${opts.fontFamily}`
-    const lines = wrap(ctx, opts.title, W - PAD*2 - pillPadX*2)
-    const pillH = lines.length*titleLH + pillPadY*2
-    roundRect(ctx, PAD, yCursor, W-PAD*2, pillH, 14)
-    ctx.fillStyle = opts.accent || "#5B4BFF"; ctx.globalAlpha = 0.95; ctx.fill(); ctx.globalAlpha = 1
-    ctx.fillStyle = titleColor
-    let ty = yCursor + pillPadY
-    for (const ln of lines){ ctx.fillText(ln, PAD+pillPadX, ty); ty+=titleLH }
-    yCursor += pillH + Math.round(titleLH*0.6)
-  }
-
-  // Subtitle
-  if (opts.subtitle){
-    const subSize = Math.round(opts.fontSize*0.82)
-    const subLH = Math.round(subSize*1.28)
-    ctx.font = `${subSize}px ${opts.fontFamily}`
-    ctx.fillStyle = subColor
-    for (const ln of wrap(ctx, opts.subtitle, W-PAD*2)){ ctx.fillText(ln, PAD, yCursor); yCursor+=subLH }
-    yCursor += Math.round(subLH*0.4)
-  }
-
-  // Body: прижать к низу
-  ctx.font = `${opts.fontSize}px ${opts.fontFamily}`
-  const lh = Math.round(opts.fontSize*opts.lineHeight)
-  const blockH = opts.lines.reduce((h, ln) => h + (ln === "" ? Math.round(lh*0.6) : lh), 0)
-  const safeTop = PAD + 40
-  const safeBottom = H - PAD - 80
-  let y = opts.textPosition === 'top'
-    ? safeTop
-    : safeBottom - blockH
-  if (y < safeTop) y = safeTop
-
-  ctx.fillStyle = bodyColor
-  for (const ln of opts.lines) {
-    const step = ln === "" ? Math.round(lh*0.6) : lh
-    if (ln) ctx.fillText(ln, PAD, y)
-    y += step
-  }
-
-  // пейджер внизу справа
-  // ник всегда снизу слева
-  ctx.textAlign = "left"
-  ctx.textBaseline = "alphabetic"
-  ctx.font = `${Math.round(opts.fontSize*0.55)}px ${opts.fontFamily}`
-  ctx.fillStyle = opts.footerColor ?? "rgba(255,255,255,.92)"
-  ctx.fillText("@" + opts.username.replace(/^@/, ""), PAD, H - PAD)
-
-  // пейджер внизу справа
-  ctx.textAlign = "right"
-  ctx.font = `${Math.round(opts.fontSize*0.65)}px ${opts.fontFamily}`
-  ctx.fillStyle = subColor
-  ctx.fillText(`${opts.pageIndex}/${opts.total} →`, W - PAD, H - PAD)
-
-  return await new Promise<Blob>(res => cvs.toBlob(b=>res(b!), 'image/jpeg', 0.92)!)
+  if (cur) lines.push(cur);
+  return lines;
 }
-
-// черновая обёртка для массива слайдов
-export async function renderSlides(slides: Slide[], opts: {
-  username: string;
-  textPosition: "top"|"bottom";
-  // ...другие опции (цвета/шрифты/поля)
-}): Promise<Blob[]> {
-  const out: Blob[] = [];
-  for (let i = 0; i < slides.length; i++) {
-    // здесь могла бы быть логика рендера конкретного слайда
-    // в MVP используем существующий renderSlide отдельно
-  }
-  return out;
+function drawUsername(ctx:CanvasRenderingContext2D, s:string, x:number, y:number, fs:number){
+  ctx.save();
+  ctx.font = `500 ${fs}px Inter, system-ui, -apple-system`;
+  ctx.shadowColor = "rgba(0,0,0,.35)";
+  ctx.shadowBlur = Math.round(fs*0.4);
+  ctx.shadowOffsetY = 0;
+  ctx.fillStyle = "white";
+  ctx.fillText(s, x, y);
+  ctx.restore();
 }
-
-function wrap(ctx:CanvasRenderingContext2D, text:string, max:number){
-  const out:string[]=[]; let line=''
-  for (const w of text.split(/\s+/)){
-    const t = line? line+' '+w : w
-    if (ctx.measureText(t).width <= max) line=t
-    else { if (line) out.push(line); line=w }
-  }
-  if (line) out.push(line)
-  return out
+function drawPager(ctx:CanvasRenderingContext2D, i:number, total:number, x:number, y:number, fs:number, arrow:boolean){
+  ctx.save();
+  ctx.font = `500 ${Math.round(fs*0.9)}px Inter, system-ui, -apple-system`;
+  ctx.fillStyle = "rgba(255,255,255,.9)";
+  ctx.textAlign = "right";
+  ctx.fillText(`${i}/${total}${arrow ? " →" : ""}`, x, y);
+  ctx.restore();
 }
-function roundRect(ctx:CanvasRenderingContext2D,x:number,y:number,w:number,h:number,r:number){
-  ctx.beginPath()
-  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r)
-  ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r)
-  ctx.closePath()
-}
-function clamp(n:number,a:number,b:number){ return Math.max(a, Math.min(b, n)) }
-function loadImage(src:string){ return new Promise<HTMLImageElement>((resolve,reject)=>{ const img=new Image(); img.onload=()=>resolve(img); img.onerror=reject; img.src=src }) }
