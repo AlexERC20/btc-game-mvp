@@ -3,6 +3,11 @@ export type Slide = {
   image?: string;    // dataURL/URL выбранной фотки
 };
 
+export type PhotoMeta = {
+  id: string;
+  url: string;
+};
+
 export type Theme = 'photo' | 'light' | 'dark';
 
 export type LayoutOptions = {
