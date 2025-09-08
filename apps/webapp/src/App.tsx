@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { splitIntoSlides } from "./core/text";
 import { renderSlideToCanvas } from "./core/render";
 import { CANVAS_PRESETS } from "./core/constants";
@@ -8,12 +8,14 @@ import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
 import { SlidePreview } from "./components/SlidePreview";
 import "./styles/tailwind.css";
-import type { Slide, Theme, CanvasMode } from "./types";
+import type { Slide, Theme, CanvasMode, PhotoMeta } from "./types";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
 
 export default function App() {
   const [rawText, setRawText] = useState("");
+  const [photos, setPhotos] = useState<PhotoMeta[]>([]);
+  const [imagesDims, setImagesDims] = useState<Record<string,{w:number,h:number}>>({});
   const [slides, setSlides] = useState<Slide[]>([]);
   const [count, setCount] = useState<SlideCount>("auto");
   const [username, setUsername] = useState("@username");
@@ -34,12 +36,27 @@ export default function App() {
 
   const onTextChange = (value: string) => {
     setRawText(value);
-    const parts = splitIntoSlides(value, 280);
+  };
+
+  const recompute = useCallback(() => {
+    const parts = splitIntoSlides(rawText, 280);
     const maxN = count === "auto" ? parts.length : Math.min(parts.length, count as number);
     const limited = parts.slice(0, maxN);
-    setSlides(prev => {
-      const mapped = limited.map((p, i) => ({ ...(prev[i] ?? {}), body: p }));
-      return mapped;
+    setSlides(limited.map((p, i) => ({ body: p, image: photos[i]?.url })));
+  }, [rawText, count, photos, imagesDims]);
+
+  useEffect(recompute, [recompute]);
+
+  const onPhotosPicked = (urls: string[]) => {
+    const next: PhotoMeta[] = urls.map((url, idx) => ({ id: `${Date.now()}_${idx}`, url }));
+    setPhotos(prev => [...prev, ...next]);
+    next.forEach(p => {
+      const img = new Image();
+      img.onload = () => {
+        setImagesDims(d => ({ ...d, [p.id]: { w: img.naturalWidth, h: img.naturalHeight } }));
+        requestAnimationFrame(recompute);
+      };
+      img.src = p.url;
     });
   };
 
@@ -67,7 +84,7 @@ export default function App() {
   }, []);
 
   useEffect(()=>{
-    onTextChange(rawText);
+    recompute();
   }, [count]);
 
   const handleExport = async () => {
@@ -99,6 +116,8 @@ export default function App() {
       setTimeout(()=>setIsExporting(false), 600);
     }
   };
+
+  const canExport = photos.length > 0 && Object.keys(imagesDims).length === photos.length;
 
   return (
     <div className="min-h-full pt-[calc(12px+env(safe-area-inset-top))] px-4 sm:px-6 bg-neutral-950 text-neutral-100">
@@ -200,17 +219,7 @@ export default function App() {
       <ImagesModal
         open={openImages}
         onClose={()=>setOpenImages(false)}
-        onConfirm={(urls:string[])=>{
-          setSlides(prev=>{
-            const base = [...prev];
-            urls.forEach((url, idx)=>{
-              const i = idx;
-              base[i] = { ...(base[i] ?? {}), image:url };
-            });
-            return base;
-          });
-          setOpenImages(false);
-        }}
+        onConfirm={(urls:string[])=>{ onPhotosPicked(urls); setOpenImages(false); }}
       />
 
       <BottomSheet open={openInfo} onClose={()=>setOpenInfo(false)} title="Info">
@@ -226,7 +235,7 @@ export default function App() {
         onPhotos={()=>setOpenImages(true)}
         onInfo={()=>setOpenInfo(true)}
         onExport={handleExport}
-        disabledExport={!slides.length || isExporting}
+        disabledExport={!slides.length || isExporting || !canExport}
         active={openTemplate?"template":openColor?"color":openLayout?"layout":openImages?"photos":openInfo?"info":undefined}
         mode={mode}
       />

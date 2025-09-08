@@ -104,7 +104,7 @@ export async function renderSlideToCanvas(
     x: PADDING,
     y: layout.textPosition === 'bottom' ? height - Math.round(height * 0.28) + PADDING : PADDING,
     w: width - PADDING * 2,
-    yMax: height - PADDING - 48,
+    yMax: height - PADDING - 56,
   };
   ctx.save();
   typesetWithinBox(ctx, slide.body || '', box, layout.lineHeight, layout.textSize);
