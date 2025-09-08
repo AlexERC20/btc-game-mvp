@@ -2,21 +2,25 @@ import React from "react";
 import TemplateIcon from "../icons/TemplateIcon";
 import PaletteIcon from "../icons/PaletteIcon";
 import LayoutIcon from "../icons/LayoutIcon";
+import FrameIcon from "../icons/FrameIcon";
 import CameraIcon from "../icons/CameraIcon";
 import InfoIcon from "../icons/InfoIcon";
 import DownloadIcon from "../icons/DownloadIcon";
+import type { CanvasMode } from '../types';
 
 export default function BottomBar({
-  onTemplate, onColor, onLayout, onPhotos, onInfo, onExport, disabledExport, active
+  onTemplate, onColor, onLayout, onMode, onPhotos, onInfo, onExport, disabledExport, active, mode
 }:{
   onTemplate: ()=>void;
   onColor: ()=>void;
   onLayout: ()=>void;
+  onMode: ()=>void;
   onPhotos: ()=>void;
   onInfo: ()=>void;
   onExport: ()=>void;
   disabledExport?: boolean;
   active?: 'template'|'color'|'layout'|'photos'|'info';
+  mode: CanvasMode;
 }) {
   const Item = ({icon,label,onClick,disabled,active}:{icon:React.ReactNode,label:string,onClick?:()=>void,disabled?:boolean,active?:boolean}) => (
     <button onClick={onClick} disabled={disabled}
@@ -29,10 +33,11 @@ export default function BottomBar({
   return (
       <div className="fixed left-0 right-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)]">
       <div className="mx-auto max-w-6xl">
-        <div className="m-3 rounded-2xl border border-neutral-800 bg-neutral-900/85 backdrop-blur px-3 py-2 grid grid-cols-6 gap-1">
+        <div className="m-3 rounded-2xl border border-neutral-800 bg-neutral-900/85 backdrop-blur px-3 py-2 grid grid-cols-7 gap-1">
           <Item icon={<TemplateIcon className="w-6 h-6"/>} label="Template" onClick={onTemplate} active={active==='template'}/>
           <Item icon={<PaletteIcon className="w-6 h-6"/>}  label="Color"    onClick={onColor} active={active==='color'}/>
           <Item icon={<LayoutIcon className="w-6 h-6"/>}   label="Layout"   onClick={onLayout} active={active==='layout'}/>
+          <Item icon={<FrameIcon className="w-6 h-6"/>}    label={mode==='story'?'Story':'Carousel'} onClick={onMode}/>
           <Item icon={<CameraIcon className="w-6 h-6"/>}   label="Photos"   onClick={onPhotos} active={active==='photos'}/>
           <Item icon={<InfoIcon className="w-6 h-6"/>}     label="Info"     onClick={onInfo} active={active==='info'}/>
           <Item icon={<DownloadIcon className="w-6 h-6"/>} label="Export"   onClick={onExport} disabled={disabledExport}/>

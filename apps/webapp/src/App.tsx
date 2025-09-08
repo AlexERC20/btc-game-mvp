@@ -1,17 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { splitIntoSlides } from "./core/text";
-import { drawSlide } from "./core/drawSlide";
-import { CANVAS_W, CANVAS_H } from "./core/constants";
+import { renderSlideToCanvas } from "./core/render";
+import { CANVAS_PRESETS } from "./core/constants";
 import { shareOrDownloadAll } from "./core/export";
 import BottomBar from "./components/BottomBar";
 import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
 import { SlidePreview } from "./components/SlidePreview";
 import "./styles/tailwind.css";
-import type { Slide } from "./types";
+import type { Slide, Theme, CanvasMode } from "./types";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
-type Theme = "light" | "dark" | "photo";
 
 export default function App() {
   const [rawText, setRawText] = useState("");
@@ -23,6 +22,7 @@ export default function App() {
   const [accent, setAccent] = useState("#5B4BFF");
   const [fontSize, setFontSize] = useState(42);
   const [lineHeight, setLineHeight] = useState(1.32);
+  const [mode, setMode] = useState<CanvasMode>('story');
   const [isExporting, setIsExporting] = useState(false);
   const [openTemplate, setOpenTemplate] = useState(false);
   const [openColor, setOpenColor] = useState(false);
@@ -75,29 +75,23 @@ export default function App() {
     setIsExporting(true);
     try {
       const blobs: Blob[] = [];
+      const preset = CANVAS_PRESETS[mode];
       const cnv = document.createElement("canvas");
-      cnv.width = CANVAS_W; cnv.height = CANVAS_H;
+      cnv.width = preset.w; cnv.height = preset.h;
       const ctx = cnv.getContext("2d")!;
       const lastImage = slides.map(s=>s.image).filter(Boolean).pop();
-      for (let i=0; i<slides.length; i++){
-        const img = new Image();
-        img.src = slides[i].image || lastImage || "";
-        if (img.src) {
-          await new Promise(res=>{ if (img.complete) res(null); else { img.onload=()=>res(null); img.onerror=()=>res(null); }});
-        }
-        drawSlide(ctx, {
-          img,
-          template: theme,
-          text: {
-            body: slides[i].body || "",
-            align: textPosition,
-            color: "#fff",
-            fontSize,
-          },
-          username: username.replace(/^@/, ""),
-          page: { index: i+1, total: slides.length, showArrow: i+1 < slides.length },
+      for (let i = 0; i < slides.length; i++) {
+        const slide = { ...slides[i] } as Slide;
+        if (!slide.image && lastImage) slide.image = lastImage;
+        await renderSlideToCanvas(slide, ctx, {
+          width: preset.w,
+          height: preset.h,
+          theme,
+          layout: { textPosition, textSize: fontSize, lineHeight, color: '#fff' },
+          username: username.replace(/^@/, ''),
+          page: { index: i + 1, total: slides.length, showArrow: i + 1 < slides.length },
         });
-        const blob = await new Promise<Blob>(res=>cnv.toBlob(b=>res(b!), 'image/jpeg', 0.95)!);
+        const blob = await new Promise<Blob>(res => cnv.toBlob(b => res(b!), 'image/jpeg', 0.95)!);
         blobs.push(blob);
       }
       await shareOrDownloadAll(blobs);
@@ -147,7 +141,9 @@ export default function App() {
                     username={username}
                     theme={theme}
                     fontSize={fontSize}
+                    lineHeight={lineHeight}
                     color="#fff"
+                    mode={mode}
                   />
                 </div>
               ))}
@@ -226,11 +222,13 @@ export default function App() {
         onTemplate={()=>setOpenTemplate(true)}
         onColor={()=>setOpenColor(true)}
         onLayout={()=>setOpenLayout(true)}
+        onMode={()=>setMode(mode==='story'?'carousel':'story')}
         onPhotos={()=>setOpenImages(true)}
         onInfo={()=>setOpenInfo(true)}
         onExport={handleExport}
         disabledExport={!slides.length || isExporting}
         active={openTemplate?"template":openColor?"color":openLayout?"layout":openImages?"photos":openInfo?"info":undefined}
+        mode={mode}
       />
     </div>
   );
