@@ -6,6 +6,7 @@ import { shareOrDownloadAll } from "./core/export";
 import BottomBar from "./components/BottomBar";
 import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
+import { SlidePreview } from "./components/SlidePreview";
 import "./styles/tailwind.css";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
@@ -31,11 +32,9 @@ export default function App() {
   const [textPosition, setTextPosition] = useState<'top'|'bottom'>('bottom');
   const [matchHeaderBody, setMatchHeaderBody] = useState(true);
 
-  const lastImage = slides.map(s=>s.image).filter(Boolean).pop();
-
   const onTextChange = (value: string) => {
     setRawText(value);
-    const parts = splitIntoSlides(value, { maxCharsPerSlide: 280 });
+    const parts = splitIntoSlides(value, 280);
     const maxN = count === "auto" ? parts.length : Math.min(parts.length, count as number);
     const limited = parts.slice(0, maxN);
     setSlides(prev => {
@@ -135,19 +134,19 @@ export default function App() {
           <div className="rounded-3xl bg-neutral-900/70 border border-neutral-800 p-4 lg:p-6">
             <div className="text-neutral-400 text-sm mb-3">Preview</div>
             <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth">
-              {slides.map((slide,i)=>{
-                const img = slide.image || lastImage || "";
-                return (
-                  <div key={i} className="snap-start shrink-0 w-[260px] aspect-[4/5] rounded-3xl overflow-hidden bg-neutral-800 relative">
-                    {img && <img src={img} className="w-full h-full object-cover" />}
-                    {slide.body && (
-                      <div className={`absolute left-4 right-4 ${textPosition==='bottom'?"bottom-16":"top-6"} text-white/95 text-[15px] leading-[1.3] hyphens-auto`}>{slide.body}</div>
-                    )}
-                    <div className="absolute left-3 bottom-3 z-20 text-white/90 text-xs">@{username.replace(/^@/, "")}</div>
-                    <div className="absolute right-3 bottom-3 text-white/70 text-xs select-none">{i+1}/{slides.length} →</div>
-                  </div>
-                );
-              })}
+              {slides.map((s, i) => (
+                <div
+                  key={i}
+                  className="snap-start shrink-0 w-[260px] aspect-[4/5] rounded-3xl overflow-hidden bg-neutral-800 relative"
+                >
+                  <SlidePreview
+                    slide={s}
+                    index={i}
+                    textPosition={textPosition}
+                    username={username}
+                  />
+                </div>
+              ))}
               {!slides.length && <div className="text-neutral-500">Вставь текст ↑</div>}
             </div>
           </div>
