@@ -8,6 +8,7 @@ import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
 import { SlidePreview } from "./components/SlidePreview";
 import "./styles/tailwind.css";
+import { getWelcomeText, SEED_KEY } from "./core/seed";
 import type { Slide, Theme, CanvasMode, PhotoMeta } from "./types";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
@@ -76,21 +77,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (localStorage.getItem("carousel__seeded")) return;
-    const seed = `Выгорание убивает планы.
-Но именно в моменты усталости мы закаляем характер.
+    if (localStorage.getItem(SEED_KEY)) return;
 
-Не жди мотивацию — создавай систему.
-Маленькие шаги каждый день сильнее вдохновения раз в месяц.
+    const nothingTyped = !rawText || rawText.trim().length === 0;
+    const noSlides = !slides || slides.length === 0;
 
-Когда нет сил — сделай одно действие.
-Сохрани темп, а не максимум. Стабильность рождает результат.
-
-Планируй накануне, действуй утром без раздумий.
-Сегодняшняя дисциплина — завтрашняя свобода.`;
-    setCount(4 as any);
-    onTextChange(seed);
-    localStorage.setItem("carousel__seeded", "1");
+    if (nothingTyped && noSlides) {
+      const demo = getWelcomeText();
+      onTextChange(demo);
+      setCount(5 as any);
+      localStorage.setItem(SEED_KEY, "1");
+    }
   }, []);
 
 
@@ -242,7 +239,19 @@ export default function App() {
       />
 
       <BottomSheet open={openInfo} onClose={()=>setOpenInfo(false)} title="Info">
-        <div>Coming soon…</div>
+        <div className="space-y-4">
+          <button
+            className="w-full px-4 py-3 rounded-xl bg-neutral-800 border border-neutral-700 text-sm"
+            onClick={() => {
+              const demo = getWelcomeText();
+              localStorage.removeItem(SEED_KEY);
+              onTextChange(demo);
+              setCount(5 as any);
+            }}
+          >
+            Загрузить пример (5 слайдов)
+          </button>
+        </div>
       </BottomSheet>
       </div>
 
