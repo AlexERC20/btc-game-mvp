@@ -1,5 +1,4 @@
-import { splitToSlides } from './autoSplit';
-import { CANVAS_PRESETS, PADDING } from './constants';
+import { splitTextIntoSlides } from './textSplitter';
 import type { Slide, PhotoMeta, Theme, CanvasMode } from '../types';
 
 export type LayoutState = {
@@ -32,15 +31,8 @@ export function composeSlides({ texts, photos }: { texts: string[]; photos: Phot
 }
 
 export function recomputeSlides(args: RecomputeArgs): Slide[] {
-  const { mode, layout, slidesText, photos } = args;
-  const preset = CANVAS_PRESETS[mode];
-  const texts = splitToSlides(slidesText, {
-    fontSize: layout.textSize,
-    lineHeight: layout.lineHeight,
-    width: preset.w,
-    height: preset.h,
-    padding: PADDING,
-  });
+  const { mode, slidesText, photos } = args;
+  const texts = splitTextIntoSlides(slidesText, mode, { targetCount: photos.length });
   return composeSlides({ texts, photos });
 }
 
