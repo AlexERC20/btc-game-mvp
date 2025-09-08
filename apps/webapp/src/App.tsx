@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { splitIntoSlides } from './core/text-split'
 import { shareOrDownloadAll, downloadOne } from './core/export'
 import { renderSlide } from './core/render'
+import { makeStory } from './core/story'
 import './styles/tailwind.css'
 
-type SlideCount = 'auto' | 3 | 5 | 8 | 10
+type SlideCount = 'auto' | number
 
 export default function App() {
   const [text, setText] = useState<string>('')
@@ -25,18 +26,21 @@ export default function App() {
   // считаем слайды при каждом изменении
   const slides = useMemo(() => {
     if (!fontReady) return []
-    const hardMax = count === 'auto' ? 10 : count
-    return splitIntoSlides({
-      text,
-      maxSlides: hardMax,
-      fontFamily: 'Inter',
-      fontSize: 44,           // базовый кегль, будет уменьшаться при нехватке
-      minFontSize: 36,
-      lineHeight: 1.32,
-      padding: 96,
-      width: 1080,
-      height: 1350
+    const maxN = count === 'auto' ? 10 : (count as number)
+    const story = makeStory(text, maxN)
+
+    const packed = story.map(block => {
+      const bodyText = (block.body ?? []).join(' ')
+      const s = splitIntoSlides({
+        text: bodyText,
+        maxSlides: 1,
+        fontFamily: 'Inter',
+        fontSize: 42, minFontSize: 34, lineHeight: 1.32,
+        padding: 96, width:1080, height:1350
+      })[0] ?? { lines:[], fontFamily:'Inter', fontSize:42, lineHeight:1.32, padding:96 }
+      return { ...s, title: block.title, subtitle: block.subtitle }
     })
+    return packed.slice(0, maxN)
   }, [text, count, fontReady])
 
   const fileInput = useRef<HTMLInputElement>(null)
@@ -58,7 +62,7 @@ export default function App() {
     for (let i=0; i<slides.length; i++) {
       const bg = photos[i] || photos[photos.length-1] || '' // повторяем последнее, если фоток меньше
       const blob = await renderSlide({
-        lines: slides[i].lines,
+        lines: slides[i].lines, title: slides[i].title, subtitle: slides[i].subtitle,
         fontFamily: slides[i].fontFamily,
         fontSize: slides[i].fontSize,
         lineHeight: slides[i].lineHeight,
@@ -76,7 +80,7 @@ export default function App() {
     if (!slides.length) return
     const bg = photos[0] || photos[photos.length-1] || ''
     await downloadOne(await renderSlide({
-      lines: slides[0].lines,
+      lines: slides[0].lines, title: slides[0].title, subtitle: slides[0].subtitle,
       fontFamily: slides[0].fontFamily,
       fontSize: slides[0].fontSize,
       lineHeight: slides[0].lineHeight,
@@ -114,13 +118,13 @@ export default function App() {
               <select
                 className="px-3 py-2 rounded-xl bg-neutral-900 border border-neutral-800 text-sm"
                 value={String(count)}
-                onChange={e => setCount(e.target.value === 'auto' ? 'auto' : Number(e.target.value) as SlideCount)}
+                onChange={e => {
+                  const v = e.target.value;
+                  setCount(v === 'auto' ? 'auto' : Number(v) as any);
+                }}
               >
                 <option value="auto">Авто</option>
-                <option value="3">3</option>
-                <option value="5">5</option>
-                <option value="8">8</option>
-                <option value="10">10</option>
+                {[...Array(10)].map((_,i)=> <option key={i+1} value={i+1}>{i+1}</option>)}
               </select>
             </div>
 
@@ -167,6 +171,13 @@ export default function App() {
                     ) : null}
                   </div>
                   <div className="relative z-10 h-full flex flex-col justify-end">
+                    {s.title && (
+                      <div className="inline-block bg-[#5B4BFF] text-white px-3 py-2 rounded-lg font-semibold mb-2">
+                        {s.title}
+                      </div>
+                    )}
+                    {s.subtitle && <div className="text-neutral-100/90 mb-2">{s.subtitle}</div>}
+
                     {s.lines.map((ln, k)=>(
                       <div key={k} className="text-neutral-100">{ln}</div>
                     ))}
