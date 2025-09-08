@@ -2,10 +2,17 @@ import React, { useEffect, useState, useCallback } from "react";
 import { renderSlideToCanvas } from "./core/render";
 import { CANVAS_PRESETS } from "./core/constants";
 import { shareOrDownloadAll } from "./core/export";
-import BottomBar from "./components/BottomBar";
 import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
-import BuilderPreview from "./components/BuilderPreview";
+import PreviewList from "./components/PreviewList";
+import PreviewCard from "./components/PreviewCard";
+import TemplateIcon from "./icons/TemplateIcon";
+import PaletteIcon from "./icons/PaletteIcon";
+import LayoutIcon from "./icons/LayoutIcon";
+import FrameIcon from "./icons/FrameIcon";
+import CameraIcon from "./icons/CameraIcon";
+import InfoIcon from "./icons/InfoIcon";
+import DownloadIcon from "./icons/DownloadIcon";
 import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
 import { getWelcomeText, SEED_KEY } from "./core/seed";
@@ -13,13 +20,71 @@ import type { Slide, Theme, CanvasMode, PhotoMeta } from "./types";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
 
+type CarouselSettings = {
+  fontFamily: 'Inter'|'Manrope'|'SF Pro'|'Montserrat';
+  fontWeight: number;
+  fontItalic: boolean;
+  fontApplyHeading: boolean;
+  fontApplyBody: boolean;
+  overlayEnabled: boolean;
+  overlayHeightPct: number;
+  overlayOpacityPct: number;
+};
+
+const FontIcon = ({className}:{className?:string}) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
+    <path d="M4 20h16"/>
+    <path d="M9 20l3-9 3 9"/>
+    <path d="M8 16h8"/>
+  </svg>
+);
+
+function BottomBar({
+  onTemplate, onColor, onLayout, onFonts, onMode, onPhotos, onInfo, onExport, disabledExport, active, mode
+}:{
+  onTemplate: ()=>void;
+  onColor: ()=>void;
+  onLayout: ()=>void;
+  onFonts: ()=>void;
+  onMode: ()=>void;
+  onPhotos: ()=>void;
+  onInfo: ()=>void;
+  onExport: ()=>void;
+  disabledExport?: boolean;
+  active?: 'template'|'color'|'layout'|'fonts'|'photos'|'info';
+  mode: CanvasMode;
+}) {
+  const Item = ({icon,label,onClick,disabled,active}:{icon:React.ReactNode,label:string,onClick?:()=>void,disabled?:boolean,active?:boolean}) => (
+    <button onClick={onClick} disabled={disabled}
+      className={`flex flex-col items-center justify-center h-14 rounded-xl text-xs ${disabled?"opacity-40":""} ${active?"bg-neutral-800/60":"hover:bg-neutral-800/60"} active:scale-[0.98] transition`}>
+      <div className="h-6 w-6 text-neutral-100">{icon}</div>
+      <div className="text-neutral-200 mt-1">{label}</div>
+    </button>
+  );
+  return (
+    <div className="fixed left-0 right-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)]">
+      <div className="mx-auto max-w-6xl">
+        <div className="m-3 rounded-2xl border border-neutral-800 bg-neutral-900/85 backdrop-blur px-3 py-2 grid grid-cols-8 gap-1">
+          <Item icon={<TemplateIcon className="w-6 h-6"/>} label="Template" onClick={onTemplate} active={active==='template'}/>
+          <Item icon={<PaletteIcon className="w-6 h-6"/>}  label="Color"    onClick={onColor} active={active==='color'}/>
+          <Item icon={<LayoutIcon className="w-6 h-6"/>}   label="Layout"   onClick={onLayout} active={active==='layout'}/>
+          <Item icon={<FontIcon className="w-6 h-6"/>}     label="Fonts"    onClick={onFonts} active={active==='fonts'}/>
+          <Item icon={<FrameIcon className="w-6 h-6"/>}    label={mode==='story'?'Story':'Carousel'} onClick={onMode}/>
+          <Item icon={<CameraIcon className="w-6 h-6"/>}   label="Photos"   onClick={onPhotos} active={active==='photos'}/>
+          <Item icon={<InfoIcon className="w-6 h-6"/>}     label="Info"     onClick={onInfo} active={active==='info'}/>
+          <Item icon={<DownloadIcon className="w-6 h-6"/>} label="Export"   onClick={onExport} disabled={disabledExport}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [rawText, setRawText] = useState("");
   const [photos, setPhotos] = useState<PhotoMeta[]>([]);
   const [slides, setSlides] = useState<Slide[]>([]);
   const [count, setCount] = useState<SlideCount>("auto");
   const [username, setUsername] = useState("@username");
-  const [fontReady, setFontReady] = useState(false);
   const [theme, setTheme] = useState<Theme>("photo");
   const [accent, setAccent] = useState("#5B4BFF");
   const [fontSize, setFontSize] = useState(42);
@@ -29,10 +94,33 @@ export default function App() {
   const [openTemplate, setOpenTemplate] = useState(false);
   const [openColor, setOpenColor] = useState(false);
   const [openLayout, setOpenLayout] = useState(false);
+  const [openFonts, setOpenFonts] = useState(false);
   const [openImages, setOpenImages] = useState(false);
   const [openInfo, setOpenInfo] = useState(false);
   const [textPosition, setTextPosition] = useState<'top'|'bottom'>('bottom');
   const [matchHeaderBody, setMatchHeaderBody] = useState(true);
+
+  const DEFAULT_SETTINGS: CarouselSettings = {
+    fontFamily: 'Inter',
+    fontWeight: 600,
+    fontItalic: false,
+    fontApplyHeading: true,
+    fontApplyBody: true,
+    overlayEnabled: true,
+    overlayHeightPct: 30,
+    overlayOpacityPct: 18,
+  };
+  const [settings, setSettings] = useState<CarouselSettings>(() => {
+    try {
+      const saved = localStorage.getItem('carouselSettings');
+      return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
+    } catch {
+      return DEFAULT_SETTINGS;
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem('carouselSettings', JSON.stringify(settings));
+  }, [settings]);
 
   const onTextChange = (value: string) => {
     setRawText(value);
@@ -59,10 +147,6 @@ export default function App() {
     setPhotos(prev => [...prev, ...next]);
   };
 
-  useEffect(() => {
-    const f = new FontFace("Inter", "url(https://fonts.gstatic.com/s/inter/v13/UcCO3Fwr0gYb.woff2)");
-    f.load().then(ff => { (document as any).fonts.add(ff); setFontReady(true); }).catch(()=>setFontReady(true));
-  }, []);
 
   useEffect(() => {
     if (localStorage.getItem(SEED_KEY)) return;
@@ -122,6 +206,7 @@ export default function App() {
           },
           username: username.replace(/^@/, ''),
           page: { index: i + 1, total: slidesForExport.length, showArrow: i + 1 < slidesForExport.length },
+          settings,
         });
         const blob = await new Promise<Blob>(res => cnv.toBlob(b => res(b!), 'image/jpeg', 0.95)!);
         blobs.push(blob);
@@ -134,7 +219,61 @@ export default function App() {
 
   const canExport = photos.length > 0;
 
+  const baseFamily = '"SF Pro Display","Inter",system-ui,-apple-system,Segoe UI,Roboto,Arial';
+  const fFamily = settings.fontFamily === 'SF Pro'
+    ? '-apple-system, BlinkMacSystemFont, "SF Pro Text","SF Pro Display","Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji",sans-serif'
+    : settings.fontFamily;
+  const fontStyle = settings.fontItalic ? 'italic' : 'normal';
+  const cardStyle = {
+    '--font-family-body': settings.fontApplyBody ? fFamily : baseFamily,
+    '--font-weight-body': settings.fontApplyBody ? settings.fontWeight : 400,
+    '--font-style-body': settings.fontApplyBody ? fontStyle : 'normal',
+    '--font-family-heading': settings.fontApplyHeading ? fFamily : baseFamily,
+    '--font-weight-heading': settings.fontApplyHeading ? settings.fontWeight : 400,
+    '--font-style-heading': settings.fontApplyHeading ? fontStyle : 'normal',
+    '--overlay-height': `${settings.overlayHeightPct}%`,
+    '--overlay-opacity': settings.overlayEnabled ? settings.overlayOpacityPct / 100 : 0,
+  } as React.CSSProperties;
+
   return (
+    <>
+    <style>{`
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/Inter-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Manrope';
+  src: url('/fonts/Manrope-Variable.woff2') format('woff2-variations');
+  font-weight: 200 800;
+  font-style: normal italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Montserrat';
+  src: url('/fonts/Montserrat-Variable.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-style: normal italic;
+  font-display: swap;
+}
+.preview-card__text {
+  font-family: var(--font-family-body);
+  font-weight: var(--font-weight-body);
+  font-style: var(--font-style-body);
+}
+.preview-card__username {
+  font-family: var(--font-family-heading);
+  font-weight: var(--font-weight-heading);
+  font-style: var(--font-style-heading);
+}
+.preview-card::after {
+  height: var(--overlay-height,38%);
+  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,var(--overlay-opacity,0.55)) 100%);
+}
+    `}</style>
     <div className="min-h-full pt-[calc(12px+env(safe-area-inset-top))] px-4 sm:px-6 bg-neutral-950 text-neutral-100">
       <div className="pb-[88px] pb-[calc(88px+env(safe-area-inset-bottom))]">
         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -164,12 +303,19 @@ export default function App() {
 
         <div className="lg:col-span-7 builder-preview">
           {slides.length ? (
-            <BuilderPreview
-              slides={slides.map(s => ({ id: s.id, text: s.body, image: s.image }))}
-              mode={mode}
-              textPosition={textPosition}
-              username={username}
-            />
+            <PreviewList>
+              {slides.map(s => (
+                <div key={s.id} style={cardStyle}>
+                  <PreviewCard
+                    mode={mode}
+                    image={s.image}
+                    text={s.body}
+                    username={username.replace(/^@/, '')}
+                    textPosition={textPosition}
+                  />
+                </div>
+              ))}
+            </PreviewList>
           ) : (
             <div className="text-neutral-500">Вставь текст ↑</div>
           )}
@@ -217,6 +363,52 @@ export default function App() {
             <input type="radio" checked={textPosition==='top'} onChange={()=>setTextPosition('top')} />
             Text at top
           </label>
+          <div className="pt-2 space-y-2 border-t border-neutral-700 mt-2">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={settings.overlayEnabled} onChange={e=>setSettings({...settings, overlayEnabled: e.target.checked})}/>
+              Overlay
+            </label>
+            <label className="flex items-center justify-between">
+              <span>Height</span>
+              <input type="range" min={10} max={50} value={settings.overlayHeightPct} onChange={e=>setSettings({...settings, overlayHeightPct:Number(e.target.value)})}/>
+            </label>
+            <label className="flex items-center justify-between">
+              <span>Intensity</span>
+              <input type="range" min={0} max={40} value={settings.overlayOpacityPct} onChange={e=>setSettings({...settings, overlayOpacityPct:Number(e.target.value)})}/>
+            </label>
+          </div>
+        </div>
+      </BottomSheet>
+
+      <BottomSheet open={openFonts} onClose={()=>setOpenFonts(false)} title="Fonts">
+        <div className="space-y-2">
+          <label className="flex flex-col gap-1">
+            <span>Font family</span>
+            <select className="px-3 py-2 rounded-xl bg-neutral-900 border border-neutral-800" value={settings.fontFamily} onChange={e=>setSettings({...settings, fontFamily: e.target.value as any})}>
+              <option value="Inter">Inter</option>
+              <option value="Manrope">Manrope</option>
+              <option value="SF Pro">SF Pro</option>
+              <option value="Montserrat">Montserrat</option>
+            </select>
+          </label>
+          <label className="flex items-center justify-between">
+            <span>Weight</span>
+            <input type="range" min={300} max={900} step={50} value={settings.fontWeight} onChange={e=>setSettings({...settings, fontWeight:Number(e.target.value)})}/>
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={settings.fontItalic} onChange={e=>setSettings({...settings, fontItalic:e.target.checked})}/>
+            Italic
+          </label>
+          <div className="space-y-1">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={settings.fontApplyHeading} onChange={e=>setSettings({...settings, fontApplyHeading:e.target.checked})}/>
+              Heading
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={settings.fontApplyBody} onChange={e=>setSettings({...settings, fontApplyBody:e.target.checked})}/>
+              Body
+            </label>
+          </div>
         </div>
       </BottomSheet>
 
@@ -247,15 +439,17 @@ export default function App() {
         onTemplate={()=>setOpenTemplate(true)}
         onColor={()=>setOpenColor(true)}
         onLayout={()=>setOpenLayout(true)}
+        onFonts={()=>setOpenFonts(true)}
         onMode={()=>setMode(mode==='story'?'carousel':'story')}
         onPhotos={()=>setOpenImages(true)}
         onInfo={()=>setOpenInfo(true)}
         onExport={handleExport}
         disabledExport={!slides.length || isExporting || !canExport}
-        active={openTemplate?"template":openColor?"color":openLayout?"layout":openImages?"photos":openInfo?"info":undefined}
+        active={openTemplate?"template":openColor?"color":openLayout?"layout":openFonts?"fonts":openImages?"photos":openInfo?"info":undefined}
         mode={mode}
       />
     </div>
+    </>
   );
 }
 
