@@ -13,6 +13,7 @@ export default function App() {
   const [username, setUsername] = useState<string>('@username')
   const [photos, setPhotos] = useState<string[]>([]) // dataURL массив
   const [fontReady, setFontReady] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
 
   // грузим Inter как FontFace, чтобы метрики были точные
   useEffect(() => {
@@ -58,22 +59,28 @@ export default function App() {
   }
 
   const onSaveAll = async () => {
-    const blobs: Blob[] = []
-    for (let i=0; i<slides.length; i++) {
-      const bg = photos[i] || photos[photos.length-1] || '' // повторяем последнее, если фоток меньше
-      const blob = await renderSlide({
-        lines: slides[i].lines, title: slides[i].title, subtitle: slides[i].subtitle,
-        fontFamily: slides[i].fontFamily,
-        fontSize: slides[i].fontSize,
-        lineHeight: slides[i].lineHeight,
-        padding: slides[i].padding,
-        width: 1080, height: 1350,
-        pageIndex: i+1, total: slides.length, username,
-        backgroundDataURL: bg
-      })
-      blobs.push(blob)
+    if (isExporting) return
+    setIsExporting(true)
+    try {
+      const blobs: Blob[] = []
+      for (let i=0; i<slides.length; i++) {
+        const bg = photos[i] || photos[photos.length-1] || '' // повторяем последнее, если фоток меньше
+        const blob = await renderSlide({
+          lines: slides[i].lines, title: slides[i].title, subtitle: slides[i].subtitle,
+          fontFamily: slides[i].fontFamily,
+          fontSize: slides[i].fontSize,
+          lineHeight: slides[i].lineHeight,
+          padding: slides[i].padding,
+          width: 1080, height: 1350,
+          pageIndex: i+1, total: slides.length, username,
+          backgroundDataURL: bg, align: 'bottom'
+        })
+        blobs.push(blob)
+      }
+      await shareOrDownloadAll(blobs)
+    } finally {
+      setTimeout(()=>setIsExporting(false), 600)
     }
-    await shareOrDownloadAll(blobs)
   }
 
   const onShareOne = async () => {
@@ -87,7 +94,7 @@ export default function App() {
       padding: slides[0].padding,
       width: 1080, height: 1350,
       pageIndex: 1, total: slides.length, username,
-      backgroundDataURL: bg
+      backgroundDataURL: bg, align: 'bottom'
     }))
   }
 
@@ -135,8 +142,12 @@ export default function App() {
                 onChange={e=>setUsername(e.target.value)}
                 placeholder="@username"
               />
-              <button className="px-4 py-2 rounded-xl bg-neutral-800 border border-neutral-700 text-sm" onClick={onSaveAll} disabled={!slides.length}>
-                Save all
+              <button
+                className={`px-4 py-2 rounded-xl ${isExporting ? 'opacity-50 pointer-events-none' : ''} bg-neutral-800 border border-neutral-700 text-sm`}
+                onClick={onSaveAll}
+                disabled={!slides.length || isExporting}
+              >
+                {isExporting ? 'Saving…' : 'Save all'}
               </button>
               <button className="px-4 py-2 rounded-xl bg-neutral-800 border border-neutral-700 text-sm" onClick={onShareOne} disabled={!slides.length}>
                 Share
@@ -171,19 +182,21 @@ export default function App() {
                     ) : null}
                   </div>
                   <div className="relative z-10 h-full flex flex-col justify-end">
+                    {/* mini-username сверху слева */}
+                    <div className="absolute top-3 left-3 text-white/85 text-xs">@{username.replace(/^@/, '')}</div>
+
+                    {/* контент у нижнего края */}
                     {s.title && (
-                      <div className="inline-block bg-[#5B4BFF] text-white px-3 py-2 rounded-lg font-semibold mb-2">
+                      <div className="inline-block bg-[#5B4BFF] text-white px-3 py-2 rounded-lg font-semibold mb-2 self-start">
                         {s.title}
                       </div>
                     )}
                     {s.subtitle && <div className="text-neutral-100/90 mb-2">{s.subtitle}</div>}
+                    {s.lines.map((ln, k) => <div key={k} className="text-neutral-100">{ln}</div>)}
 
-                    {s.lines.map((ln, k)=>(
-                      <div key={k} className="text-neutral-100">{ln}</div>
-                    ))}
-                    <div className="mt-2 text-neutral-300 text-xs">{username}</div>
+                    <div className="mt-2 text-neutral-300 text-xs">@{username.replace(/^@/, '')}</div>
+                    <div className="absolute right-3 bottom-3 text-neutral-300 text-xs">{i+1}/{slides.length} →</div>
                   </div>
-                  <div className="absolute right-3 bottom-3 text-neutral-300 text-xs">{i+1}/{slides.length}</div>
                 </div>
               ))}
               {!slides.length && <div className="text-neutral-500">Вставь текст ↑</div>}
