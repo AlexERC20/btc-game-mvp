@@ -6,8 +6,9 @@ import { recomputeSlides } from "./core/slides";
 import BottomBar from "./components/BottomBar";
 import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
-import { SlidePreview } from "./components/SlidePreview";
+import BuilderPreview from "./components/BuilderPreview";
 import "./styles/tailwind.css";
+import "./styles/builder-preview.css";
 import { getWelcomeText, SEED_KEY } from "./core/seed";
 import type { Slide, Theme, CanvasMode, PhotoMeta } from "./types";
 
@@ -16,7 +17,6 @@ type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
 export default function App() {
   const [rawText, setRawText] = useState("");
   const [photos, setPhotos] = useState<PhotoMeta[]>([]);
-  const [imagesDims, setImagesDims] = useState<Record<string,{w:number,h:number}>>({});
   const [slides, setSlides] = useState<Slide[]>([]);
   const [count, setCount] = useState<SlideCount>("auto");
   const [username, setUsername] = useState("@username");
@@ -47,28 +47,19 @@ export default function App() {
       color: { accent },
       slidesText: rawText,
       photos,
-      imagesDims,
       username,
     });
     const maxN = count === "auto" ? computed.length : Math.min(computed.length, count as number);
     setSlides(computed.slice(0, maxN));
-  }, [mode, theme, textPosition, fontSize, lineHeight, accent, rawText, photos, imagesDims, username, count]);
+  }, [mode, theme, textPosition, fontSize, lineHeight, accent, rawText, photos, username, count]);
 
   useEffect(() => {
     recompute();
-  }, [mode, theme, textPosition, fontSize, lineHeight, accent, rawText, photos, imagesDims, username, count]);
+  }, [mode, theme, textPosition, fontSize, lineHeight, accent, rawText, photos, username, count]);
 
   const onPhotosPicked = (urls: string[]) => {
     const next: PhotoMeta[] = urls.map((url, idx) => ({ id: `${Date.now()}_${idx}`, url }));
     setPhotos(prev => [...prev, ...next]);
-    next.forEach(p => {
-      const img = new Image();
-      img.onload = () => {
-        setImagesDims(d => ({ ...d, [p.id]: { w: img.naturalWidth, h: img.naturalHeight } }));
-        requestAnimationFrame(recompute);
-      };
-      img.src = p.url;
-    });
   };
 
   useEffect(() => {
@@ -102,7 +93,6 @@ export default function App() {
         color: { accent },
         slidesText: rawText,
         photos,
-        imagesDims,
         username,
       });
       const maxN = count === "auto" ? computed.length : Math.min(computed.length, count as number);
@@ -147,7 +137,7 @@ export default function App() {
     }
   };
 
-  const canExport = photos.length > 0 && Object.keys(imagesDims).length === photos.length;
+  const canExport = photos.length > 0;
 
   return (
     <div className="min-h-full pt-[calc(12px+env(safe-area-inset-top))] px-4 sm:px-6 bg-neutral-950 text-neutral-100">
@@ -177,28 +167,17 @@ export default function App() {
           </div>
         </div>
 
-        <div className="lg:col-span-7">
-          <div className="rounded-3xl bg-neutral-900/70 border border-neutral-800 p-4 lg:p-6">
-            <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth">
-              {slides.map((s, i) => (
-                <div key={i} className="snap-start shrink-0">
-                  <SlidePreview
-                    slide={s}
-                    index={i}
-                    total={slides.length}
-                    textPosition={textPosition}
-                    username={username}
-                    theme={theme}
-                    fontSize={fontSize}
-                    lineHeight={lineHeight}
-                    color="#fff"
-                    mode={mode}
-                  />
-                </div>
-              ))}
-              {!slides.length && <div className="text-neutral-500">Вставь текст ↑</div>}
-            </div>
-          </div>
+        <div className="lg:col-span-7 builder-preview">
+          {slides.length ? (
+            <BuilderPreview
+              slides={slides.map(s => ({ id: s.id, text: s.body, image: s.image }))}
+              mode={mode}
+              textPosition={textPosition}
+              username={username}
+            />
+          ) : (
+            <div className="text-neutral-500">Вставь текст ↑</div>
+          )}
         </div>
       </div>
 

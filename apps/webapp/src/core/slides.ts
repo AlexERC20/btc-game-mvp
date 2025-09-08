@@ -2,8 +2,6 @@ import { splitToSlides } from './autoSplit';
 import { CANVAS_PRESETS, PADDING } from './constants';
 import type { Slide, PhotoMeta, Theme, CanvasMode } from '../types';
 
-export type ImgDims = { w: number; h: number };
-
 export type LayoutState = {
   textPosition: 'top' | 'bottom';
   textSize: number;
@@ -19,7 +17,6 @@ export type RecomputeArgs = {
   color: ColorState;
   slidesText: string;
   photos: PhotoMeta[];
-  imagesDims: Record<string, ImgDims>;
   username: string;
 };
 
