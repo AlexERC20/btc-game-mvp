@@ -1,20 +1,24 @@
 import React, { useEffect, useRef } from 'react';
 import type { Slide } from '../types';
-import { drawSlide, SlideRenderModel } from '../core/drawSlide';
-import { CANVAS_W, CANVAS_H } from '../core/constants';
+import { renderSlideToCanvas } from '../core/render';
+import { CANVAS_PRESETS, CanvasMode } from '../core/constants';
 
-type Props = {
+import type { Theme } from '../types';
+
+interface Props {
   slide: Slide;
   index: number;
   total: number;
   textPosition: 'top' | 'bottom';
   username: string;
-  theme: 'photo' | 'light' | 'dark';
+  theme: Theme;
   fontSize: number;
+  lineHeight: number;
   color: string;
-};
+  mode: CanvasMode;
+}
 
-export function SlidePreview({ slide, index, total, textPosition, username, theme, fontSize, color }: Props) {
+export function SlidePreview({ slide, index, total, textPosition, username, theme, fontSize, lineHeight, color, mode }: Props) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -22,21 +26,27 @@ export function SlidePreview({ slide, index, total, textPosition, username, them
     if (!cnv) return;
     const ctx = cnv.getContext('2d');
     if (!ctx) return;
-    const img = new Image();
-    img.src = slide.image || '';
-    const draw = () => {
-      drawSlide(ctx, {
-        img,
-        template: theme,
-        text: { body: slide.body || '', align: textPosition, color, fontSize },
-        username: username.replace(/^@/, ''),
-        page: { index: index + 1, total, showArrow: index + 1 < total },
-      });
-    };
-    if (img.complete) draw(); else { img.onload = draw; }
-  }, [slide, index, total, textPosition, username, theme, fontSize, color]);
+    const preset = CANVAS_PRESETS[mode];
+    renderSlideToCanvas(slide, ctx, {
+      width: preset.w,
+      height: preset.h,
+      theme,
+      layout: { textPosition, textSize: fontSize, lineHeight, color },
+      username: username.replace(/^@/, ''),
+      page: { index: index + 1, total, showArrow: index + 1 < total },
+    });
+  }, [slide, index, total, textPosition, username, theme, fontSize, lineHeight, color, mode]);
 
-  return <canvas ref={ref} width={CANVAS_W} height={CANVAS_H} className="slideCard" />;
+  const preset = CANVAS_PRESETS[mode];
+  return (
+    <canvas
+      ref={ref}
+      width={preset.w}
+      height={preset.h}
+      style={{ aspectRatio: `${preset.w} / ${preset.h}` }}
+      className="slideCard"
+    />
+  );
 }
 
 export default SlidePreview;
