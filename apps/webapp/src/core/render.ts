@@ -10,6 +10,8 @@ export async function renderSlide(opts: {
   total: number
   username: string
   backgroundDataURL?: string
+  title?: string
+  subtitle?: string
 }): Promise<Blob> {
   const { width:W, height:H, padding:PAD } = opts
   const cvs = document.createElement('canvas'); cvs.width = W; cvs.height = H
@@ -48,15 +50,50 @@ export async function renderSlide(opts: {
   const textColor = textIsLight ? '#F5F5F5' : '#111111'
   const subColor  = textIsLight ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.8)'
 
+  const lh = Math.round(opts.fontSize * opts.lineHeight)
+  let y = opts.padding
+
+  // === HERO title pill =====================================================
+  if (opts.title) {
+    const pillPadX = 22, pillPadY = 12
+    const titleSize = Math.round(opts.fontSize * 1.0)
+    const titleLH = Math.round(titleSize * 1.15)
+    ctx.font = `${titleSize}px ${opts.fontFamily}`
+    ctx.textBaseline = 'top'
+    const lines = wrap(ctx, opts.title, (opts.width - opts.padding*2) - pillPadX*2)
+
+    const pillH = lines.length * titleLH + pillPadY*2
+    // плашка
+    roundRect(ctx, opts.padding, y, opts.width - opts.padding*2, pillH, 14)
+    ctx.fillStyle = '#5B4BFF'; ctx.globalAlpha = 0.95; ctx.fill(); ctx.globalAlpha = 1
+
+    // текст в плашке
+    ctx.fillStyle = '#FFFFFF'
+    let ty = y + pillPadY
+    for (const ln of lines){ ctx.fillText(ln, opts.padding + pillPadX, ty); ty += titleLH }
+
+    y += pillH + Math.round(titleLH*0.6)
+  }
+
+  // === Subtitle ============================================================
+  if (opts.subtitle) {
+    const subSize = Math.round(opts.fontSize * 0.82)
+    const subLH = Math.round(subSize * 1.28)
+    ctx.font = `${subSize}px ${opts.fontFamily}`
+    ctx.fillStyle = subColor
+    for (const ln of wrap(ctx, opts.subtitle, opts.width - opts.padding*2)){
+      ctx.fillText(ln, opts.padding, y); y += subLH
+    }
+    y += Math.round(subLH*0.4)
+  }
+
+  // === Body (обычные строки) ==============================================
   ctx.textBaseline = 'top'
   ctx.font = `${opts.fontSize}px ${opts.fontFamily}`
-  const lh = Math.round(opts.fontSize * opts.lineHeight)
-  let y = PAD
-
   ctx.fillStyle = textColor
   for (const ln of opts.lines){
     if (ln===''){ y+= Math.round(lh*0.6); continue }
-    ctx.fillText(ln, PAD, y); y += lh
+    ctx.fillText(ln, opts.padding, y); y += lh
   }
 
   // username
@@ -72,5 +109,20 @@ export async function renderSlide(opts: {
   return await new Promise<Blob>(res => cvs.toBlob(b => res(b!), 'image/jpeg', 0.92)!)
 }
 
+function wrap(ctx:CanvasRenderingContext2D, text:string, max:number){
+  const out:string[] = []; let line=''
+  for (const w of text.split(/\s+/)){
+    const t = line ? line+' '+w : w
+    if (ctx.measureText(t).width <= max) line = t
+    else { if (line) out.push(line); line = w }
+  }
+  if (line) out.push(line)
+  return out
+}
+function roundRect(ctx:CanvasRenderingContext2D,x:number,y:number,w:number,h:number,r:number){
+  ctx.beginPath()
+  ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r)
+  ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath()
+}
 function clamp(n:number, a:number, b:number){ return Math.max(a, Math.min(b, n)) }
 function loadImage(src:string){ return new Promise<HTMLImageElement>((resolve, reject)=>{ const img=new Image(); img.onload=()=>resolve(img); img.onerror=reject; img.src=src }) }
