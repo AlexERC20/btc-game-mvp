@@ -12,7 +12,6 @@ export async function renderSlide(opts: {
   backgroundDataURL?: string
   title?: string
   subtitle?: string
-  align?: "top" | "bottom"
   theme?: "light" | "dark" | "photo"
 }): Promise<Blob> {
   const { width: W, height: H, padding: PAD } = opts
@@ -51,6 +50,13 @@ export async function renderSlide(opts: {
       ctx.fillRect(0,0,W,H)
     }
   }
+
+  // нижний градиент для читаемости текста
+  const grad = ctx.createLinearGradient(0, H*0.65, 0, H)
+  grad.addColorStop(0, "rgba(0,0,0,0)")
+  grad.addColorStop(1, "rgba(0,0,0,0.28)")
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, W, H)
 
   const textIsLight = avgLumUnderText < 0.5 || opts.theme === "dark"
   const textColor = textIsLight ? "#F5F5F5" : "#111111"
@@ -93,26 +99,21 @@ export async function renderSlide(opts: {
   // Body: прижать к низу
   ctx.font = `${opts.fontSize}px ${opts.fontFamily}`
   const lh = Math.round(opts.fontSize*opts.lineHeight)
-  const blockH = opts.lines.reduce((h,ln)=>h+(ln===""?Math.round(lh*0.6):lh),0)
-  let y = (opts.align ?? "bottom")==="bottom"
-    ? H - PAD - Math.round(opts.fontSize*0.65) - 6 - blockH
-    : Math.max(yCursor, PAD)
+  const blockH = opts.lines.reduce((h, ln) => h + (ln === "" ? Math.round(lh*0.6) : lh), 0)
+  let y = H - PAD - Math.round(opts.fontSize*0.65) - 6 - blockH
   if (y < PAD) y = PAD
 
   ctx.fillStyle = textColor
-  for (const ln of opts.lines){
-    const step = ln==="" ? Math.round(lh*0.6) : lh
+  for (const ln of opts.lines) {
+    const step = ln === "" ? Math.round(lh*0.6) : lh
     if (ln) ctx.fillText(ln, PAD, y)
     y += step
   }
 
-  // username снизу слева + пейджер и стрелка
-  const unSize = Math.round(opts.fontSize*0.65)
-  ctx.font = `${unSize}px ${opts.fontFamily}`
-  ctx.fillStyle = subColor
-  ctx.textAlign = "left"
-  ctx.fillText("@"+opts.username.replace(/^@/,''), PAD, H - PAD - unSize - 6)
+  // пейджер внизу справа
   ctx.textAlign = "right"
+  ctx.font = `${Math.round(opts.fontSize*0.65)}px ${opts.fontFamily}`
+  ctx.fillStyle = subColor
   ctx.fillText(`${opts.pageIndex}/${opts.total} →`, W - PAD, H - PAD)
 
   return await new Promise<Blob>(res => cvs.toBlob(b=>res(b!), 'image/jpeg', 0.92)!)

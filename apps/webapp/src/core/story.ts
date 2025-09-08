@@ -1,41 +1,39 @@
 export type SlideSpec = { title?: string; subtitle?: string; body?: string[] }
 
-/**
- * Делит исходный текст на логические блоки под N слайдов:
- * 1-й — hero (title + subtitle), остальные — тело.
- */
-export function makeStory(base: string, n: number): SlideSpec[] {
-  const sentences = base
+export function makeStory(raw: string, n: number): SlideSpec[] {
+  const cleaned = raw
     .replace(/\r/g, "")
+    .split(/\n{2,}/)                 // по двойному переносу
+    .map(b => b.trim())
+    .filter(Boolean)
+    .map(b => b.replace(/^Слайд\s*\d+[:\-]?\s*$/i, "").trim()) // игнор "Слайд 2"
+    .filter(Boolean);
+
+  const out: SlideSpec[] = [];
+  if (!cleaned.length) return out;
+
+  // HERO
+  const firstLines = cleaned[0].split(/\n/).map(s => s.trim()).filter(Boolean);
+  const heroTitle = firstLines[0] || "Начни с малого.";
+  const heroSub   = firstLines[1] || "";
+  out.push({ title: heroTitle, subtitle: heroSub });
+
+  const rest = cleaned.slice(1);
+  if (n === 1) return out;
+
+  // равномерно режем оставшееся
+  const need = n - 1;
+  const mergedSentences = rest
+    .join(" ")
     .split(/(?<=[\.\!\?])\s+/)
     .map(s => s.trim())
-    .filter(Boolean)
+    .filter(Boolean);
 
-  const hero = sentences[0] ?? "Сделай шаг сегодня."
-  const rest = sentences.slice(1)
-
-  const out: SlideSpec[] = []
-  if (n === 1) {
-    out.push({ title: hero, subtitle: rest[0] ?? "" })
-    return out
+  const per = Math.ceil(mergedSentences.length / Math.max(need, 1));
+  for (let i=0;i<need;i++) {
+    const chunk = mergedSentences.slice(i*per, (i+1)*per);
+    out.push({ body: chunk.length ? chunk : ["Действуй. Маленькие шаги дают большой результат."] });
   }
-
-  out.push({ title: hero, subtitle: rest[0] ?? "" })
-
-  const chunks = chunkText(rest.slice(1), n - 1)
-  for (const ch of chunks) out.push({ body: ch })
-  return out
+  return out;
 }
 
-function chunkText(sentences: string[], blocks: number) {
-  const per = Math.ceil(sentences.length / Math.max(blocks, 1))
-  const arr: string[][] = []
-  for (let i = 0; i < blocks; i++) {
-    const part = sentences.slice(i * per, (i + 1) * per)
-    if (part.length) arr.push(part)
-  }
-  while (arr.length < blocks) {
-    arr.push(["Действуй. Маленькие шаги дают большой результат."])
-  }
-  return arr
-}
