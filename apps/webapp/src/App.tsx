@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { splitIntoSlides } from "./core/text";
 import { renderSlideToCanvas } from "./core/render";
 import { CANVAS_PRESETS } from "./core/constants";
 import { shareOrDownloadAll } from "./core/export";
+import { recomputeSlides } from "./core/slides";
 import BottomBar from "./components/BottomBar";
 import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
@@ -39,13 +39,23 @@ export default function App() {
   };
 
   const recompute = useCallback(() => {
-    const parts = splitIntoSlides(rawText, 280);
-    const maxN = count === "auto" ? parts.length : Math.min(parts.length, count as number);
-    const limited = parts.slice(0, maxN);
-    setSlides(limited.map((p, i) => ({ body: p, image: photos[i]?.url })));
-  }, [rawText, count, photos, imagesDims]);
+    const computed = recomputeSlides({
+      mode,
+      template: theme,
+      layout: { textPosition, textSize: fontSize, lineHeight },
+      color: { accent },
+      slidesText: rawText,
+      photos,
+      imagesDims,
+      username,
+    });
+    const maxN = count === "auto" ? computed.length : Math.min(computed.length, count as number);
+    setSlides(computed.slice(0, maxN));
+  }, [mode, theme, textPosition, fontSize, lineHeight, accent, rawText, photos, imagesDims, username, count]);
 
-  useEffect(recompute, [recompute]);
+  useEffect(() => {
+    recompute();
+  }, [mode, theme, textPosition, fontSize, lineHeight, accent, rawText, photos, imagesDims, username, count]);
 
   const onPhotosPicked = (urls: string[]) => {
     const next: PhotoMeta[] = urls.map((url, idx) => ({ id: `${Date.now()}_${idx}`, url }));
@@ -83,22 +93,31 @@ export default function App() {
     localStorage.setItem("carousel__seeded", "1");
   }, []);
 
-  useEffect(()=>{
-    recompute();
-  }, [count]);
 
   const handleExport = async () => {
     if (isExporting) return;
     setIsExporting(true);
     try {
+      const computed = recomputeSlides({
+        mode,
+        template: theme,
+        layout: { textPosition, textSize: fontSize, lineHeight },
+        color: { accent },
+        slidesText: rawText,
+        photos,
+        imagesDims,
+        username,
+      });
+      const maxN = count === "auto" ? computed.length : Math.min(computed.length, count as number);
+      const slidesForExport = computed.slice(0, maxN);
       const blobs: Blob[] = [];
       const preset = CANVAS_PRESETS[mode];
       const cnv = document.createElement("canvas");
       cnv.width = preset.w; cnv.height = preset.h;
       const ctx = cnv.getContext("2d")!;
-      const lastImage = slides.map(s=>s.image).filter(Boolean).pop();
-      for (let i = 0; i < slides.length; i++) {
-        const slide = { ...slides[i] } as Slide;
+      const lastImage = slidesForExport.map(s=>s.image).filter(Boolean).pop();
+      for (let i = 0; i < slidesForExport.length; i++) {
+        const slide = { ...slidesForExport[i] } as Slide;
         if (!slide.image && lastImage) slide.image = lastImage;
         await renderSlideToCanvas(slide, ctx, {
           width: preset.w,
@@ -106,7 +125,7 @@ export default function App() {
           theme,
           layout: { textPosition, textSize: fontSize, lineHeight, color: '#fff' },
           username: username.replace(/^@/, ''),
-          page: { index: i + 1, total: slides.length, showArrow: i + 1 < slides.length },
+          page: { index: i + 1, total: slidesForExport.length, showArrow: i + 1 < slidesForExport.length },
         });
         const blob = await new Promise<Blob>(res => cnv.toBlob(b => res(b!), 'image/jpeg', 0.95)!);
         blobs.push(blob);
