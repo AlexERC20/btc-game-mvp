@@ -53,13 +53,9 @@ export function SlidePreview({ slide, index, total, textPosition, username, them
 
   const preset = CANVAS_PRESETS[mode];
   return (
-    <canvas
-      ref={ref}
-      width={preset.w}
-      height={preset.h}
-      style={{ aspectRatio: `${preset.w} / ${preset.h}` }}
-      className="slideCard"
-    />
+    <div className={`slideCard preview-container ${mode}`}>
+      <canvas ref={ref} width={preset.w} height={preset.h} />
+    </div>
   );
 }
 
