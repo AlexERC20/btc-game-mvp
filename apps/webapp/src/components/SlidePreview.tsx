@@ -1,37 +1,42 @@
-import React from "react";
-import type { Slide } from "../types";
+import React, { useEffect, useRef } from 'react';
+import type { Slide } from '../types';
+import { drawSlide, SlideRenderModel } from '../core/drawSlide';
+import { CANVAS_W, CANVAS_H } from '../core/constants';
 
 type Props = {
   slide: Slide;
   index: number;
-  textPosition: "top"|"bottom";
+  total: number;
+  textPosition: 'top' | 'bottom';
   username: string;
+  theme: 'photo' | 'light' | 'dark';
+  fontSize: number;
+  color: string;
 };
 
-export function SlidePreview({ slide, index, textPosition, username }: Props) {
-  return (
-    <div className="relative overflow-hidden rounded-2xl">
-      {slide.image && (
-        <img src={slide.image} className="w-full h-full object-cover" />
-      )}
-      {slide.body && (
-        <div
-          className={[
-            "absolute left-4 right-4 text-white/95 text-[15px] leading-[1.3] drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]",
-            textPosition === "bottom" ? "bottom-16" : "top-6",
-          ].join(" ")}
-        >
-          {slide.body}
-        </div>
-      )}
-      {/* ник — один, снизу слева */}
-      <div className="absolute left-3 bottom-3 text-white/90 text-xs">
-        @{username.replace(/^@/, "")}
-      </div>
-      {/* пейджер/стрелка */}
-      <div className="absolute right-3 bottom-3 text-white/70 text-xs select-none">
-        {index + 1}↗
-      </div>
-    </div>
-  );
+export function SlidePreview({ slide, index, total, textPosition, username, theme, fontSize, color }: Props) {
+  const ref = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const cnv = ref.current;
+    if (!cnv) return;
+    const ctx = cnv.getContext('2d');
+    if (!ctx) return;
+    const img = new Image();
+    img.src = slide.image || '';
+    const draw = () => {
+      drawSlide(ctx, {
+        img,
+        template: theme,
+        text: { body: slide.body || '', align: textPosition, color, fontSize },
+        username: username.replace(/^@/, ''),
+        page: { index: index + 1, total, showArrow: index + 1 < total },
+      });
+    };
+    if (img.complete) draw(); else { img.onload = draw; }
+  }, [slide, index, total, textPosition, username, theme, fontSize, color]);
+
+  return <canvas ref={ref} width={CANVAS_W} height={CANVAS_H} className="slideCard" />;
 }
+
+export default SlidePreview;

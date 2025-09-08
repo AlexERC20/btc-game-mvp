@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { splitIntoSlides } from "./core/text";
-import { renderSlide } from "./core/render";
+import { drawSlide } from "./core/drawSlide";
+import { CANVAS_W, CANVAS_H } from "./core/constants";
 import { shareOrDownloadAll } from "./core/export";
 import BottomBar from "./components/BottomBar";
 import BottomSheet from "./components/BottomSheet";
@@ -75,7 +76,7 @@ export default function App() {
     try {
       const blobs: Blob[] = [];
       const cnv = document.createElement("canvas");
-      cnv.width = 1080; cnv.height = 1350;
+      cnv.width = CANVAS_W; cnv.height = CANVAS_H;
       const ctx = cnv.getContext("2d")!;
       const lastImage = slides.map(s=>s.image).filter(Boolean).pop();
       for (let i=0; i<slides.length; i++){
@@ -84,17 +85,14 @@ export default function App() {
         if (img.src) {
           await new Promise(res=>{ if (img.complete) res(null); else { img.onload=()=>res(null); img.onerror=()=>res(null); }});
         }
-        renderSlide(ctx, {
-          w:1080, h:1350,
+        drawSlide(ctx, {
           img,
           template: theme,
           text: {
             body: slides[i].body || "",
             align: textPosition,
             color: "#fff",
-            headingMatchesBody: matchHeaderBody,
             fontSize,
-            lineHeight,
           },
           username: username.replace(/^@/, ""),
           page: { index: i+1, total: slides.length, showArrow: i+1 < slides.length },
@@ -110,11 +108,10 @@ export default function App() {
 
   return (
     <div className="min-h-full pt-[calc(12px+env(safe-area-inset-top))] px-4 sm:px-6 bg-neutral-950 text-neutral-100">
-      <div className="pb-[108px] pb-[calc(108px+env(safe-area-inset-bottom))]">
+      <div className="pb-[88px] pb-[calc(88px+env(safe-area-inset-bottom))]">
         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-5 space-y-4">
             <div className="rounded-2xl bg-neutral-900/70 border border-neutral-800 p-4">
-            <label className="block text-sm text-neutral-400 mb-2">Text</label>
             <textarea
               placeholder="Вставь текст сюда…"
               className="w-full h-40 p-4 rounded-xl bg-neutral-950 border border-neutral-800 outline-none placeholder:text-neutral-500"
@@ -139,18 +136,18 @@ export default function App() {
 
         <div className="lg:col-span-7">
           <div className="rounded-3xl bg-neutral-900/70 border border-neutral-800 p-4 lg:p-6">
-            <div className="text-neutral-400 text-sm mb-3">Preview</div>
             <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth">
               {slides.map((s, i) => (
-                <div
-                  key={i}
-                  className="snap-start shrink-0 w-[260px] aspect-[4/5] rounded-3xl overflow-hidden bg-neutral-800 relative"
-                >
+                <div key={i} className="snap-start shrink-0">
                   <SlidePreview
                     slide={s}
                     index={i}
+                    total={slides.length}
                     textPosition={textPosition}
                     username={username}
+                    theme={theme}
+                    fontSize={fontSize}
+                    color="#fff"
                   />
                 </div>
               ))}
