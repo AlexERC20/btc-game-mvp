@@ -13,6 +13,8 @@ export async function renderSlide(opts: {
   title?: string
   subtitle?: string
   theme?: "light" | "dark" | "photo"
+  accent?: string
+  showTopUsername?: boolean
 }): Promise<Blob> {
   const { width: W, height: H, padding: PAD } = opts
   const cvs = document.createElement("canvas")
@@ -65,9 +67,11 @@ export async function renderSlide(opts: {
   // mini-username сверху слева
   ctx.textAlign = "left"
   ctx.textBaseline = "top"
-  ctx.font = `${Math.round(opts.fontSize*0.55)}px ${opts.fontFamily}`
-  ctx.fillStyle = subColor
-  ctx.fillText("@"+opts.username.replace(/^@/,''), PAD, PAD)
+  if (opts.showTopUsername !== false) {
+    ctx.font = `${Math.round(opts.fontSize*0.55)}px ${opts.fontFamily}`
+    ctx.fillStyle = subColor
+    ctx.fillText("@"+opts.username.replace(/^@/,''), PAD, PAD)
+  }
 
   // HERO title (фиолетовая плашка)
   let yCursor = PAD
@@ -79,7 +83,7 @@ export async function renderSlide(opts: {
     const lines = wrap(ctx, opts.title, W - PAD*2 - pillPadX*2)
     const pillH = lines.length*titleLH + pillPadY*2
     roundRect(ctx, PAD, yCursor, W-PAD*2, pillH, 14)
-    ctx.fillStyle = "#5B4BFF"; ctx.globalAlpha = 0.95; ctx.fill(); ctx.globalAlpha = 1
+    ctx.fillStyle = opts.accent || "#5B4BFF"; ctx.globalAlpha = 0.95; ctx.fill(); ctx.globalAlpha = 1
     ctx.fillStyle = "#FFFFFF"
     let ty = yCursor + pillPadY
     for (const ln of lines){ ctx.fillText(ln, PAD+pillPadX, ty); ty+=titleLH }
