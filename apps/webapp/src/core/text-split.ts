@@ -1,3 +1,5 @@
+import { initHyphenRu } from './hyphen'
+
 type Params = {
   text: string
   maxSlides: number
@@ -10,17 +12,15 @@ type Params = {
   height: number
 }
 
-export function splitIntoSlides(p: Params){
+export async function splitIntoSlides(p: Params){
   const W = p.width, H = p.height, PAD = p.padding
   const maxWidth = W - PAD*2
   const maxHeight = H - PAD*2
 
+  const hyphenate = await initHyphenRu()?.catch(()=>null)
+  const hyText = hyphenate ? await hyphenate(p.text) : p.text
   // чистим текст, разбиваем абзацы (пустая строка = новый абзац)
-  const paragraphs = p.text
-    .replace(/\r/g,'')
-    .split(/\n{2,}|\-\-\-+/g) // поддержка разделителя ---
-    .map(s=>s.trim())
-    .filter(Boolean)
+  const paragraphs = hyText.replace(/\r/g,'').split(/\n{2,}|\-\-\-+/g).map(s=>s.trim()).filter(Boolean)
 
   let size = p.fontSize
   let slides: {lines:string[], fontSize:number, lineHeight:number, padding:number, fontFamily:string}[] = []
@@ -42,6 +42,15 @@ export function splitIntoSlides(p: Params){
           if (line) lines.push(line)
           // слово может быть длиннее ширины — режем грубо
           if (ctx.measureText(w).width > maxWidth){
+            const chunks = w.split('\u00AD')
+            if (chunks.length>1){
+              for (const part of chunks){
+                const t = (line?line+' ':'') + part + '-'
+                if (ctx.measureText(t).width <= maxWidth) line = t
+                else { if (line) { lines.push(line); line=''} lines.push(part + '-') }
+              }
+              continue
+            }
             let part = ''
             for (const ch of w){
               const t = part + ch
