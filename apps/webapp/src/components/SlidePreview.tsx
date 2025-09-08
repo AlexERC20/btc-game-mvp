@@ -31,7 +31,14 @@ export function SlidePreview({ slide, index, total, textPosition, username, them
       width: preset.w,
       height: preset.h,
       theme,
-      layout: { textPosition, textSize: fontSize, lineHeight, color },
+      defaults: {
+        fontSize,
+        lineHeight,
+        textPosition,
+        bodyColor: color,
+        titleColor: color,
+        matchTitleToBody: true,
+      },
       username: username.replace(/^@/, ''),
       page: { index: index + 1, total, showArrow: index + 1 < total },
     });

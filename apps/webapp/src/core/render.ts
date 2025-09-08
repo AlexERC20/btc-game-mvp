@@ -1,4 +1,4 @@
-import type { Slide, LayoutOptions, Theme } from '../types';
+import type { Slide, Defaults, Theme } from '../types';
 import { PADDING } from './constants';
 
 function drawGradient(ctx: CanvasRenderingContext2D, w: number, h: number, position: 'top' | 'bottom') {
@@ -27,36 +27,6 @@ function drawPager(ctx: CanvasRenderingContext2D, w: number, h: number, idx: num
   ctx.fillText(text, w - PADDING, h - PADDING);
 }
 
-function typesetWithinBox(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  box: { x: number; y: number; w: number; yMax: number },
-  lineHeight: number,
-  fontSize: number
-) {
-  const words = text.replace(/\r/g, '').split(/\s+/);
-  const lines: string[] = [];
-  let current = '';
-  const lineStep = Math.round(fontSize * lineHeight);
-  for (const w of words) {
-    const test = current ? current + ' ' + w : w;
-    if (ctx.measureText(test).width <= box.w) {
-      current = test;
-    } else {
-      if (current) lines.push(current);
-      current = w;
-    }
-  }
-  if (current) lines.push(current);
-
-  let y = box.y + fontSize;
-  for (const line of lines) {
-    if (y > box.yMax) break;
-    ctx.fillText(line, box.x, y);
-    y += lineStep;
-  }
-}
-
 export async function renderSlideToCanvas(
   slide: Slide,
   ctx: CanvasRenderingContext2D,
@@ -64,12 +34,12 @@ export async function renderSlideToCanvas(
     width: number;
     height: number;
     theme: Theme;
-    layout: LayoutOptions;
+    defaults: Defaults;
     username: string;
     page?: { index: number; total: number; showArrow: boolean };
   }
 ) {
-  const { width, height, theme, layout, username, page } = opts;
+  const { width, height, theme, defaults, username, page } = opts;
   ctx.clearRect(0, 0, width, height);
 
   if (slide.image) {
@@ -88,6 +58,13 @@ export async function renderSlideToCanvas(
     ctx.fillRect(0, 0, width, height);
   }
 
+  const effFontSize = slide.overrides?.fontSize ?? defaults.fontSize;
+  const effLH = slide.overrides?.lineHeight ?? defaults.lineHeight;
+  const effPos = slide.overrides?.textPosition ?? defaults.textPosition;
+  const titleColor = (slide.overrides?.matchTitleToBody ?? defaults.matchTitleToBody)
+    ? defaults.bodyColor
+    : (slide.overrides?.titleColor ?? defaults.titleColor);
+
   if (theme === 'light') {
     ctx.fillStyle = 'rgba(255,255,255,0.2)';
     ctx.fillRect(0, 0, width, height);
@@ -95,20 +72,53 @@ export async function renderSlideToCanvas(
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(0, 0, width, height);
   } else {
-    drawGradient(ctx, width, height, layout.textPosition);
+    drawGradient(ctx, width, height, effPos);
   }
 
-  ctx.fillStyle = layout.color || '#fff';
-  ctx.font = `400 ${layout.textSize}px SF Pro Display, Inter, system-ui, -apple-system`;
   const box = {
     x: PADDING,
-    y: layout.textPosition === 'bottom' ? height - Math.round(height * 0.28) + PADDING : PADDING,
+    y: effPos === 'bottom' ? height - Math.round(height * 0.28) + PADDING : PADDING,
     w: width - PADDING * 2,
     yMax: height - PADDING - 56,
   };
-  ctx.save();
-  typesetWithinBox(ctx, slide.body || '', box, layout.lineHeight, layout.textSize);
-  ctx.restore();
+
+  const drawBlock = (
+    text: string,
+    color: string,
+    fontWeight: string,
+    startY: number
+  ) => {
+    ctx.fillStyle = color;
+    ctx.font = `${fontWeight} ${effFontSize}px SF Pro Display, Inter, system-ui, -apple-system`;
+    const words = text.replace(/\r/g, '').split(/\s+/);
+    const lines: string[] = [];
+    let current = '';
+    const lineStep = Math.round(effFontSize * effLH);
+    for (const w of words) {
+      const test = current ? current + ' ' + w : w;
+      if (ctx.measureText(test).width <= box.w) {
+        current = test;
+      } else {
+        if (current) lines.push(current);
+        current = w;
+      }
+    }
+    if (current) lines.push(current);
+
+    let y = startY + effFontSize;
+    for (const line of lines) {
+      if (y > box.yMax) break;
+      ctx.fillText(line, box.x, y);
+      y += lineStep;
+    }
+    return y;
+  };
+
+  let currentY = box.y;
+  if (slide.title) {
+    currentY = drawBlock(slide.title, titleColor, '600', currentY);
+  }
+  drawBlock(slide.body || '', defaults.bodyColor, '400', currentY);
 
   drawUsername(ctx, '@' + username.replace(/^@/, ''), width, height);
   if (page) {
