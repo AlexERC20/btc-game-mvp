@@ -22,6 +22,25 @@ export default function App() {
     f.load().then(ff => { (document as any).fonts.add(ff); setFontReady(true) }).catch(()=>setFontReady(true))
   }, [])
 
+  useEffect(() => {
+    if (localStorage.getItem("carousel__seeded")) return;
+    setText(
+`Выгорание убивает планы.
+Но именно в моменты усталости мы закаляем характер.
+
+Не жди мотивацию — создавай систему.
+Маленькие шаги каждый день сильнее вдохновения раз в месяц.
+
+Когда нет сил — сделай одно действие.
+Сохрани темп, а не максимум. Стабильность рождает результат.
+
+Планируй накануне, действуй утром без раздумий.
+Сегодняшняя дисциплина — завтрашняя свобода.`
+    );
+    setCount(4 as any);
+    localStorage.setItem("carousel__seeded", "1");
+  }, []);
+
   const fileInput = useRef<HTMLInputElement>(null)
   const onPickPhotos = () => fileInput.current?.click()
   const onFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -64,7 +83,7 @@ export default function App() {
           fontFamily: slides[i].fontFamily, fontSize: slides[i].fontSize,
           lineHeight: slides[i].lineHeight, padding: slides[i].padding,
           width:1080, height:1350, pageIndex:i+1, total:slides.length,
-          username, backgroundDataURL: bg, align:"bottom", theme
+          username, backgroundDataURL: bg, theme
         })
         blobs.push(blob)
       }
@@ -148,7 +167,6 @@ export default function App() {
                     {s.title && <div className="inline-block bg-[#5B4BFF] text-white px-3 py-2 rounded-lg font-semibold mb-2 self-start">{s.title}</div>}
                     {s.subtitle && <div className="text-neutral-100/90 mb-2">{s.subtitle}</div>}
                     {s.lines.map((ln,k)=><div key={k} className="text-neutral-100">{ln}</div>)}
-                    <div className="mt-2 text-neutral-300 text-xs">@{username.replace(/^@/,'')}</div>
                     <div className="absolute right-3 bottom-3 text-neutral-300 text-xs">{i+1}/{slides.length} →</div>
                   </div>
                 </div>
@@ -158,10 +176,39 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Bottom nav */}
+      <div className="fixed left-0 right-0 bottom-0 z-50 pb-[env(safe-area-inset-bottom)]">
+        <div className="mx-auto max-w-6xl">
+          <div className="m-3 rounded-2xl border border-neutral-800 bg-neutral-900/85 backdrop-blur px-3 py-2 grid grid-cols-6 gap-1">
+            <NavBtn icon="⧉" label="Template" onClick={()=>setTheme(t=> t==="photo"?"dark": t==="dark"?"light":"photo")} />
+            <NavBtn icon="🎨" label="Color" onClick={()=>{/* TODO */}} />
+            <NavBtn icon="⬒" label="Layout" onClick={()=>{/* TODO */}} />
+            <NavBtn icon="📷" label="Photos" onClick={onPickPhotos} />
+            <NavBtn icon="ℹ️" label="Info" onClick={()=>{/* TODO */}} />
+            <NavBtn icon="⬇️" label="Export" onClick={onSaveAll} disabled={!slides.length || isExporting}/>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
 
 async function blobToDataURL(b: Blob){
   return new Promise<string>(res=>{ const r=new FileReader(); r.onload=()=>res(String(r.result)); r.readAsDataURL(b) })
+}
+
+function NavBtn({icon,label,onClick,disabled}:{icon:string;label:string;onClick?:()=>void;disabled?:boolean}) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex flex-col items-center justify-center h-14 rounded-xl text-sm ${
+        disabled ? "opacity-40" : "hover:bg-neutral-800/60 active:scale-[0.98] transition"
+      }`}
+    >
+      <div className="text-lg leading-none">{icon}</div>
+      <div className="text-neutral-200 mt-1">{label}</div>
+    </button>
+  )
 }
