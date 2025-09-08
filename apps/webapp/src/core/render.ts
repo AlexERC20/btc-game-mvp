@@ -14,7 +14,10 @@ export async function renderSlide(opts: {
   subtitle?: string
   theme?: "light" | "dark" | "photo"
   accent?: string
-  showTopUsername?: boolean
+  textPosition?: 'top'|'bottom'
+  matchHeaderBody?: boolean
+  footerColor?: string
+  titleColor?: string
 }): Promise<Blob> {
   const { width: W, height: H, padding: PAD } = opts
   const cvs = document.createElement("canvas")
@@ -61,17 +64,12 @@ export async function renderSlide(opts: {
   ctx.fillRect(0, 0, W, H)
 
   const textIsLight = avgLumUnderText < 0.5 || opts.theme === "dark"
-  const textColor = textIsLight ? "#F5F5F5" : "#111111"
+  const bodyColor = textIsLight ? "#F5F5F5" : "#111111"
   const subColor  = textIsLight ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.8)"
+  const titleColor = opts.matchHeaderBody ? bodyColor : (opts.titleColor ?? bodyColor)
 
-  // mini-username сверху слева
   ctx.textAlign = "left"
   ctx.textBaseline = "top"
-  if (opts.showTopUsername !== false) {
-    ctx.font = `${Math.round(opts.fontSize*0.55)}px ${opts.fontFamily}`
-    ctx.fillStyle = subColor
-    ctx.fillText("@"+opts.username.replace(/^@/,''), PAD, PAD)
-  }
 
   // HERO title (фиолетовая плашка)
   let yCursor = PAD
@@ -84,7 +82,7 @@ export async function renderSlide(opts: {
     const pillH = lines.length*titleLH + pillPadY*2
     roundRect(ctx, PAD, yCursor, W-PAD*2, pillH, 14)
     ctx.fillStyle = opts.accent || "#5B4BFF"; ctx.globalAlpha = 0.95; ctx.fill(); ctx.globalAlpha = 1
-    ctx.fillStyle = "#FFFFFF"
+    ctx.fillStyle = titleColor
     let ty = yCursor + pillPadY
     for (const ln of lines){ ctx.fillText(ln, PAD+pillPadX, ty); ty+=titleLH }
     yCursor += pillH + Math.round(titleLH*0.6)
@@ -104,15 +102,27 @@ export async function renderSlide(opts: {
   ctx.font = `${opts.fontSize}px ${opts.fontFamily}`
   const lh = Math.round(opts.fontSize*opts.lineHeight)
   const blockH = opts.lines.reduce((h, ln) => h + (ln === "" ? Math.round(lh*0.6) : lh), 0)
-  let y = H - PAD - Math.round(opts.fontSize*0.65) - 6 - blockH
-  if (y < PAD) y = PAD
+  const safeTop = PAD + 40
+  const safeBottom = H - PAD - 80
+  let y = opts.textPosition === 'top'
+    ? safeTop
+    : safeBottom - blockH
+  if (y < safeTop) y = safeTop
 
-  ctx.fillStyle = textColor
+  ctx.fillStyle = bodyColor
   for (const ln of opts.lines) {
     const step = ln === "" ? Math.round(lh*0.6) : lh
     if (ln) ctx.fillText(ln, PAD, y)
     y += step
   }
+
+  // пейджер внизу справа
+  // ник всегда снизу слева
+  ctx.textAlign = "left"
+  ctx.textBaseline = "alphabetic"
+  ctx.font = `${Math.round(opts.fontSize*0.55)}px ${opts.fontFamily}`
+  ctx.fillStyle = opts.footerColor ?? "rgba(255,255,255,.92)"
+  ctx.fillText("@" + opts.username.replace(/^@/, ""), PAD, H - PAD)
 
   // пейджер внизу справа
   ctx.textAlign = "right"

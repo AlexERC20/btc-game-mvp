@@ -8,10 +8,9 @@ export default function BottomSheet({
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={onClose}/>
       <div className="absolute left-0 right-0 bottom-0 bg-neutral-900 text-white rounded-t-2xl
-                      border border-neutral-800 shadow-2xl">
+                      border border-neutral-800 shadow-2xl pb-[env(safe-area-inset-bottom)]">
         <div className="p-4 border-b border-neutral-800 font-medium">{title}</div>
         <div className="p-4 space-y-3">{children}</div>
-        <div className="h-3" />
       </div>
     </div>
   );

@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { splitIntoSlides } from "./core/text-split";
+import { splitIntoSlides as splitIntoLines } from "./core/text-split";
+import { splitIntoSlides as splitText } from "./core/text";
 import { renderSlide } from "./core/render";
 import { shareOrDownloadAll } from "./core/export";
-import { makeStory } from "./core/story";
 import BottomBar from "./components/BottomBar";
 import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
@@ -29,6 +29,8 @@ export default function App() {
   const [openLayout, setOpenLayout] = useState(false);
   const [openImages, setOpenImages] = useState(false);
   const [openInfo, setOpenInfo] = useState(false);
+  const [textPosition, setTextPosition] = useState<'top'|'bottom'>('bottom');
+  const [matchHeaderBody, setMatchHeaderBody] = useState(true);
 
   useEffect(() => {
     const f = new FontFace("Inter", "url(https://fonts.gstatic.com/s/inter/v13/UcCO3Fwr0gYb.woff2)");
@@ -57,17 +59,14 @@ export default function App() {
   const slides = useMemo(() => {
     if (!fontReady) return [];
     const maxN = count === "auto" ? 10 : (count as number);
-    const story = makeStory(text, maxN);
-    const packed = story.map(block => {
-      const bodyText = (block.body ?? []).join(" ");
-      const s = splitIntoSlides({
-        text: bodyText, maxSlides: 1, fontFamily: "Inter",
+    const parts = splitText(text, { maxCharsPerSlide: 280 }).slice(0, maxN);
+    return parts.map(part => (
+      splitIntoLines({
+        text: part, maxSlides: 1, fontFamily: "Inter",
         fontSize, minFontSize: Math.max(12, fontSize-8), lineHeight,
         padding: 96, width:1080, height:1350
-      })[0] ?? { lines:[], fontFamily:"Inter", fontSize, lineHeight, padding:96 };
-      return { ...s, title: block.title, subtitle: block.subtitle };
-    });
-    return packed.slice(0, maxN);
+      })[0] ?? { lines:[], fontFamily:"Inter", fontSize, lineHeight, padding:96 }
+    ));
   }, [text, count, fontReady, fontSize, lineHeight]);
 
   useEffect(() => {
@@ -78,12 +77,11 @@ export default function App() {
         const bg = images[i]?.url || images[images.length-1]?.url || "";
         const blob = await renderSlide({
           lines: slides[i].lines,
-          title: slides[i].title, subtitle: slides[i].subtitle,
           fontFamily: slides[i].fontFamily, fontSize: slides[i].fontSize,
           lineHeight: slides[i].lineHeight, padding: slides[i].padding,
           width:1080, height:1350, pageIndex:i+1, total:slides.length,
           username, backgroundDataURL: bg, theme, accent,
-          showTopUsername:false,
+          textPosition, matchHeaderBody,
         });
         urls.push(URL.createObjectURL(blob));
       }
@@ -93,9 +91,9 @@ export default function App() {
       cancel = true;
       setPreviews(prev => { prev.forEach(u=>URL.revokeObjectURL(u)); return []; });
     };
-  }, [slides, images, username, theme, accent]);
+  }, [slides, images, username, theme, accent, textPosition, matchHeaderBody]);
 
-  const onSaveAll = async () => {
+  const handleExport = async () => {
     if (isExporting) return;
     setIsExporting(true);
     try {
@@ -104,11 +102,11 @@ export default function App() {
         const bg = images[i]?.url || images[images.length-1]?.url || "";
         const blob = await renderSlide({
           lines: slides[i].lines,
-          title: slides[i].title, subtitle: slides[i].subtitle,
           fontFamily: slides[i].fontFamily, fontSize: slides[i].fontSize,
           lineHeight: slides[i].lineHeight, padding: slides[i].padding,
           width:1080, height:1350, pageIndex:i+1, total:slides.length,
-          username, backgroundDataURL: bg, theme, accent, showTopUsername:true,
+          username, backgroundDataURL: bg, theme, accent,
+          textPosition, matchHeaderBody,
         });
         blobs.push(blob);
       }
@@ -119,10 +117,11 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-full pt-[calc(12px+env(safe-area-inset-top))] pb-[calc(12px+env(safe-area-inset-bottom))] px-4 sm:px-6 bg-neutral-950 text-neutral-100">
-      <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-5 space-y-4">
-          <div className="rounded-2xl bg-neutral-900/70 border border-neutral-800 p-4">
+    <div className="min-h-full pt-[calc(12px+env(safe-area-inset-top))] px-4 sm:px-6 bg-neutral-950 text-neutral-100">
+      <div className="pb-[108px] pb-[calc(108px+env(safe-area-inset-bottom))]">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-5 space-y-4">
+            <div className="rounded-2xl bg-neutral-900/70 border border-neutral-800 p-4">
             <label className="block text-sm text-neutral-400 mb-2">Text</label>
             <textarea
               placeholder="Вставь текст сюда…"
@@ -142,10 +141,6 @@ export default function App() {
                 className="px-3 py-2 rounded-xl bg-neutral-900 border border-neutral-800 text-sm w-full"
                 value={username} onChange={e=>setUsername(e.target.value)} placeholder="@username"
               />
-              <button
-                className={`px-4 py-2 rounded-xl ${isExporting?'opacity-50 pointer-events-none':''} bg-neutral-800 border border-neutral-700 text-sm`}
-                onClick={onSaveAll} disabled={!slides.length || isExporting}
-              >{isExporting ? "Saving…" : "Save all"}</button>
             </div>
           </div>
         </div>
@@ -157,7 +152,8 @@ export default function App() {
               {previews.map((url,i)=>(
                 <div key={i} className="snap-start shrink-0 w-[260px] aspect-[4/5] rounded-3xl overflow-hidden bg-neutral-800 relative">
                   <img src={url} className="w-full h-full object-cover" />
-                  <div className="absolute top-3 left-3 text-white/85 text-xs z-10">@{username.replace(/^@/, "")}</div>
+                  <div className="absolute left-3 bottom-3 z-10 text-white/90 text-xs">@{username.replace(/^@/, "")}</div>
+                  <div className="absolute right-3 bottom-3 text-white/70 text-xs select-none">{i+1}/{previews.length} →</div>
                 </div>
               ))}
               {!previews.length && <div className="text-neutral-500">Вставь текст ↑</div>}
@@ -165,16 +161,6 @@ export default function App() {
           </div>
         </div>
       </div>
-
-      <BottomBar
-        onTemplate={()=>setOpenTemplate(true)}
-        onColor={()=>setOpenColor(true)}
-        onLayout={()=>setOpenLayout(true)}
-        onPhotos={()=>setOpenImages(true)}
-        onInfo={()=>setOpenInfo(true)}
-        onExport={onSaveAll}
-        disabledExport={!slides.length || isExporting}
-      />
 
       <BottomSheet open={openTemplate} onClose={()=>setOpenTemplate(false)} title="Template">
         <div className="grid grid-cols-3 gap-3">
@@ -185,11 +171,17 @@ export default function App() {
       </BottomSheet>
 
       <BottomSheet open={openColor} onClose={()=>setOpenColor(false)} title="Color">
-        <div className="flex gap-3">
-          {["#7C4DFF","#2563EB","#10B981","#F59E0B","#EF4444"].map(c=>(
-            <button key={c} onClick={()=>{ setAccent(c); setOpenColor(false); }}
-                    className="w-8 h-8 rounded-full border-2 border-white/20" style={{background:c}}/>
-          ))}
+        <div className="flex flex-col gap-3">
+          <div className="flex gap-3">
+            {["#7C4DFF","#2563EB","#10B981","#F59E0B","#EF4444"].map(c=>(
+              <button key={c} onClick={()=>{ setAccent(c); setOpenColor(false); }}
+                      className="w-8 h-8 rounded-full border-2 border-white/20" style={{background:c}}/>
+            ))}
+          </div>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={matchHeaderBody} onChange={e=>setMatchHeaderBody(e.target.checked)} />
+            Header matches body
+          </label>
         </div>
       </BottomSheet>
 
@@ -203,6 +195,14 @@ export default function App() {
             <span>Line height</span>
             <input type="range" min={1.1} max={1.6} step={0.05} value={lineHeight} onChange={e=>setLineHeight(Number(e.target.value))}/>
           </label>
+          <label className="flex items-center gap-2">
+            <input type="radio" checked={textPosition==='bottom'} onChange={()=>setTextPosition('bottom')} />
+            Text at bottom
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="radio" checked={textPosition==='top'} onChange={()=>setTextPosition('top')} />
+            Text at top
+          </label>
         </div>
       </BottomSheet>
 
@@ -211,6 +211,18 @@ export default function App() {
       <BottomSheet open={openInfo} onClose={()=>setOpenInfo(false)} title="Info">
         <div>Coming soon…</div>
       </BottomSheet>
+      </div>
+
+      <BottomBar
+        onTemplate={()=>setOpenTemplate(true)}
+        onColor={()=>setOpenColor(true)}
+        onLayout={()=>setOpenLayout(true)}
+        onPhotos={()=>setOpenImages(true)}
+        onInfo={()=>setOpenInfo(true)}
+        onExport={handleExport}
+        disabledExport={!slides.length || isExporting}
+        active={openTemplate?"template":openColor?"color":openLayout?"layout":openImages?"photos":openInfo?"info":undefined}
+      />
     </div>
   );
 }
