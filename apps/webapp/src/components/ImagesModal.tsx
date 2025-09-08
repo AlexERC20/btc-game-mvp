@@ -43,7 +43,7 @@ export default function ImagesModal({
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/40" onClick={onClose}/>
       <div className="absolute left-0 right-0 bottom-0 top-16 bg-neutral-950 text-white rounded-t-2xl
-                      border border-neutral-800 shadow-2xl p-4 overflow-y-auto">
+                      border border-neutral-800 shadow-2xl p-4 overflow-y-auto pb-[calc(16px+env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between mb-3">
           <div className="font-medium">Photos</div>
           <div className="flex gap-2">
