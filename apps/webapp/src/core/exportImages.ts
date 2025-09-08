@@ -1,4 +1,5 @@
-import { renderSlide, SlideRenderModel } from "./render";
+import { drawSlide, SlideRenderModel } from "./drawSlide";
+import { CANVAS_W, CANVAS_H } from "./constants";
 
 function ensureImageLoaded(img: HTMLImageElement): Promise<void> {
   if (img.complete) return Promise.resolve();
@@ -10,12 +11,12 @@ function ensureImageLoaded(img: HTMLImageElement): Promise<void> {
 
 export async function exportAll(slides: SlideRenderModel[]){
   const cnv = document.createElement("canvas");
-  cnv.width = 1080; cnv.height = 1350;
+  cnv.width = CANVAS_W; cnv.height = CANVAS_H;
   const ctx = cnv.getContext("2d")!;
   const blobs: Blob[] = [];
   for (const s of slides){
     await ensureImageLoaded(s.img);
-    renderSlide(ctx, { ...s, w:cnv.width, h:cnv.height });
+    drawSlide(ctx, s);
     const blob = await new Promise<Blob>(res=> cnv.toBlob(b=>res(b!), "image/jpeg", 0.95));
     blobs.push(blob);
   }

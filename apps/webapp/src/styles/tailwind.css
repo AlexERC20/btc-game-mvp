@@ -10,3 +10,12 @@ html, body, #root { height: 100%; }
 
 * { -webkit-tap-highlight-color: transparent; }
 body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+@layer components {
+  .slideCard {
+    aspect-ratio: 9 / 16;
+    width: min(88vw, 320px);
+    border-radius: 20px;
+    overflow: hidden;
+    background: #111;
+  }
+}
