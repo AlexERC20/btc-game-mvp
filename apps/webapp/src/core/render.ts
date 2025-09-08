@@ -1,32 +1,57 @@
 import type { Slide, Defaults, Theme } from '../types';
-import { PADDING } from './constants';
 import type { FrameSpec } from '../state/store';
-import { computeLayout } from './textLayout';
 
-function drawGradient(ctx: CanvasRenderingContext2D, w: number, h: number, position: 'top' | 'bottom') {
-  const gh = Math.round(h * 0.28);
-  const g = position === 'top'
-    ? ctx.createLinearGradient(0, 0, 0, gh)
-    : ctx.createLinearGradient(0, h - gh, 0, h);
-  g.addColorStop(0, 'rgba(0,0,0,0)');
-  g.addColorStop(1, 'rgba(0,0,0,0.55)');
-  ctx.fillStyle = g;
-  if (position === 'top') ctx.fillRect(0, 0, w, gh); else ctx.fillRect(0, h - gh, w, gh);
+const FONT_FAMILY = '"SF Pro Display","Inter",system-ui,-apple-system,Segoe UI,Roboto,Arial';
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const lines: string[] = [];
+  const paragraphs = (text || '').split(/\n+/);
+  for (const p of paragraphs) {
+    const words = p.split(/\s+/).filter(Boolean);
+    let line = '';
+    for (const w of words) {
+      const test = line ? line + ' ' + w : w;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = w;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+  }
+  return lines;
 }
 
-function drawUsername(ctx: CanvasRenderingContext2D, handle: string, w: number, h: number) {
+function drawUsername(
+  ctx: CanvasRenderingContext2D,
+  handle: string,
+  w: number,
+  h: number,
+  padding: number,
+) {
   ctx.font = '600 38px SF Pro Display, Inter, system-ui, -apple-system';
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
-  ctx.textBaseline = 'bottom';
-  ctx.fillText(handle, PADDING, h - PADDING);
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(handle, padding, h - padding);
 }
 
-function drawPager(ctx: CanvasRenderingContext2D, w: number, h: number, idx: number, total: number, showArrow: boolean) {
+function drawPager(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  padding: number,
+  idx: number,
+  total: number,
+  showArrow: boolean,
+) {
   ctx.font = '500 32px SF Pro Display, Inter, system-ui, -apple-system';
   ctx.fillStyle = 'rgba(255,255,255,0.9)';
   ctx.textAlign = 'right';
+  ctx.textBaseline = 'alphabetic';
   const text = `${idx}/${total}${showArrow ? ' →' : ''}`;
-  ctx.fillText(text, w - PADDING, h - PADDING);
+  ctx.fillText(text, w - padding, h - padding);
+  ctx.textAlign = 'left';
 }
 
 export async function renderSlideToCanvas(
@@ -43,15 +68,26 @@ export async function renderSlideToCanvas(
   const { frame, theme, defaults, username, page } = opts;
   const width = frame.width;
   const height = frame.height;
+  const pixelRatio = (frame as any).pixelRatio ?? 1;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, width, height);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.strokeStyle = 'transparent';
+  ctx.lineWidth = 0;
+  if (pixelRatio !== 1) ctx.scale(pixelRatio, pixelRatio);
 
   if (slide.image) {
     const img = new Image();
     img.src = slide.image;
-    await new Promise(res => {
-      if (img.complete) res(null);
-      else { img.onload = () => res(null); img.onerror = () => res(null); }
-    });
+    try { await img.decode(); } catch { /* ignore */ }
     const r = Math.max(width / img.width, height / img.height);
     const dw = Math.round(img.width * r);
     const dh = Math.round(img.height * r);
@@ -61,58 +97,44 @@ export async function renderSlideToCanvas(
     ctx.fillRect(0, 0, width, height);
   }
 
-  const effFontSize = slide.overrides?.fontSize ?? defaults.fontSize;
-  const effLH = slide.overrides?.lineHeight ?? defaults.lineHeight;
-  const effPos = slide.overrides?.textPosition ?? defaults.textPosition;
-  const titleColor = (slide.overrides?.matchTitleToBody ?? defaults.matchTitleToBody)
-    ? defaults.bodyColor
-    : (slide.overrides?.titleColor ?? defaults.titleColor);
-
   if (theme === 'light') {
     ctx.fillStyle = 'rgba(255,255,255,0.2)';
     ctx.fillRect(0, 0, width, height);
   } else if (theme === 'dark') {
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.fillRect(0, 0, width, height);
-  } else {
-    drawGradient(ctx, width, height, effPos);
   }
 
-  const layout = await computeLayout({
-    frame,
-    fontFamily: 'SF Pro Display, Inter, system-ui, -apple-system',
-    fontSize: effFontSize,
-    lineHeight: effLH,
-    position: effPos,
-    title: slide.title?.trim() || undefined,
-    body: slide.body || '',
-  });
+  const lineHeight = slide.overrides?.lineHeight ?? defaults.lineHeight;
+  const textColor = defaults.bodyColor;
+  const fontSize = Math.round(width * 0.045);
+  const lineHeightPx = Math.round(fontSize * lineHeight);
+  const PADDING = Math.round(width * 0.06);
+  const BOTTOM = Math.round(height * 0.11);
+  const TEXT_BOX_LEFT = PADDING;
+  const TEXT_BOX_WIDTH = width - PADDING - PADDING;
 
-  ctx.font = `${effFontSize}px SF Pro Display, Inter, system-ui, -apple-system`;
-  ctx.textBaseline = 'top';
+  ctx.font = `${400} ${fontSize}px ${FONT_FAMILY}`;
+  ctx.fillStyle = textColor;
 
-  if (layout.title) {
-    ctx.fillStyle = titleColor;
-    layout.title.lines.forEach((line, i) => {
-      ctx.fillText(
-        line,
-        layout.title!.box.x,
-        layout.title!.box.y + i * Math.round(effFontSize * effLH)
-      );
-    });
+  const h = Math.round(height * 0.4);
+  const g = ctx.createLinearGradient(0, height - h, 0, height);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, height - h, width, h);
+  ctx.fillStyle = textColor;
+
+  const slideText = slide.body || '';
+  const lines = wrapText(ctx, slideText, TEXT_BOX_WIDTH);
+  let y = (height - BOTTOM) - (lines.length - 1) * lineHeightPx;
+  for (const line of lines) {
+    ctx.fillText(line, TEXT_BOX_LEFT, y);
+    y += lineHeightPx;
   }
 
-  ctx.fillStyle = defaults.bodyColor;
-  layout.body.lines.forEach((line, i) => {
-    ctx.fillText(
-      line,
-      layout.body.box.x,
-      layout.body.box.y + i * Math.round(effFontSize * effLH)
-    );
-  });
-
-  drawUsername(ctx, '@' + username.replace(/^@/, ''), width, height);
+  drawUsername(ctx, '@' + username.replace(/^@/, ''), width, height, PADDING);
   if (page) {
-    drawPager(ctx, width, height, page.index, page.total, page.showArrow);
+    drawPager(ctx, width, height, PADDING, page.index, page.total, page.showArrow);
   }
 }
