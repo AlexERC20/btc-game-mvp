@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback } from "react";
 import { renderSlideToCanvas } from "./core/render";
 import { CANVAS_PRESETS } from "./core/constants";
 import { shareOrDownloadAll } from "./core/export";
-import { recomputeSlides } from "./core/slides";
 import BottomBar from "./components/BottomBar";
 import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
@@ -40,15 +39,13 @@ export default function App() {
   };
 
   const recompute = useCallback(() => {
-    const computed = recomputeSlides({
-      mode,
-      template: theme,
-      layout: { textPosition, textSize: fontSize, lineHeight },
-      color: { accent },
-      slidesText: rawText,
-      photos,
-      username,
-    });
+    const texts = splitTextIntoSlides(rawText, mode, { targetCount: photos.length });
+    const max = Math.max(texts.length, photos.length);
+    const lastImage = photos.map(p => p.url).filter(Boolean).pop();
+    const computed: Slide[] = [];
+    for (let i = 0; i < max; i++) {
+      computed.push({ body: texts[i] || '', image: photos[i]?.url || lastImage });
+    }
     const maxN = count === "auto" ? computed.length : Math.min(computed.length, count as number);
     setSlides(computed.slice(0, maxN));
   }, [mode, theme, textPosition, fontSize, lineHeight, accent, rawText, photos, username, count]);
@@ -86,15 +83,13 @@ export default function App() {
     if (isExporting) return;
     setIsExporting(true);
     try {
-      const computed = recomputeSlides({
-        mode,
-        template: theme,
-        layout: { textPosition, textSize: fontSize, lineHeight },
-        color: { accent },
-        slidesText: rawText,
-        photos,
-        username,
-      });
+      const texts = splitTextIntoSlides(rawText, mode, { targetCount: photos.length });
+      const max = Math.max(texts.length, photos.length);
+      const lastPhoto = photos.map(p => p.url).filter(Boolean).pop();
+      const computed: Slide[] = [];
+      for (let i = 0; i < max; i++) {
+        computed.push({ body: texts[i] || '', image: photos[i]?.url || lastPhoto });
+      }
       const maxN = count === "auto" ? computed.length : Math.min(computed.length, count as number);
       const slidesForExport = computed.slice(0, maxN);
       const blobs: Blob[] = [];
@@ -263,3 +258,87 @@ export default function App() {
     </div>
   );
 }
+
+// === LOCAL TEXT SPLITTER (single-file) =========================
+// Никаких импортов, никаких внешних файлов.
+
+type SplitOptions = {
+  targetCount?: number;   // желаемое кол-во слайдов
+  maxChars?: number;      // лимит символов
+  maxLines?: number;      // лимит строк
+};
+
+function normalizeText(s: string) {
+  return s.replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
+}
+
+function splitByMarkers(s: string): string[] {
+  const parts: string[] = [];
+  const re = /(?:^|\n)Слайд\s*\d+\s*:\s*/gi;
+  const idxs: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s))) idxs.push(m.index + m[0].length);
+  if (!idxs.length) return [s];
+  for (let i = 0; i < idxs.length; i++) {
+    const start = idxs[i];
+    const end = i + 1 < idxs.length ? idxs[i + 1] : s.length;
+    parts.push(s.slice(start, end).trim());
+  }
+  return parts.filter(Boolean);
+}
+
+function splitByBlankLines(s: string): string[] {
+  return s.split(/\n{2,}/).map(x => x.trim()).filter(Boolean);
+}
+
+function splitByLimit(
+  s: string,
+  limits: { maxChars: number; maxLines: number }
+): string[] {
+  const words = s.split(/\s+/);
+  const res: string[] = [];
+  let cur = '';
+  for (const w of words) {
+    const test = (cur ? cur + ' ' : '') + w;
+    const tooManyChars = test.length > limits.maxChars;
+    const tooManyLines = test.split('\n').length > limits.maxLines;
+    if (tooManyChars || tooManyLines) {
+      if (cur) res.push(cur.trim());
+      cur = w;
+    } else {
+      cur = test;
+    }
+  }
+  if (cur.trim()) res.push(cur.trim());
+  return res.length ? res : [s.trim()];
+}
+
+function splitTextIntoSlides(
+  input: string,
+  mode: 'story' | 'carousel',
+  opts: SplitOptions = {}
+) {
+  const text = normalizeText(input);
+
+  const limits =
+    mode === 'story'
+      ? { maxChars: opts.maxChars ?? 360, maxLines: opts.maxLines ?? 6 }
+      : { maxChars: opts.maxChars ?? 480, maxLines: opts.maxLines ?? 8 };
+
+  // 1) Слайд-маркеры
+  let parts = splitByMarkers(text);
+  // 2) Пустые строки
+  if (parts.length < 2) parts = splitByBlankLines(text);
+  // 3) Жёсткий лимит
+  if (parts.length < 2) parts = splitByLimit(text, limits);
+
+  // Убираем "Слайд N:" из каждого куска
+  parts = parts.map(p => p.replace(/^Слайд\s*\d+\s*:\s*/i, '').trim());
+
+  const target = Math.max(1, opts.targetCount || parts.length);
+  if (parts.length > target) parts = parts.slice(0, target);
+  if (parts.length < target) parts = parts.concat(Array(target - parts.length).fill(''));
+
+  return parts;
+}
+// === END LOCAL TEXT SPLITTER ==================================
