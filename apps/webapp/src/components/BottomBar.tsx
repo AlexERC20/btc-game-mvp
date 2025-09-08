@@ -27,7 +27,7 @@ export default function BottomBar({
   );
 
   return (
-    <div className="fixed left-0 right-0 bottom-0 z-50 pb-[env(safe-area-inset-bottom)]">
+      <div className="fixed left-0 right-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)]">
       <div className="mx-auto max-w-6xl">
         <div className="m-3 rounded-2xl border border-neutral-800 bg-neutral-900/85 backdrop-blur px-3 py-2 grid grid-cols-6 gap-1">
           <Item icon={<TemplateIcon className="w-6 h-6"/>} label="Template" onClick={onTemplate} active={active==='template'}/>
