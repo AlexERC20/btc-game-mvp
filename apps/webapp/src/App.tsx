@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { splitIntoSlides as splitIntoLines } from "./core/text-split";
 import { splitIntoSlides } from "./core/text";
 import { renderSlide } from "./core/render";
 import { shareOrDownloadAll } from "./core/export";
@@ -75,24 +74,32 @@ export default function App() {
     setIsExporting(true);
     try {
       const blobs: Blob[] = [];
+      const cnv = document.createElement("canvas");
+      cnv.width = 1080; cnv.height = 1350;
+      const ctx = cnv.getContext("2d")!;
       const lastImage = slides.map(s=>s.image).filter(Boolean).pop();
       for (let i=0; i<slides.length; i++){
-        const layoutArr = await splitIntoLines({
-          text: slides[i].body || "",
-          maxSlides: 1, fontFamily: "Inter",
-          fontSize, minFontSize: Math.max(12, fontSize-8), lineHeight,
-          padding: 96, width:1080, height:1350,
+        const img = new Image();
+        img.src = slides[i].image || lastImage || "";
+        if (img.src) {
+          await new Promise(res=>{ if (img.complete) res(null); else { img.onload=()=>res(null); img.onerror=()=>res(null); }});
+        }
+        renderSlide(ctx, {
+          w:1080, h:1350,
+          img,
+          template: theme,
+          text: {
+            body: slides[i].body || "",
+            align: textPosition,
+            color: "#fff",
+            headingMatchesBody: matchHeaderBody,
+            fontSize,
+            lineHeight,
+          },
+          username: username.replace(/^@/, ""),
+          page: { index: i+1, total: slides.length, showArrow: i+1 < slides.length },
         });
-        const layout = layoutArr[0] ?? { lines:[], fontFamily:"Inter", fontSize, lineHeight, padding:96 };
-        const bg = slides[i].image || lastImage || "";
-        const blob = await renderSlide({
-          lines: layout.lines,
-          fontFamily: layout.fontFamily, fontSize: layout.fontSize,
-          lineHeight: layout.lineHeight, padding: layout.padding,
-          width:1080, height:1350, pageIndex:i+1, total:slides.length,
-          username, backgroundDataURL: bg, theme, accent,
-          textPosition, matchHeaderBody,
-        });
+        const blob = await new Promise<Blob>(res=>cnv.toBlob(b=>res(b!), 'image/jpeg', 0.95)!);
         blobs.push(blob);
       }
       await shareOrDownloadAll(blobs);
