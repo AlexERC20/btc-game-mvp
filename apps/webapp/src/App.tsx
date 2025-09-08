@@ -117,10 +117,24 @@ export default function App() {
         const slide = { ...slidesForExport[i] } as Slide;
         if (!slide.image && lastImage) slide.image = lastImage;
         await renderSlideToCanvas(slide, ctx, {
-          width: preset.w,
-          height: preset.h,
+          frame: {
+            width: preset.w,
+            height: preset.h,
+            paddingX: 72,
+            paddingTop: 72,
+            paddingBottom: 72,
+            safeNickname: 120,
+            safePagination: 120,
+          },
           theme,
-          layout: { textPosition, textSize: fontSize, lineHeight, color: '#fff' },
+          defaults: {
+            fontSize,
+            lineHeight,
+            textPosition,
+            bodyColor: '#fff',
+            titleColor: '#fff',
+            matchTitleToBody: true,
+          },
           username: username.replace(/^@/, ''),
           page: { index: i + 1, total: slidesForExport.length, showArrow: i + 1 < slidesForExport.length },
         });

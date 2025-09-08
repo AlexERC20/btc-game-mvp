@@ -28,8 +28,15 @@ export function SlidePreview({ slide, index, total, textPosition, username, them
     if (!ctx) return;
     const preset = CANVAS_PRESETS[mode];
     renderSlideToCanvas(slide, ctx, {
-      width: preset.w,
-      height: preset.h,
+      frame: {
+        width: preset.w,
+        height: preset.h,
+        paddingX: 72,
+        paddingTop: 72,
+        paddingBottom: 72,
+        safeNickname: 120,
+        safePagination: 120,
+      },
       theme,
       defaults: {
         fontSize,

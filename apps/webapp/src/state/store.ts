@@ -1,12 +1,46 @@
 import { create } from 'zustand';
 import type { Slide, Defaults, SlideId } from '../types';
 
+export type FrameSpec = {
+  width: number;
+  height: number;
+  paddingX: number;
+  paddingTop: number;
+  paddingBottom: number;
+  safeNickname: number;
+  safePagination: number;
+};
+
+const FRAME_SPECS: Record<'story' | 'carousel', FrameSpec> = {
+  story: {
+    width: 1080,
+    height: 1920,
+    paddingX: 72,
+    paddingTop: 72,
+    paddingBottom: 72,
+    safeNickname: 120,
+    safePagination: 120,
+  },
+  carousel: {
+    width: 1080,
+    height: 1350,
+    paddingX: 72,
+    paddingTop: 72,
+    paddingBottom: 72,
+    safeNickname: 120,
+    safePagination: 120,
+  },
+};
+
 export type StoreState = {
   slides: Slide[];
   defaults: Defaults;
+  mode: 'story' | 'carousel';
+  frame: FrameSpec;
   updateDefaults: (partial: Partial<Defaults>) => void;
   updateSlide: (id: SlideId, partial: Partial<Slide> | { overrides: Partial<Slide['overrides']> }) => void;
   reorderSlides: (fromIndex: number, toIndex: number) => void;
+  setMode: (mode: 'story' | 'carousel') => void;
 };
 
 export const useStore = create<StoreState>((set) => ({
@@ -19,6 +53,8 @@ export const useStore = create<StoreState>((set) => ({
     titleColor: '#FFFFFF',
     matchTitleToBody: true,
   },
+  mode: 'story',
+  frame: FRAME_SPECS.story,
   updateDefaults: (partial) => set((state) => ({ defaults: { ...state.defaults, ...partial } })),
   updateSlide: (id, partial) => set((state) => ({
     slides: state.slides.map((s) => {
@@ -35,4 +71,5 @@ export const useStore = create<StoreState>((set) => ({
     slides.splice(toIndex, 0, moved);
     return { slides };
   }),
+  setMode: (mode) => set(() => ({ mode, frame: FRAME_SPECS[mode] })),
 }));
