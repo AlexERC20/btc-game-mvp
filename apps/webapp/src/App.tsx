@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { splitIntoSlides as splitIntoLines } from "./core/text-split";
-import { splitIntoSlides as splitText } from "./core/text";
+import { splitIntoSlides } from "./core/text";
 import { renderSlide } from "./core/render";
 import { shareOrDownloadAll } from "./core/export";
 import BottomBar from "./components/BottomBar";
@@ -10,10 +10,11 @@ import "./styles/tailwind.css";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
 type Theme = "light" | "dark" | "photo";
-type Img = {id:string; url:string};
+type Slide = { title?: string; body?: string; image?: string };
 
 export default function App() {
-  const [text, setText] = useState("");
+  const [rawText, setRawText] = useState("");
+  const [slides, setSlides] = useState<Slide[]>([]);
   const [count, setCount] = useState<SlideCount>("auto");
   const [username, setUsername] = useState("@username");
   const [fontReady, setFontReady] = useState(false);
@@ -22,8 +23,6 @@ export default function App() {
   const [fontSize, setFontSize] = useState(42);
   const [lineHeight, setLineHeight] = useState(1.32);
   const [isExporting, setIsExporting] = useState(false);
-  const [images, setImages] = useState<Img[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
   const [openTemplate, setOpenTemplate] = useState(false);
   const [openColor, setOpenColor] = useState(false);
   const [openLayout, setOpenLayout] = useState(false);
@@ -32,6 +31,19 @@ export default function App() {
   const [textPosition, setTextPosition] = useState<'top'|'bottom'>('bottom');
   const [matchHeaderBody, setMatchHeaderBody] = useState(true);
 
+  const lastImage = slides.map(s=>s.image).filter(Boolean).pop();
+
+  const onTextChange = (value: string) => {
+    setRawText(value);
+    const parts = splitIntoSlides(value, { maxCharsPerSlide: 280 });
+    const maxN = count === "auto" ? parts.length : Math.min(parts.length, count as number);
+    const limited = parts.slice(0, maxN);
+    setSlides(prev => {
+      const mapped = limited.map((p, i) => ({ ...(prev[i] ?? {}), body: p }));
+      return mapped;
+    });
+  };
+
   useEffect(() => {
     const f = new FontFace("Inter", "url(https://fonts.gstatic.com/s/inter/v13/UcCO3Fwr0gYb.woff2)");
     f.load().then(ff => { (document as any).fonts.add(ff); setFontReady(true); }).catch(()=>setFontReady(true));
@@ -39,8 +51,7 @@ export default function App() {
 
   useEffect(() => {
     if (localStorage.getItem("carousel__seeded")) return;
-    setText(
-`Выгорание убивает планы.
+    const seed = `Выгорание убивает планы.
 Но именно в моменты усталости мы закаляем характер.
 
 Не жди мотивацию — создавай систему.
@@ -50,60 +61,35 @@ export default function App() {
 Сохрани темп, а не максимум. Стабильность рождает результат.
 
 Планируй накануне, действуй утром без раздумий.
-Сегодняшняя дисциплина — завтрашняя свобода.`
-    );
+Сегодняшняя дисциплина — завтрашняя свобода.`;
     setCount(4 as any);
+    onTextChange(seed);
     localStorage.setItem("carousel__seeded", "1");
   }, []);
 
-  const slides = useMemo(() => {
-    if (!fontReady) return [];
-    const maxN = count === "auto" ? 10 : (count as number);
-    const parts = splitText(text, { maxCharsPerSlide: 280 }).slice(0, maxN);
-    return parts.map(part => (
-      splitIntoLines({
-        text: part, maxSlides: 1, fontFamily: "Inter",
-        fontSize, minFontSize: Math.max(12, fontSize-8), lineHeight,
-        padding: 96, width:1080, height:1350
-      })[0] ?? { lines:[], fontFamily:"Inter", fontSize, lineHeight, padding:96 }
-    ));
-  }, [text, count, fontReady, fontSize, lineHeight]);
-
-  useEffect(() => {
-    let cancel = false;
-    (async () => {
-      const urls: string[] = [];
-      for (let i=0; i<slides.length; i++){
-        const bg = images[i]?.url || images[images.length-1]?.url || "";
-        const blob = await renderSlide({
-          lines: slides[i].lines,
-          fontFamily: slides[i].fontFamily, fontSize: slides[i].fontSize,
-          lineHeight: slides[i].lineHeight, padding: slides[i].padding,
-          width:1080, height:1350, pageIndex:i+1, total:slides.length,
-          username, backgroundDataURL: bg, theme, accent,
-          textPosition, matchHeaderBody,
-        });
-        urls.push(URL.createObjectURL(blob));
-      }
-      if (!cancel) setPreviews(urls);
-    })();
-    return () => {
-      cancel = true;
-      setPreviews(prev => { prev.forEach(u=>URL.revokeObjectURL(u)); return []; });
-    };
-  }, [slides, images, username, theme, accent, textPosition, matchHeaderBody]);
+  useEffect(()=>{
+    onTextChange(rawText);
+  }, [count]);
 
   const handleExport = async () => {
     if (isExporting) return;
     setIsExporting(true);
     try {
       const blobs: Blob[] = [];
+      const lastImage = slides.map(s=>s.image).filter(Boolean).pop();
       for (let i=0; i<slides.length; i++){
-        const bg = images[i]?.url || images[images.length-1]?.url || "";
+        const layoutArr = await splitIntoLines({
+          text: slides[i].body || "",
+          maxSlides: 1, fontFamily: "Inter",
+          fontSize, minFontSize: Math.max(12, fontSize-8), lineHeight,
+          padding: 96, width:1080, height:1350,
+        });
+        const layout = layoutArr[0] ?? { lines:[], fontFamily:"Inter", fontSize, lineHeight, padding:96 };
+        const bg = slides[i].image || lastImage || "";
         const blob = await renderSlide({
-          lines: slides[i].lines,
-          fontFamily: slides[i].fontFamily, fontSize: slides[i].fontSize,
-          lineHeight: slides[i].lineHeight, padding: slides[i].padding,
+          lines: layout.lines,
+          fontFamily: layout.fontFamily, fontSize: layout.fontSize,
+          lineHeight: layout.lineHeight, padding: layout.padding,
           width:1080, height:1350, pageIndex:i+1, total:slides.length,
           username, backgroundDataURL: bg, theme, accent,
           textPosition, matchHeaderBody,
@@ -126,7 +112,7 @@ export default function App() {
             <textarea
               placeholder="Вставь текст сюда…"
               className="w-full h-40 p-4 rounded-xl bg-neutral-950 border border-neutral-800 outline-none placeholder:text-neutral-500"
-              value={text} onChange={e=>setText(e.target.value)}
+              value={rawText} onChange={e=>onTextChange(e.target.value)}
             />
             <div className="mt-3 flex items-center gap-3">
               <select
@@ -149,14 +135,20 @@ export default function App() {
           <div className="rounded-3xl bg-neutral-900/70 border border-neutral-800 p-4 lg:p-6">
             <div className="text-neutral-400 text-sm mb-3">Preview</div>
             <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth">
-              {previews.map((url,i)=>(
-                <div key={i} className="snap-start shrink-0 w-[260px] aspect-[4/5] rounded-3xl overflow-hidden bg-neutral-800 relative">
-                  <img src={url} className="w-full h-full object-cover" />
-                  <div className="absolute left-3 bottom-3 z-10 text-white/90 text-xs">@{username.replace(/^@/, "")}</div>
-                  <div className="absolute right-3 bottom-3 text-white/70 text-xs select-none">{i+1}/{previews.length} →</div>
-                </div>
-              ))}
-              {!previews.length && <div className="text-neutral-500">Вставь текст ↑</div>}
+              {slides.map((slide,i)=>{
+                const img = slide.image || lastImage || "";
+                return (
+                  <div key={i} className="snap-start shrink-0 w-[260px] aspect-[4/5] rounded-3xl overflow-hidden bg-neutral-800 relative">
+                    {img && <img src={img} className="w-full h-full object-cover" />}
+                    {slide.body && (
+                      <div className={`absolute left-4 right-4 ${textPosition==='bottom'?"bottom-16":"top-6"} text-white/95 text-[15px] leading-[1.3] hyphens-auto`}>{slide.body}</div>
+                    )}
+                    <div className="absolute left-3 bottom-3 z-20 text-white/90 text-xs">@{username.replace(/^@/, "")}</div>
+                    <div className="absolute right-3 bottom-3 text-white/70 text-xs select-none">{i+1}/{slides.length} →</div>
+                  </div>
+                );
+              })}
+              {!slides.length && <div className="text-neutral-500">Вставь текст ↑</div>}
             </div>
           </div>
         </div>
@@ -180,7 +172,7 @@ export default function App() {
           </div>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={matchHeaderBody} onChange={e=>setMatchHeaderBody(e.target.checked)} />
-            Header matches body
+            Заголовок как текст
           </label>
         </div>
       </BottomSheet>
@@ -206,7 +198,21 @@ export default function App() {
         </div>
       </BottomSheet>
 
-      <ImagesModal open={openImages} onClose={()=>setOpenImages(false)} images={images} setImages={setImages} />
+      <ImagesModal
+        open={openImages}
+        onClose={()=>setOpenImages(false)}
+        onConfirm={(urls:string[])=>{
+          setSlides(prev=>{
+            const base = [...prev];
+            urls.forEach((url, idx)=>{
+              const i = idx;
+              base[i] = { ...(base[i] ?? {}), image:url };
+            });
+            return base;
+          });
+          setOpenImages(false);
+        }}
+      />
 
       <BottomSheet open={openInfo} onClose={()=>setOpenInfo(false)} title="Info">
         <div>Coming soon…</div>
