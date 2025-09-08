@@ -1,3 +1,5 @@
+import type { Slide } from "../types";
+
 export async function renderSlide(opts: {
   lines: string[]
   width: number
@@ -131,6 +133,20 @@ export async function renderSlide(opts: {
   ctx.fillText(`${opts.pageIndex}/${opts.total} →`, W - PAD, H - PAD)
 
   return await new Promise<Blob>(res => cvs.toBlob(b=>res(b!), 'image/jpeg', 0.92)!)
+}
+
+// черновая обёртка для массива слайдов
+export async function renderSlides(slides: Slide[], opts: {
+  username: string;
+  textPosition: "top"|"bottom";
+  // ...другие опции (цвета/шрифты/поля)
+}): Promise<Blob[]> {
+  const out: Blob[] = [];
+  for (let i = 0; i < slides.length; i++) {
+    // здесь могла бы быть логика рендера конкретного слайда
+    // в MVP используем существующий renderSlide отдельно
+  }
+  return out;
 }
 
 function wrap(ctx:CanvasRenderingContext2D, text:string, max:number){

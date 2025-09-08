@@ -8,10 +8,10 @@ import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
 import { SlidePreview } from "./components/SlidePreview";
 import "./styles/tailwind.css";
+import type { Slide } from "./types";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
 type Theme = "light" | "dark" | "photo";
-type Slide = { title?: string; body?: string; image?: string };
 
 export default function App() {
   const [rawText, setRawText] = useState("");
