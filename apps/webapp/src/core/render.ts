@@ -1,5 +1,7 @@
 import type { Slide, Defaults, Theme } from '../types';
 import { PADDING } from './constants';
+import type { FrameSpec } from '../state/store';
+import { computeLayout } from './textLayout';
 
 function drawGradient(ctx: CanvasRenderingContext2D, w: number, h: number, position: 'top' | 'bottom') {
   const gh = Math.round(h * 0.28);
@@ -31,15 +33,16 @@ export async function renderSlideToCanvas(
   slide: Slide,
   ctx: CanvasRenderingContext2D,
   opts: {
-    width: number;
-    height: number;
+    frame: FrameSpec;
     theme: Theme;
     defaults: Defaults;
     username: string;
     page?: { index: number; total: number; showArrow: boolean };
   }
 ) {
-  const { width, height, theme, defaults, username, page } = opts;
+  const { frame, theme, defaults, username, page } = opts;
+  const width = frame.width;
+  const height = frame.height;
   ctx.clearRect(0, 0, width, height);
 
   if (slide.image) {
@@ -75,50 +78,38 @@ export async function renderSlideToCanvas(
     drawGradient(ctx, width, height, effPos);
   }
 
-  const box = {
-    x: PADDING,
-    y: effPos === 'bottom' ? height - Math.round(height * 0.28) + PADDING : PADDING,
-    w: width - PADDING * 2,
-    yMax: height - PADDING - 56,
-  };
+  const layout = await computeLayout({
+    frame,
+    fontFamily: 'SF Pro Display, Inter, system-ui, -apple-system',
+    fontSize: effFontSize,
+    lineHeight: effLH,
+    position: effPos,
+    title: slide.title?.trim() || undefined,
+    body: slide.body || '',
+  });
 
-  const drawBlock = (
-    text: string,
-    color: string,
-    fontWeight: string,
-    startY: number
-  ) => {
-    ctx.fillStyle = color;
-    ctx.font = `${fontWeight} ${effFontSize}px SF Pro Display, Inter, system-ui, -apple-system`;
-    const words = text.replace(/\r/g, '').split(/\s+/);
-    const lines: string[] = [];
-    let current = '';
-    const lineStep = Math.round(effFontSize * effLH);
-    for (const w of words) {
-      const test = current ? current + ' ' + w : w;
-      if (ctx.measureText(test).width <= box.w) {
-        current = test;
-      } else {
-        if (current) lines.push(current);
-        current = w;
-      }
-    }
-    if (current) lines.push(current);
+  ctx.font = `${effFontSize}px SF Pro Display, Inter, system-ui, -apple-system`;
+  ctx.textBaseline = 'top';
 
-    let y = startY + effFontSize;
-    for (const line of lines) {
-      if (y > box.yMax) break;
-      ctx.fillText(line, box.x, y);
-      y += lineStep;
-    }
-    return y;
-  };
-
-  let currentY = box.y;
-  if (slide.title) {
-    currentY = drawBlock(slide.title, titleColor, '600', currentY);
+  if (layout.title) {
+    ctx.fillStyle = titleColor;
+    layout.title.lines.forEach((line, i) => {
+      ctx.fillText(
+        line,
+        layout.title!.box.x,
+        layout.title!.box.y + i * Math.round(effFontSize * effLH)
+      );
+    });
   }
-  drawBlock(slide.body || '', defaults.bodyColor, '400', currentY);
+
+  ctx.fillStyle = defaults.bodyColor;
+  layout.body.lines.forEach((line, i) => {
+    ctx.fillText(
+      line,
+      layout.body.box.x,
+      layout.body.box.y + i * Math.round(effFontSize * effLH)
+    );
+  });
 
   drawUsername(ctx, '@' + username.replace(/^@/, ''), width, height);
   if (page) {
