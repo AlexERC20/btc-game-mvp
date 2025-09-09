@@ -138,13 +138,26 @@ export default function App() {
 
   const genId = () => Math.random().toString(36).slice(2);
 
-  const onReorder = (from: number, to: number) => {
-    setSlides(prev => {
-      const next = prev.slice();
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
-      return next;
+  const onMoveUp = (i: number) => {
+    if (i === 0) return;
+    setSlides(s => {
+      const a = s.slice();
+      [a[i - 1], a[i]] = [a[i], a[i - 1]];
+      return a;
     });
+  };
+
+  const onMoveDown = (i: number) => {
+    setSlides(s => {
+      if (i >= s.length - 1) return s;
+      const a = s.slice();
+      [a[i], a[i + 1]] = [a[i + 1], a[i]];
+      return a;
+    });
+  };
+
+  const onDelete = (i: number) => {
+    setSlides(s => s.filter((_, idx) => idx !== i));
   };
 
   useEffect(() => {
@@ -357,14 +370,16 @@ export default function App() {
 
         <div className="lg:col-span-7 builder-preview">
           {slides.length ? (
-            <div className="preview-list dnd-area" onDragOver={(e)=>e.preventDefault()}>
+            <div className="preview-list">
               {slides.map((s, i) => {
                 const [h, b] = settings.headingEnabled ? splitHeading(s.body || '') : ['', s.body];
                 return (
                   <PreviewCard
                     key={s.id}
                     index={i}
-                    onReorder={onReorder}
+                    onMoveUp={onMoveUp}
+                    onMoveDown={onMoveDown}
+                    onDelete={onDelete}
                     style={cardStyle}
                     mode={mode}
                     image={s.image}
