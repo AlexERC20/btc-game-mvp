@@ -1,10 +1,9 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { renderSlideToCanvas } from "./core/render";
+import React, { useEffect, useState, useCallback, useRef } from "react";
+import { renderSlideToCanvas, measureTextBlocks, splitTextToSlides } from "./core/render";
 import { CANVAS_PRESETS } from "./core/constants";
 import { shareOrDownloadAll } from "./core/export";
 import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
-import PreviewList from "./components/PreviewList";
 import PreviewCard from "./components/PreviewCard";
 import TemplateIcon from "./icons/TemplateIcon";
 import LayoutIcon from "./icons/LayoutIcon";
@@ -13,6 +12,7 @@ import InfoIcon from "./icons/InfoIcon";
 import DownloadIcon from "./icons/DownloadIcon";
 import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
+import "./styles/preview-list.css";
 import { getWelcomeText, SEED_KEY } from "./core/seed";
 import type { Slide, Theme, CanvasMode, PhotoMeta } from "./types";
 
@@ -91,6 +91,10 @@ export default function App() {
   const [openImages, setOpenImages] = useState(false);
   const [openInfo, setOpenInfo] = useState(false);
   const [textPosition, setTextPosition] = useState<'top'|'bottom'>('bottom');
+  const [autoSplitEnabled, setAutoSplitEnabled] = useState(true);
+  const [splitPrompt, setSplitPrompt] = useState<number|null>(null);
+  const promptedRef = useRef<Record<string, boolean>>({});
+  const dragIndex = useRef<number | null>(null);
 
   const DEFAULT_SETTINGS: CarouselSettings = {
     fontFamily: 'Inter',
@@ -130,11 +134,116 @@ export default function App() {
     }
     const maxN = count === "auto" ? computed.length : Math.min(computed.length, count as number);
     setSlides(computed.slice(0, maxN));
-  }, [mode, theme, textPosition, fontSize, lineHeight, rawText, photos, username, count]);
+  }, [mode, rawText, photos, count]);
 
   useEffect(() => {
     recompute();
-  }, [mode, theme, textPosition, fontSize, lineHeight, rawText, photos, username, count]);
+  }, [recompute]);
+
+  function reorder<T>(arr: T[], from: number, to: number) {
+    const a = arr.slice();
+    const [item] = a.splice(from, 1);
+    a.splice(to, 0, item);
+    return a;
+  }
+
+  function insertAfter<T>(arr: T[], index: number, items: T[]): T[] {
+    const res = arr.slice();
+    res.splice(index, 1, ...items);
+    return res;
+  }
+
+  const genId = () => Math.random().toString(36).slice(2);
+
+  const handleDragStart = (idx: number) => (e: React.DragEvent) => {
+    dragIndex.current = idx;
+    (e.currentTarget as HTMLElement).classList.add('dragging', 'shadow-lg');
+  };
+  const handleDragEnd = (e: React.DragEvent) => {
+    (e.currentTarget as HTMLElement).classList.remove('dragging', 'shadow-lg');
+  };
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const from = dragIndex.current;
+    const target = (e.target as HTMLElement).closest('[data-index]') as HTMLElement | null;
+    if (from == null || !target) return;
+    const to = Number(target.dataset.index);
+    dragIndex.current = null;
+    if (from === to) return;
+    const reordered = reorder(slides, from, to);
+    setSlides(reordered);
+    setRawText(reordered.map(s => s.body || '').join('\n\n'));
+  };
+
+  useEffect(() => {
+    if (!autoSplitEnabled) return;
+    const preset = CANVAS_PRESETS[mode];
+    const width = preset.w;
+    const height = preset.h;
+    const PADDING = Math.round(width * 0.06);
+    const BOTTOM = Math.round(height * 0.11);
+    const box = { width: width - PADDING * 2, height: height - BOTTOM - PADDING };
+    const base = '"SF Pro Display","Inter",system-ui,-apple-system,Segoe UI,Roboto,Arial';
+    const fFamily = settings.fontFamily === 'SF Pro'
+      ? '-apple-system, BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji",sans-serif'
+      : settings.fontFamily;
+    const fontStyle = settings.fontItalic ? 'italic' : 'normal';
+    const style = {
+      fontFamily: settings.fontApplyBody ? fFamily : base,
+      fontSize,
+      lineHeight,
+      fontStyle,
+      fontWeight: settings.fontApplyBody ? settings.fontWeight : 400,
+    };
+    for (let i = 0; i < slides.length; i++) {
+      const s = slides[i];
+      if (!s.body || promptedRef.current[s.id]) continue;
+      const m = measureTextBlocks(s.body, style, box);
+      if (!m.fits) {
+        setSplitPrompt(i);
+        promptedRef.current[s.id] = true;
+        setTimeout(() => delete promptedRef.current[s.id], 4000);
+        break;
+      }
+    }
+  }, [slides, fontSize, lineHeight, settings, mode, autoSplitEnabled, textPosition]);
+
+  const handleSplit = () => {
+    if (splitPrompt == null) return;
+    const current = slides[splitPrompt];
+    if (!current) return;
+    const preset = CANVAS_PRESETS[mode];
+    const width = preset.w;
+    const height = preset.h;
+    const PADDING = Math.round(width * 0.06);
+    const BOTTOM = Math.round(height * 0.11);
+    const box = { width: width - PADDING * 2, height: height - BOTTOM - PADDING };
+    const base = '"SF Pro Display","Inter",system-ui,-apple-system,Segoe UI,Roboto,Arial';
+    const fFamily = settings.fontFamily === 'SF Pro'
+      ? '-apple-system, BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji",sans-serif'
+      : settings.fontFamily;
+    const fontStyle = settings.fontItalic ? 'italic' : 'normal';
+    const style = {
+      fontFamily: settings.fontApplyBody ? fFamily : base,
+      fontSize,
+      lineHeight,
+      fontStyle,
+      fontWeight: settings.fontApplyBody ? settings.fontWeight : 400,
+    };
+    const parts = splitTextToSlides(current.body || '', style, box);
+    if (parts.length > 1) {
+      const newSlides = parts.map((t, idx) => ({ ...current, id: idx === 0 ? current.id : genId(), body: t }));
+      const replaced = insertAfter(slides, splitPrompt, newSlides);
+      setSlides(replaced);
+      setRawText(replaced.map(s => s.body || '').join('\n\n'));
+    }
+    setSplitPrompt(null);
+  };
+
+  const handleCancelSplit = () => setSplitPrompt(null);
 
   const onPhotosPicked = (urls: string[]) => {
     const next: PhotoMeta[] = urls.map((url, idx) => ({ id: `${Date.now()}_${idx}`, url }));
@@ -161,15 +270,7 @@ export default function App() {
     if (isExporting) return;
     setIsExporting(true);
     try {
-      const texts = splitTextIntoSlides(rawText, mode, { targetCount: photos.length });
-      const max = Math.max(texts.length, photos.length);
-      const lastPhoto = photos.map(p => p.url).filter(Boolean).pop();
-      const computed: Slide[] = [];
-      for (let i = 0; i < max; i++) {
-        computed.push({ body: texts[i] || '', image: photos[i]?.url || lastPhoto });
-      }
-      const maxN = count === "auto" ? computed.length : Math.min(computed.length, count as number);
-      const slidesForExport = computed.slice(0, maxN);
+      const slidesForExport = slides;
       const blobs: Blob[] = [];
       const preset = CANVAS_PRESETS[mode];
       const cnv = document.createElement("canvas");
@@ -211,7 +312,7 @@ export default function App() {
     }
   };
 
-  const canExport = photos.length > 0;
+  const canExport = slides.length > 0;
 
   function splitHeading(body: string) {
     const hardBreak = body.indexOf('\n\n');
@@ -310,11 +411,18 @@ export default function App() {
 
         <div className="lg:col-span-7 builder-preview">
           {slides.length ? (
-            <PreviewList>
-              {slides.map(s => {
+            <div className="preview-list" onDragOver={handleDragOver} onDrop={handleDrop}>
+              {slides.map((s, i) => {
                 const [h, b] = settings.headingEnabled ? splitHeading(s.body || '') : ['', s.body];
                 return (
-                  <div key={s.id} style={cardStyle}>
+                  <div
+                    key={s.id}
+                    data-index={i}
+                    draggable
+                    onDragStart={handleDragStart(i)}
+                    onDragEnd={handleDragEnd}
+                    style={cardStyle}
+                  >
                     <PreviewCard
                       mode={mode}
                       image={s.image}
@@ -327,7 +435,7 @@ export default function App() {
                   </div>
                 );
               })}
-            </PreviewList>
+            </div>
           ) : (
             <div className="text-neutral-500">Вставь текст ↑</div>
           )}
@@ -357,6 +465,12 @@ export default function App() {
           <input type="checkbox" checked={mode==='story'} onChange={e=>setMode(e.target.checked?'story':'carousel')} />
           Story mode (9:16)
         </label>
+        <div className="mt-2 pt-2 border-t border-neutral-700">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={autoSplitEnabled} onChange={e=>setAutoSplitEnabled(e.target.checked)} />
+            Auto-split long text
+          </label>
+        </div>
       </BottomSheet>
 
       <BottomSheet open={openLayout} onClose={()=>setOpenLayout(false)} title="Layout">
@@ -459,6 +573,15 @@ export default function App() {
         </div>
       </BottomSheet>
       </div>
+      {splitPrompt !== null && (
+        <div className="fixed left-0 right-0 bottom-24 flex justify-center z-50">
+          <div className="bg-neutral-800 text-neutral-100 px-4 py-3 rounded-xl flex items-center gap-3 text-sm">
+            <span>Слишком много текста. Разделить на 2 слайда?</span>
+            <button className="underline" onClick={handleSplit}>Split</button>
+            <button className="underline" onClick={handleCancelSplit}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       <BottomBar
         onTemplate={()=>setOpenTemplate(true)}
