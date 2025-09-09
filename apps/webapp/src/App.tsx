@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { renderSlideToCanvas, measureTextBlocks, splitTextToSlides } from "./core/render";
 import { CANVAS_PRESETS } from "./core/constants";
-import { shareOrDownloadAll } from "./core/export";
+import { shareOrDownloadAll as saveAll } from "./core/export";
 import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
 import PreviewCard from "./components/PreviewCard";
@@ -37,6 +37,10 @@ const FontIcon = ({className}:{className?:string}) => (
     <path d="M9 20l3-9 3 9"/>
     <path d="M8 16h8"/>
   </svg>
+);
+
+const Button = (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
+  <button {...props} />
 );
 
 function BottomBar({
@@ -84,7 +88,7 @@ export default function App() {
   const [fontSize, setFontSize] = useState(42);
   const [lineHeight, setLineHeight] = useState(1.32);
   const [mode, setMode] = useState<CanvasMode>('carousel');
-  const [isExporting, setIsExporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [openTemplate, setOpenTemplate] = useState(false);
   const [openLayout, setOpenLayout] = useState(false);
   const [openFonts, setOpenFonts] = useState(false);
@@ -266,49 +270,57 @@ export default function App() {
   }, []);
 
 
+  const renderSlidesToBlobs = async (ordered: Slide[], storyMode: boolean) => {
+    const preset = CANVAS_PRESETS[storyMode ? 'story' : 'carousel'];
+    const cnv = document.createElement("canvas");
+    cnv.width = preset.w; cnv.height = preset.h;
+    const ctx = cnv.getContext("2d")!;
+    const lastImage = ordered.map(s => s.image).filter(Boolean).pop();
+    const blobs: Blob[] = [];
+    for (let i = 0; i < ordered.length; i++) {
+      const slide = { ...ordered[i] } as Slide;
+      if (!slide.image && lastImage) slide.image = lastImage;
+      await renderSlideToCanvas(slide, ctx, {
+        frame: {
+          width: preset.w,
+          height: preset.h,
+          paddingX: 72,
+          paddingTop: 72,
+          paddingBottom: 72,
+          safeNickname: 120,
+          safePagination: 120,
+        },
+        theme,
+        defaults: {
+          fontSize,
+          lineHeight,
+          textPosition,
+          bodyColor: '#fff',
+          titleColor: '#fff',
+          matchTitleToBody: true,
+        },
+        username: username.replace(/^@/, ''),
+        page: { index: i + 1, total: ordered.length, showArrow: i + 1 < ordered.length },
+        settings,
+      });
+      const blob = await new Promise<Blob>(res => cnv.toBlob(b => res(b!), 'image/jpeg', 0.95)!);
+      blobs.push(blob);
+    }
+    return blobs;
+  };
+
   const handleExport = async () => {
-    if (isExporting) return;
-    setIsExporting(true);
+    if (exporting) return;
+    const storyMode = mode === 'story';
     try {
-      const slidesForExport = slides;
-      const blobs: Blob[] = [];
-      const preset = CANVAS_PRESETS[mode];
-      const cnv = document.createElement("canvas");
-      cnv.width = preset.w; cnv.height = preset.h;
-      const ctx = cnv.getContext("2d")!;
-      const lastImage = slidesForExport.map(s=>s.image).filter(Boolean).pop();
-      for (let i = 0; i < slidesForExport.length; i++) {
-        const slide = { ...slidesForExport[i] } as Slide;
-        if (!slide.image && lastImage) slide.image = lastImage;
-        await renderSlideToCanvas(slide, ctx, {
-          frame: {
-            width: preset.w,
-            height: preset.h,
-            paddingX: 72,
-            paddingTop: 72,
-            paddingBottom: 72,
-            safeNickname: 120,
-            safePagination: 120,
-          },
-          theme,
-          defaults: {
-            fontSize,
-            lineHeight,
-            textPosition,
-            bodyColor: '#fff',
-            titleColor: '#fff',
-            matchTitleToBody: true,
-          },
-          username: username.replace(/^@/, ''),
-          page: { index: i + 1, total: slidesForExport.length, showArrow: i + 1 < slidesForExport.length },
-          settings,
-        });
-        const blob = await new Promise<Blob>(res => cnv.toBlob(b => res(b!), 'image/jpeg', 0.95)!);
-        blobs.push(blob);
-      }
-      await shareOrDownloadAll(blobs);
+      setExporting(true);
+      const ordered = slides;
+      const blobs = await renderSlidesToBlobs(ordered, storyMode);
+      await saveAll(blobs);
+    } catch (e) {
+      console.error('Export failed:', e);
     } finally {
-      setTimeout(()=>setIsExporting(false), 600);
+      setExporting(false);
     }
   };
 
@@ -590,9 +602,10 @@ export default function App() {
         onPhotos={()=>setOpenImages(true)}
         onInfo={()=>setOpenInfo(true)}
         onExport={handleExport}
-        disabledExport={!slides.length || isExporting || !canExport}
+        disabledExport={!slides.length || exporting || !canExport}
         active={openTemplate?"template":openLayout?"layout":openFonts?"fonts":openImages?"photos":openInfo?"info":undefined}
       />
+      <Button onClick={handleExport} disabled={exporting}>Export</Button>
     </div>
     </>
   );
