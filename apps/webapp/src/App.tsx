@@ -4,11 +4,7 @@ import { CANVAS_PRESETS } from "./core/constants";
 import BottomSheet from "./components/BottomSheet";
 import ImagesModal from "./components/ImagesModal";
 import PreviewCard from "./components/PreviewCard";
-import TemplateIcon from "./icons/TemplateIcon";
-import LayoutIcon from "./icons/LayoutIcon";
-import CameraIcon from "./icons/CameraIcon";
-import InfoIcon from "./icons/InfoIcon";
-import DownloadIcon from "./icons/DownloadIcon";
+import BottomBar from "./components/BottomBar";
 import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
 import "./styles/preview-list.css";
@@ -16,54 +12,6 @@ import { getWelcomeText, SEED_KEY } from "./core/seed";
 import type { Slide, Theme, CanvasMode, PhotoMeta } from "./types";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
-
-
-const FontIcon = ({className}:{className?:string}) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className}>
-    <path d="M4 20h16"/>
-    <path d="M9 20l3-9 3 9"/>
-    <path d="M8 16h8"/>
-  </svg>
-);
-
-const Button = (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-  <button {...props} />
-);
-
-function BottomBar({
-  onTemplate, onLayout, onFonts, onPhotos, onInfo, onExport, disabledExport, active
-}:{
-  onTemplate: ()=>void;
-  onLayout: ()=>void;
-  onFonts: ()=>void;
-  onPhotos: ()=>void;
-  onInfo: ()=>void;
-  onExport: ()=>void;
-  disabledExport?: boolean;
-  active?: 'template'|'layout'|'fonts'|'photos'|'info';
-}) {
-  const Item = ({icon,label,onClick,disabled,active}:{icon:React.ReactNode,label:string,onClick?:()=>void,disabled?:boolean,active?:boolean}) => (
-    <button onClick={onClick} disabled={disabled}
-      className={`flex flex-col items-center justify-center h-14 rounded-xl text-xs ${disabled?"opacity-40":""} ${active?"bg-neutral-800/60":"hover:bg-neutral-800/60"} active:scale-[0.98] transition`}>
-      <div className="h-6 w-6 text-neutral-100">{icon}</div>
-      <div className="text-neutral-200 mt-1">{label}</div>
-    </button>
-  );
-  return (
-    <div className="fixed left-0 right-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)]">
-      <div className="mx-auto max-w-6xl">
-        <div className="m-3 rounded-2xl border border-neutral-800 bg-neutral-900/85 backdrop-blur px-3 py-2 grid grid-cols-6 gap-1">
-          <Item icon={<TemplateIcon className="w-6 h-6"/>} label="Template" onClick={onTemplate} active={active==='template'}/>
-          <Item icon={<LayoutIcon className="w-6 h-6"/>}   label="Layout"   onClick={onLayout} active={active==='layout'}/>
-          <Item icon={<FontIcon className="w-6 h-6"/>}     label="Fonts"    onClick={onFonts} active={active==='fonts'}/>
-          <Item icon={<CameraIcon className="w-6 h-6"/>}   label="Photos"   onClick={onPhotos} active={active==='photos'}/>
-          <Item icon={<InfoIcon className="w-6 h-6"/>}     label="Info"     onClick={onInfo} active={active==='info'}/>
-          <Item icon={<DownloadIcon className="w-6 h-6"/>} label="Export"   onClick={onExport} disabled={disabledExport}/>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function App() {
   const [rawText, setRawText] = useState("");
@@ -141,10 +89,17 @@ export default function App() {
   const onReorder = (from: number, to: number) => {
     setSlides(prev => {
       const next = prev.slice();
+      if (to < 0 || to >= next.length) return next;
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
       return next;
     });
+  };
+
+  const deleteSlide = (idx: number) => {
+    if (confirm('Delete slide?')) {
+      setSlides(prev => prev.filter((_, i) => i !== idx));
+    }
   };
 
   useEffect(() => {
@@ -365,6 +320,9 @@ export default function App() {
                     key={s.id}
                     index={i}
                     onReorder={onReorder}
+                    onMoveUp={() => onReorder(i, i - 1)}
+                    onMoveDown={() => onReorder(i, i + 1)}
+                    onDelete={() => deleteSlide(i)}
                     style={cardStyle}
                     mode={mode}
                     image={s.image}
