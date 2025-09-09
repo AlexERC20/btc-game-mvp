@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { measureTextBlocks, splitTextToSlides, exportAll, CarouselSettings } from "./core/render";
 import { CANVAS_PRESETS } from "./core/constants";
 import BottomSheet from "./components/BottomSheet";
-import ImagesModal from "./components/ImagesModal";
 import PreviewCard from "./components/PreviewCard";
 import BottomBar from "./components/BottomBar";
 import "./styles/tailwind.css";
@@ -24,8 +23,12 @@ export default function App() {
   const [openTemplate, setOpenTemplate] = useState(false);
   const [openLayout, setOpenLayout] = useState(false);
   const [openFonts, setOpenFonts] = useState(false);
-  const [openImages, setOpenImages] = useState(false);
   const [openInfo, setOpenInfo] = useState(false);
+  const [isPhotosOpen, setIsPhotosOpen] = useState(false);
+  const [stagedPhotos, setStagedPhotos] = useState<PhotoMeta[]>([]);
+  const [stagedOrder, setStagedOrder] = useState<number[]>([]);
+  const [stagedRemoved, setStagedRemoved] = useState<Set<string>>(new Set());
+  const [hasStageChanges, setHasStageChanges] = useState(false);
   const [autoSplitEnabled, setAutoSplitEnabled] = useState(true);
   const [splitPrompt, setSplitPrompt] = useState<number|null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -191,34 +194,76 @@ export default function App() {
 
   const handleCancelSplit = () => setSplitPrompt(null);
 
-  const addPhotos = (urls: string[]) => {
-    const next: PhotoMeta[] = urls.map(url => ({ id: genId(), url }));
-    setPhotos(prev => [...prev, ...next]);
+  const openPhotos = () => {
+    const copy = photos.map(p => ({ ...p }));
+    setStagedPhotos(copy);
+    setStagedOrder(copy.map((_, i) => i));
+    setStagedRemoved(new Set());
+    setHasStageChanges(false);
+    setIsPhotosOpen(true);
   };
 
-  const selectPhoto = (id: string) => {
-    setSlides(prev => prev.map((s,i)=> i===activeIndex ? { ...s, imageId:id } : s));
-    setOpenImages(false);
+  const onRemoveAt = (i: number) => {
+    const idx = stagedOrder[i];
+    const id = stagedPhotos[idx].id;
+    const next = new Set(stagedRemoved);
+    next.add(id);
+    setStagedRemoved(next);
+    setHasStageChanges(true);
   };
 
-  const deletePhoto = (id: string) => {
-    setPhotos(prev => prev.filter(p => p.id !== id));
+  const onMove = (i: number, dir: -1 | 1) => {
+    const o = [...stagedOrder];
+    const j = i + dir;
+    if (j < 0 || j >= o.length) return;
+    [o[i], o[j]] = [o[j], o[i]];
+    setStagedOrder(o);
+    setHasStageChanges(true);
   };
 
-  const movePhoto = (id: string, dir: -1 | 1) => {
-    setPhotos(prev => {
-      const idx = prev.findIndex(p=>p.id===id);
-      if (idx<0) return prev;
-      const next = prev.slice();
-      const [item] = next.splice(idx,1);
-      let to = idx + dir;
-      if (to < 0) to = 0;
-      if (to > next.length) to = next.length;
-      next.splice(to,0,item);
-      return next;
+  const onAddPhoto = (ph: PhotoMeta) => {
+    const newIdx = stagedPhotos.length;
+    setStagedPhotos(p => [...p, ph]);
+    setStagedOrder(o => [...o, newIdx]);
+    setHasStageChanges(true);
+  };
+
+  const makeNewSlideFromPhoto = (ph: PhotoMeta): Slide => ({
+    id: genId(),
+    body: '',
+    imageId: ph.id,
+  });
+
+  const onPhotosDone = () => {
+    const kept = stagedOrder
+      .map(idx => stagedPhotos[idx])
+      .filter(ph => !stagedRemoved.has(ph.id));
+
+    const nextSlides: Slide[] = kept.map((ph, i) => {
+      const prev = slides.find(s => s.imageId === ph.id);
+      return prev ? { ...prev, imageId: ph.id } : makeNewSlideFromPhoto(ph);
     });
+
+    setPhotos(kept);
+    setSlides(nextSlides);
+    setIsPhotosOpen(false);
   };
 
+  const onPhotosCancel = () => setIsPhotosOpen(false);
+
+  const pickOnePhoto = (cb: (ph: PhotoMeta) => void) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => cb({ id: genId(), url: String(reader.result) });
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  };
 
   useEffect(() => {
     if (localStorage.getItem(SEED_KEY)) return;
@@ -515,16 +560,51 @@ export default function App() {
           </div>
         </div>
       </BottomSheet>
+      {isPhotosOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={onPhotosCancel}/>
+          <div className="relative w-[min(720px,92vw)] max-h-[85vh] bg-[#161616] text-white rounded-2xl overflow-hidden shadow-2xl pointer-events-auto">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <div className="text-base font-semibold">Photos</div>
+              <button
+                onClick={onPhotosDone}
+                disabled={!hasStageChanges}
+                className="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Done
+              </button>
+            </div>
 
-      <ImagesModal
-        open={openImages}
-        photos={photos}
-        onClose={()=>setOpenImages(false)}
-        onAdd={addPhotos}
-        onSelect={selectPhoto}
-        onDelete={deletePhoto}
-        onMove={movePhoto}
-      />
+            <div className="p-4 grid grid-cols-3 gap-3 overflow-y-auto" style={{maxHeight: 'calc(85vh - 56px)'}}>
+              {stagedOrder.map((ordIdx, i) => {
+                const ph = stagedPhotos[ordIdx];
+                const removed = stagedRemoved.has(ph.id);
+                if (removed) return null;
+                return (
+                  <div key={ph.id} className="relative rounded-xl overflow-hidden bg-black/20">
+                    <img src={ph.url} className="aspect-square w-full object-cover"/>
+                    <button
+                      className="absolute top-2 right-2 h-7 w-7 rounded-full bg-black/60 flex items-center justify-center"
+                      onClick={() => onRemoveAt(i)}
+                      aria-label="Remove"
+                    >×</button>
+                    <div className="absolute bottom-2 left-2 right-2 flex justify-between gap-2">
+                      <button className="h-7 w-7 rounded-full bg-black/60" onClick={() => onMove(i, -1)} aria-label="Left">←</button>
+                      <button className="h-7 w-7 rounded-full bg-black/60" onClick={() => onMove(i, +1)} aria-label="Right">→</button>
+                    </div>
+                  </div>
+                );
+              })}
+              <button
+                onClick={() => pickOnePhoto(onAddPhoto)}
+                className="aspect-square rounded-xl border border-white/15 flex items-center justify-center text-sm hover:bg-white/5"
+              >
+                Add photo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomSheet open={openInfo} onClose={()=>setOpenInfo(false)} title="Info">
         <div className="space-y-4">
@@ -556,11 +636,11 @@ export default function App() {
         onTemplate={()=>setOpenTemplate(true)}
         onLayout={()=>setOpenLayout(true)}
         onFonts={()=>setOpenFonts(true)}
-        onPhotos={()=>setOpenImages(true)}
+        onPhotos={openPhotos}
         onInfo={()=>setOpenInfo(true)}
         onExport={handleExport}
         disabledExport={!slides.length || exporting}
-        active={openTemplate?"template":openLayout?"layout":openFonts?"fonts":openImages?"photos":openInfo?"info":undefined}
+        active={openTemplate?"template":openLayout?"layout":openFonts?"fonts":isPhotosOpen?"photos":openInfo?"info":undefined}
       />
     </div>
     </>
