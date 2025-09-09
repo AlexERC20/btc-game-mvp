@@ -36,6 +36,69 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
   return lines;
 }
 
+export function measureTextBlocks(
+  text: string,
+  style: { fontFamily: string; fontSize: number; lineHeight: number; fontStyle?: string; fontWeight?: number },
+  box: { width: number; height: number }
+) {
+  const ctx = document.createElement('canvas').getContext('2d')!;
+  const fontStyle = style.fontStyle || 'normal';
+  const fontWeight = style.fontWeight || 400;
+  ctx.font = `${fontStyle} ${fontWeight} ${style.fontSize}px "${style.fontFamily.replaceAll('"','\\"')}"`;
+  const lines = wrapText(ctx, text, box.width);
+  const lineHeightPx = Math.round(style.fontSize * style.lineHeight);
+  const fits = lines.length * lineHeightPx <= box.height;
+  return { lines, fits };
+}
+
+export function splitTextToSlides(
+  text: string,
+  style: { fontFamily: string; fontSize: number; lineHeight: number; fontStyle?: string; fontWeight?: number },
+  box: { width: number; height: number }
+) {
+  const manual = text.split(/\n\n+/).map(t => t.trim()).filter(Boolean);
+  const segments = manual.length > 1 ? manual : [text.trim()];
+  const result: string[] = [];
+
+  const pushSegment = (seg: string) => {
+    const sentences = seg.split(/(?<=[.!?])\s+/).filter(Boolean);
+    let cur = '';
+    for (const s of sentences) {
+      const test = cur ? cur + ' ' + s : s;
+      if (!measureTextBlocks(test, style, box).fits && cur) {
+        result.push(cur.trim());
+        cur = s;
+      } else {
+        cur = test;
+      }
+    }
+    if (cur) result.push(cur.trim());
+  };
+
+  for (const seg of segments) pushSegment(seg);
+
+  const final: string[] = [];
+  for (const part of result) {
+    if (measureTextBlocks(part, style, box).fits) {
+      final.push(part.trim());
+      continue;
+    }
+    const words = part.split(/\s+/).filter(Boolean);
+    let cur = '';
+    for (const w of words) {
+      const test = cur ? cur + ' ' + w : w;
+      if (!measureTextBlocks(test, style, box).fits && cur) {
+        final.push(cur.trim());
+        cur = w;
+      } else {
+        cur = test;
+      }
+    }
+    if (cur) final.push(cur.trim());
+  }
+  return final;
+}
+
 function splitHeading(body: string) {
   const hardBreak = body.indexOf('\n\n');
   if (hardBreak >= 0) return [body.slice(0, hardBreak), body.slice(hardBreak + 2)];
