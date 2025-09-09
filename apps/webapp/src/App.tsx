@@ -7,9 +7,7 @@ import ImagesModal from "./components/ImagesModal";
 import PreviewList from "./components/PreviewList";
 import PreviewCard from "./components/PreviewCard";
 import TemplateIcon from "./icons/TemplateIcon";
-import PaletteIcon from "./icons/PaletteIcon";
 import LayoutIcon from "./icons/LayoutIcon";
-import FrameIcon from "./icons/FrameIcon";
 import CameraIcon from "./icons/CameraIcon";
 import InfoIcon from "./icons/InfoIcon";
 import DownloadIcon from "./icons/DownloadIcon";
@@ -27,8 +25,10 @@ type CarouselSettings = {
   fontApplyHeading: boolean;
   fontApplyBody: boolean;
   overlayEnabled: boolean;
-  overlayHeightPct: number;
-  overlayOpacityPct: number;
+  overlayHeight: number;     // 0.10..0.50 fraction
+  overlayOpacity: number;    // 0.10..0.50 fraction
+  headingEnabled: boolean;
+  headingColor: string;
 };
 
 const FontIcon = ({className}:{className?:string}) => (
@@ -40,19 +40,16 @@ const FontIcon = ({className}:{className?:string}) => (
 );
 
 function BottomBar({
-  onTemplate, onColor, onLayout, onFonts, onMode, onPhotos, onInfo, onExport, disabledExport, active, mode
+  onTemplate, onLayout, onFonts, onPhotos, onInfo, onExport, disabledExport, active
 }:{
   onTemplate: ()=>void;
-  onColor: ()=>void;
   onLayout: ()=>void;
   onFonts: ()=>void;
-  onMode: ()=>void;
   onPhotos: ()=>void;
   onInfo: ()=>void;
   onExport: ()=>void;
   disabledExport?: boolean;
-  active?: 'template'|'color'|'layout'|'fonts'|'photos'|'info';
-  mode: CanvasMode;
+  active?: 'template'|'layout'|'fonts'|'photos'|'info';
 }) {
   const Item = ({icon,label,onClick,disabled,active}:{icon:React.ReactNode,label:string,onClick?:()=>void,disabled?:boolean,active?:boolean}) => (
     <button onClick={onClick} disabled={disabled}
@@ -64,12 +61,10 @@ function BottomBar({
   return (
     <div className="fixed left-0 right-0 bottom-0 z-40 pb-[env(safe-area-inset-bottom)]">
       <div className="mx-auto max-w-6xl">
-        <div className="m-3 rounded-2xl border border-neutral-800 bg-neutral-900/85 backdrop-blur px-3 py-2 grid grid-cols-8 gap-1">
+        <div className="m-3 rounded-2xl border border-neutral-800 bg-neutral-900/85 backdrop-blur px-3 py-2 grid grid-cols-6 gap-1">
           <Item icon={<TemplateIcon className="w-6 h-6"/>} label="Template" onClick={onTemplate} active={active==='template'}/>
-          <Item icon={<PaletteIcon className="w-6 h-6"/>}  label="Color"    onClick={onColor} active={active==='color'}/>
           <Item icon={<LayoutIcon className="w-6 h-6"/>}   label="Layout"   onClick={onLayout} active={active==='layout'}/>
           <Item icon={<FontIcon className="w-6 h-6"/>}     label="Fonts"    onClick={onFonts} active={active==='fonts'}/>
-          <Item icon={<FrameIcon className="w-6 h-6"/>}    label={mode==='story'?'Story':'Carousel'} onClick={onMode}/>
           <Item icon={<CameraIcon className="w-6 h-6"/>}   label="Photos"   onClick={onPhotos} active={active==='photos'}/>
           <Item icon={<InfoIcon className="w-6 h-6"/>}     label="Info"     onClick={onInfo} active={active==='info'}/>
           <Item icon={<DownloadIcon className="w-6 h-6"/>} label="Export"   onClick={onExport} disabled={disabledExport}/>
@@ -86,19 +81,16 @@ export default function App() {
   const [count, setCount] = useState<SlideCount>("auto");
   const [username, setUsername] = useState("@username");
   const [theme, setTheme] = useState<Theme>("photo");
-  const [accent, setAccent] = useState("#5B4BFF");
   const [fontSize, setFontSize] = useState(42);
   const [lineHeight, setLineHeight] = useState(1.32);
-  const [mode, setMode] = useState<CanvasMode>('story');
+  const [mode, setMode] = useState<CanvasMode>('carousel');
   const [isExporting, setIsExporting] = useState(false);
   const [openTemplate, setOpenTemplate] = useState(false);
-  const [openColor, setOpenColor] = useState(false);
   const [openLayout, setOpenLayout] = useState(false);
   const [openFonts, setOpenFonts] = useState(false);
   const [openImages, setOpenImages] = useState(false);
   const [openInfo, setOpenInfo] = useState(false);
   const [textPosition, setTextPosition] = useState<'top'|'bottom'>('bottom');
-  const [matchHeaderBody, setMatchHeaderBody] = useState(true);
 
   const DEFAULT_SETTINGS: CarouselSettings = {
     fontFamily: 'Inter',
@@ -106,9 +98,11 @@ export default function App() {
     fontItalic: false,
     fontApplyHeading: true,
     fontApplyBody: true,
-    overlayEnabled: true,
-    overlayHeightPct: 30,
-    overlayOpacityPct: 18,
+    overlayEnabled: false,
+    overlayHeight: 0.30,
+    overlayOpacity: 0.20,
+    headingEnabled: false,
+    headingColor: '#6E56CF',
   };
   const [settings, setSettings] = useState<CarouselSettings>(() => {
     try {
@@ -136,11 +130,11 @@ export default function App() {
     }
     const maxN = count === "auto" ? computed.length : Math.min(computed.length, count as number);
     setSlides(computed.slice(0, maxN));
-  }, [mode, theme, textPosition, fontSize, lineHeight, accent, rawText, photos, username, count]);
+  }, [mode, theme, textPosition, fontSize, lineHeight, rawText, photos, username, count]);
 
   useEffect(() => {
     recompute();
-  }, [mode, theme, textPosition, fontSize, lineHeight, accent, rawText, photos, username, count]);
+  }, [mode, theme, textPosition, fontSize, lineHeight, rawText, photos, username, count]);
 
   const onPhotosPicked = (urls: string[]) => {
     const next: PhotoMeta[] = urls.map((url, idx) => ({ id: `${Date.now()}_${idx}`, url }));
@@ -219,6 +213,13 @@ export default function App() {
 
   const canExport = photos.length > 0;
 
+  function splitHeading(body: string) {
+    const hardBreak = body.indexOf('\n\n');
+    if (hardBreak >= 0) return [body.slice(0, hardBreak), body.slice(hardBreak + 2)];
+    const m = body.match(/([^.?!\n]+[.?!]?)([\s\S]*)/);
+    return m ? [m[1].trim(), m[2].trim()] : [body, ''];
+  }
+
   const baseFamily = '"SF Pro Display","Inter",system-ui,-apple-system,Segoe UI,Roboto,Arial';
   const fFamily = settings.fontFamily === 'SF Pro'
     ? '-apple-system, BlinkMacSystemFont, "SF Pro Text","SF Pro Display","Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji",sans-serif'
@@ -231,8 +232,10 @@ export default function App() {
     '--font-family-heading': settings.fontApplyHeading ? fFamily : baseFamily,
     '--font-weight-heading': settings.fontApplyHeading ? settings.fontWeight : 400,
     '--font-style-heading': settings.fontApplyHeading ? fontStyle : 'normal',
-    '--overlay-height': `${settings.overlayHeightPct}%`,
-    '--overlay-opacity': settings.overlayEnabled ? settings.overlayOpacityPct / 100 : 0,
+    '--overlay-height': settings.overlayHeight,
+    '--overlay-opacity': settings.overlayEnabled ? settings.overlayOpacity : 0,
+    '--overlay-rgb': theme === 'dark' ? '0,0,0' : '255,255,255',
+    '--heading-color': settings.headingColor,
   } as React.CSSProperties;
 
   return (
@@ -270,8 +273,12 @@ export default function App() {
   font-style: var(--font-style-heading);
 }
 .preview-card::after {
-  height: var(--overlay-height,38%);
-  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,var(--overlay-opacity,0.55)) 100%);
+  height: calc(var(--overlay-height,0.3) * 100%);
+  background: linear-gradient(0deg, rgba(var(--overlay-rgb,0,0,0),var(--overlay-opacity,0)) 0%, rgba(var(--overlay-rgb,0,0,0),0) 100%);
+}
+.preview-heading {
+  font-weight: 700;
+  color: var(--heading-color,#6E56CF);
 }
     `}</style>
     <div className="min-h-full pt-[calc(12px+env(safe-area-inset-top))] px-4 sm:px-6 bg-neutral-950 text-neutral-100">
@@ -304,17 +311,22 @@ export default function App() {
         <div className="lg:col-span-7 builder-preview">
           {slides.length ? (
             <PreviewList>
-              {slides.map(s => (
-                <div key={s.id} style={cardStyle}>
-                  <PreviewCard
-                    mode={mode}
-                    image={s.image}
-                    text={s.body}
-                    username={username.replace(/^@/, '')}
-                    textPosition={textPosition}
-                  />
-                </div>
-              ))}
+              {slides.map(s => {
+                const [h, b] = settings.headingEnabled ? splitHeading(s.body || '') : ['', s.body];
+                return (
+                  <div key={s.id} style={cardStyle}>
+                    <PreviewCard
+                      mode={mode}
+                      image={s.image}
+                      text={(settings.headingEnabled
+                          ? (<>{h && <span className="preview-heading">{h}</span>}{b ? <><br/>{b}</> : null}</>)
+                          : s.body) as any}
+                      username={username.replace(/^@/, '')}
+                      textPosition={textPosition}
+                    />
+                  </div>
+                );
+              })}
             </PreviewList>
           ) : (
             <div className="text-neutral-500">Вставь текст ↑</div>
@@ -323,26 +335,28 @@ export default function App() {
       </div>
 
       <BottomSheet open={openTemplate} onClose={()=>setOpenTemplate(false)} title="Template">
-        <div className="grid grid-cols-3 gap-3">
-          <button className="rounded-xl border border-neutral-700 p-3 hover:bg-neutral-800" onClick={()=>{ setTheme("photo"); setOpenTemplate(false); }}>Photo</button>
-          <button className="rounded-xl border border-neutral-700 p-3 hover:bg-neutral-800" onClick={()=>{ setTheme("light"); setOpenTemplate(false); }}>Light</button>
-          <button className="rounded-xl border border-neutral-700 p-3 hover:bg-neutral-800" onClick={()=>{ setTheme("dark"); setOpenTemplate(false); }}>Dark</button>
+        <div className="segmented mb-4">
+          {(["photo","light","dark"] as const).map(tpl=>(
+            <button key={tpl}
+              className={`segmented__item ${theme===tpl?"segmented__item--active":""}`}
+              onClick={()=>{
+                setTheme(tpl);
+                if (tpl==='photo') {
+                  setSettings({...settings, overlayEnabled:false});
+                } else if (tpl==='light') {
+                  setSettings({...settings, overlayEnabled:true, overlayHeight:0.30, overlayOpacity:0.20});
+                } else {
+                  setSettings({...settings, overlayEnabled:true, overlayHeight:0.30, overlayOpacity:0.35});
+                }
+                setOpenTemplate(false);
+              }}
+            >{tpl.charAt(0).toUpperCase()+tpl.slice(1)}</button>
+          ))}
         </div>
-      </BottomSheet>
-
-      <BottomSheet open={openColor} onClose={()=>setOpenColor(false)} title="Color">
-        <div className="flex flex-col gap-3">
-          <div className="flex gap-3">
-            {["#7C4DFF","#2563EB","#10B981","#F59E0B","#EF4444"].map(c=>(
-              <button key={c} onClick={()=>{ setAccent(c); setOpenColor(false); }}
-                      className="w-8 h-8 rounded-full border-2 border-white/20" style={{background:c}}/>
-            ))}
-          </div>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={matchHeaderBody} onChange={e=>setMatchHeaderBody(e.target.checked)} />
-            Заголовок как текст
-          </label>
-        </div>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={mode==='story'} onChange={e=>setMode(e.target.checked?'story':'carousel')} />
+          Story mode (9:16)
+        </label>
       </BottomSheet>
 
       <BottomSheet open={openLayout} onClose={()=>setOpenLayout(false)} title="Layout">
@@ -370,12 +384,23 @@ export default function App() {
             </label>
             <label className="flex items-center justify-between">
               <span>Height</span>
-              <input type="range" min={10} max={50} value={settings.overlayHeightPct} onChange={e=>setSettings({...settings, overlayHeightPct:Number(e.target.value)})}/>
+              <input type="range" min={10} max={50} value={Math.round(settings.overlayHeight*100)} onChange={e=>setSettings({...settings, overlayHeight:Number(e.target.value)/100})}/>
             </label>
             <label className="flex items-center justify-between">
               <span>Intensity</span>
-              <input type="range" min={0} max={40} value={settings.overlayOpacityPct} onChange={e=>setSettings({...settings, overlayOpacityPct:Number(e.target.value)})}/>
+              <input type="range" min={10} max={50} value={Math.round(settings.overlayOpacity*100)} onChange={e=>setSettings({...settings, overlayOpacity:Number(e.target.value)/100})}/>
             </label>
+          </div>
+          <div className="pt-2 space-y-2 border-t border-neutral-700 mt-2">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={settings.headingEnabled} onChange={e=>setSettings({...settings, headingEnabled:e.target.checked})}/>
+              Заголовок
+            </label>
+            <div className="flex gap-2">
+              {['#6E56CF','#4361EE','#2BB673','#F2C94C','#EB5757'].map(c=>(
+                <button key={c} className="w-6 h-6 rounded-full border border-neutral-700" style={{background:c}} onClick={()=>setSettings({...settings, headingColor:c})}/>
+              ))}
+            </div>
           </div>
         </div>
       </BottomSheet>
@@ -437,16 +462,13 @@ export default function App() {
 
       <BottomBar
         onTemplate={()=>setOpenTemplate(true)}
-        onColor={()=>setOpenColor(true)}
         onLayout={()=>setOpenLayout(true)}
         onFonts={()=>setOpenFonts(true)}
-        onMode={()=>setMode(mode==='story'?'carousel':'story')}
         onPhotos={()=>setOpenImages(true)}
         onInfo={()=>setOpenInfo(true)}
         onExport={handleExport}
         disabledExport={!slides.length || isExporting || !canExport}
-        active={openTemplate?"template":openColor?"color":openLayout?"layout":openFonts?"fonts":openImages?"photos":openInfo?"info":undefined}
-        mode={mode}
+        active={openTemplate?"template":openLayout?"layout":openFonts?"fonts":openImages?"photos":openInfo?"info":undefined}
       />
     </div>
     </>

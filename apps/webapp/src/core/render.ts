@@ -10,8 +10,10 @@ type CarouselSettings = {
   fontApplyHeading: boolean;
   fontApplyBody: boolean;
   overlayEnabled: boolean;
-  overlayHeightPct: number;
-  overlayOpacityPct: number;
+  overlayHeight: number;    // 0.10..0.50 fraction
+  overlayOpacity: number;   // 0.10..0.50 fraction
+  headingEnabled: boolean;
+  headingColor: string;
 };
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
@@ -32,6 +34,13 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
     if (line) lines.push(line);
   }
   return lines;
+}
+
+function splitHeading(body: string) {
+  const hardBreak = body.indexOf('\n\n');
+  if (hardBreak >= 0) return [body.slice(0, hardBreak), body.slice(hardBreak + 2)];
+  const m = body.match(/([^.?!\n]+[.?!]?)([\s\S]*)/);
+  return m ? [m[1].trim(), m[2].trim()] : [body, ''];
 }
 
 function drawUsername(
@@ -146,22 +155,36 @@ export async function renderSlideToCanvas(
   ctx.fillStyle = textColor;
 
   if (settings.overlayEnabled) {
-    const h = height * (settings.overlayHeightPct / 100);
-    const g = ctx.createLinearGradient(0, height - h, 0, height);
-    g.addColorStop(0, 'rgba(0,0,0,0)');
-    g.addColorStop(1, `rgba(0,0,0,${settings.overlayOpacityPct/100})`);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, height - h, width, h);
-    ctx.fillStyle = textColor;
+    const h = Math.round(settings.overlayHeight * height);
+    if (h > 0) {
+      const grad = ctx.createLinearGradient(0, height, 0, height - h);
+      const [r,g,b] = theme === 'dark' ? [0,0,0] : [255,255,255];
+      grad.addColorStop(0, `rgba(${r},${g},${b},${settings.overlayOpacity})`);
+      grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, height - h, width, h);
+      ctx.fillStyle = textColor;
+    }
   }
 
-  const slideText = slide.body || '';
-  const lines = wrapText(ctx, slideText, TEXT_BOX_WIDTH);
-  let y = (height - BOTTOM) - (lines.length - 1) * lineHeightPx;
-  for (const line of lines) {
-    ctx.fillText(line, TEXT_BOX_LEFT, y);
-    y += lineHeightPx;
+  let slideText = slide.body || '';
+  let heading = '';
+  if (settings.headingEnabled) {
+    const parts = splitHeading(slideText);
+    heading = parts[0];
+    slideText = parts[1];
   }
+  const headingLines = settings.headingEnabled && heading ? wrapText(ctx, heading, TEXT_BOX_WIDTH) : [];
+  const bodyLines = wrapText(ctx, slideText, TEXT_BOX_WIDTH);
+  let y = (height - BOTTOM) - (headingLines.length + bodyLines.length - 1) * lineHeightPx;
+  if (settings.headingEnabled && headingLines.length) {
+    ctx.font = `${style} ${headingWeight} ${fontSize}px "${headingFamily.replaceAll('"','\\"')}"`;
+    ctx.fillStyle = settings.headingColor;
+    for (const line of headingLines) { ctx.fillText(line, TEXT_BOX_LEFT, y); y += lineHeightPx; }
+    ctx.font = `${style} ${bodyWeight} ${fontSize}px "${bodyFamily.replaceAll('"','\\"')}"`;
+    ctx.fillStyle = textColor;
+  }
+  for (const line of bodyLines) { ctx.fillText(line, TEXT_BOX_LEFT, y); y += lineHeightPx; }
 
   drawUsername(ctx, '@' + username.replace(/^@/, ''), width, height, PADDING, style, headingFamily, headingWeight);
   if (page) {
