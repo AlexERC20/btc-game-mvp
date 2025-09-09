@@ -1,3 +1,20 @@
 .builder-preview {
   padding: 0 12px 100px;
 }
+
+.segmented {
+  display: flex;
+  gap: 4px;
+  background: rgba(255,255,255,0.06);
+  padding: 4px;
+  border-radius: 16px;
+}
+.segmented__item {
+  flex: 1;
+  padding: 12px 0;
+  border-radius: 12px;
+  text-align: center;
+}
+.segmented__item--active {
+  background: rgba(255,255,255,0.12);
+}
