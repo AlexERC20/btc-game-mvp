@@ -15,6 +15,11 @@ export type CarouselSettings = {
   overlayOpacity: number;   // 0.10..0.50 fraction
   headingEnabled: boolean;
   headingColor: string;
+  textSize: number;         // 0..1 relative scale
+  lineHeight: number;       // 1.1..1.6
+  textPosition: 'top'|'bottom'|'center';
+  template: Theme;
+  quoteMode: boolean;
 };
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
@@ -193,14 +198,16 @@ export async function renderSlideToCanvas(
     ctx.fillRect(0, 0, width, height);
   }
 
-  const lineHeight = slide.overrides?.lineHeight ?? defaults.lineHeight;
   const textColor = defaults.bodyColor;
-  const fontSize = Math.round(width * 0.045);
+  const paddingX = frame.paddingX;
+  const safeTop = frame.paddingTop;
+  const safeBottom = frame.paddingBottom + frame.safeNickname + frame.safePagination;
+  const TEXT_BOX_LEFT = paddingX;
+  const TEXT_BOX_WIDTH = width - paddingX * 2;
+
+  const fontSize = Math.round(34 + 26 * (settings.textSize || 0));
+  const lineHeight = slide.overrides?.lineHeight ?? settings.lineHeight;
   const lineHeightPx = Math.round(fontSize * lineHeight);
-  const PADDING = Math.round(width * 0.06);
-  const BOTTOM = Math.round(height * 0.11);
-  const TEXT_BOX_LEFT = PADDING;
-  const TEXT_BOX_WIDTH = width - PADDING - PADDING;
 
   const family = settings.fontFamily === 'SF Pro'
     ? '-apple-system, BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji",sans-serif'
@@ -233,26 +240,39 @@ export async function renderSlideToCanvas(
 
   let slideText = slide.body || '';
   let heading = '';
-  if (settings.headingEnabled) {
+  if (settings.headingEnabled && !settings.quoteMode) {
     const parts = splitHeading(slideText);
     heading = parts[0];
     slideText = parts[1];
   }
-  const headingLines = settings.headingEnabled && heading ? wrapText(ctx, heading, TEXT_BOX_WIDTH) : [];
+  const headingLines = settings.headingEnabled && !settings.quoteMode && heading ? wrapText(ctx, heading, TEXT_BOX_WIDTH) : [];
   const bodyLines = wrapText(ctx, slideText, TEXT_BOX_WIDTH);
-  let y = (height - BOTTOM) - (headingLines.length + bodyLines.length - 1) * lineHeightPx;
-  if (settings.headingEnabled && headingLines.length) {
+  const totalLines = headingLines.length + bodyLines.length;
+  let y: number;
+  let x = TEXT_BOX_LEFT;
+  if (settings.quoteMode || settings.textPosition === 'center') {
+    const totalH = totalLines * lineHeightPx;
+    y = Math.round((height - safeBottom - safeTop - totalH) / 2 + safeTop + lineHeightPx);
+    x = TEXT_BOX_LEFT + TEXT_BOX_WIDTH / 2;
+    ctx.textAlign = 'center';
+  } else if (settings.textPosition === 'top') {
+    y = safeTop + lineHeightPx;
+  } else {
+    y = height - safeBottom - totalLines * lineHeightPx + lineHeightPx;
+  }
+  if (settings.headingEnabled && !settings.quoteMode && headingLines.length) {
     ctx.font = `${style} ${headingWeight} ${fontSize}px "${headingFamily.replaceAll('"','\\"')}"`;
     ctx.fillStyle = settings.headingColor;
-    for (const line of headingLines) { ctx.fillText(line, TEXT_BOX_LEFT, y); y += lineHeightPx; }
+    for (const line of headingLines) { ctx.fillText(line, x, y); y += lineHeightPx; }
     ctx.font = `${style} ${bodyWeight} ${fontSize}px "${bodyFamily.replaceAll('"','\\"')}"`;
     ctx.fillStyle = textColor;
   }
-  for (const line of bodyLines) { ctx.fillText(line, TEXT_BOX_LEFT, y); y += lineHeightPx; }
+  for (const line of bodyLines) { ctx.fillText(line, x, y); y += lineHeightPx; }
+  if (settings.quoteMode || settings.textPosition === 'center') ctx.textAlign = 'left';
 
-  drawUsername(ctx, '@' + username.replace(/^@/, ''), width, height, PADDING, style, headingFamily, headingWeight);
+  drawUsername(ctx, '@' + username.replace(/^@/, ''), width, height, paddingX, style, headingFamily, headingWeight);
   if (page) {
-    drawPager(ctx, width, height, PADDING, page.index, page.total, page.showArrow);
+    drawPager(ctx, width, height, paddingX, page.index, page.total, page.showArrow);
   }
 }
 

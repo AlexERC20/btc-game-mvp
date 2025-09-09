@@ -9,7 +9,7 @@ import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
 import "./styles/preview-list.css";
 import { getWelcomeText, SEED_KEY } from "./core/seed";
-import type { Slide, Theme, CanvasMode, PhotoMeta } from "./types";
+import type { Slide, CanvasMode, PhotoMeta } from "./types";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
 
@@ -19,9 +19,6 @@ export default function App() {
   const [slides, setSlides] = useState<Slide[]>([]);
   const [count, setCount] = useState<SlideCount>("auto");
   const [username, setUsername] = useState("@username");
-  const [theme, setTheme] = useState<Theme>("photo");
-  const [fontSize, setFontSize] = useState(42);
-  const [lineHeight, setLineHeight] = useState(1.32);
   const [mode, setMode] = useState<CanvasMode>('carousel');
   const [exporting, setExporting] = useState(false);
   const [openTemplate, setOpenTemplate] = useState(false);
@@ -29,10 +26,13 @@ export default function App() {
   const [openFonts, setOpenFonts] = useState(false);
   const [openImages, setOpenImages] = useState(false);
   const [openInfo, setOpenInfo] = useState(false);
-  const [textPosition, setTextPosition] = useState<'top'|'bottom'>('bottom');
   const [autoSplitEnabled, setAutoSplitEnabled] = useState(true);
   const [splitPrompt, setSplitPrompt] = useState<number|null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const prevTextPos = useRef<'top'|'bottom'>('bottom');
   const promptedRef = useRef<Record<string, boolean>>({});
+
+  const genId = () => Math.random().toString(36).slice(2);
 
   const DEFAULT_SETTINGS: CarouselSettings = {
     fontFamily: 'Inter',
@@ -45,6 +45,11 @@ export default function App() {
     overlayOpacity: 0.40,
     headingEnabled: false,
     headingColor: '#6E56CF',
+    textSize: 0.46,
+    lineHeight: 1.35,
+    textPosition: 'bottom',
+    template: 'photo',
+    quoteMode: false,
   };
   const [settings, setSettings] = useState<CarouselSettings>(() => {
     try {
@@ -58,21 +63,38 @@ export default function App() {
     localStorage.setItem('carouselSettings', JSON.stringify(settings));
   }, [settings]);
 
+  const PRESETS = {
+    minimal: { textSize: 0.46, lineHeight: 1.4, textPosition: 'bottom', template: 'photo', overlayEnabled: false, headingEnabled: false, quoteMode: false },
+    light:   { textSize: 0.52, lineHeight: 1.35, textPosition: 'bottom', template: 'light', overlayEnabled: true, overlayHeight: 0.40, overlayOpacity: 0.40, headingEnabled: true, headingColor: '#4361EE', quoteMode: false },
+    focus:   { textSize: 0.58, lineHeight: 1.30, textPosition: 'bottom', template: 'dark',  overlayEnabled: true, overlayHeight: 0.40, overlayOpacity: 0.70, headingEnabled: true, headingColor: '#6E56CF', quoteMode: false },
+    quote:   { textSize: 0.62, lineHeight: 1.25, textPosition: 'center', template: 'dark', overlayEnabled: false, headingEnabled: false, quoteMode: true },
+  } as const;
+
+  const applyPreset = (name: keyof typeof PRESETS) => {
+    setSettings(prev => ({ ...prev, ...PRESETS[name] }));
+  };
+
+  const isPresetActive = (name: keyof typeof PRESETS) => {
+    const p = PRESETS[name];
+    return ['textSize','lineHeight','textPosition','template','overlayEnabled','headingEnabled','quoteMode'].every(k => (settings as any)[k] === (p as any)[k]);
+  };
+
   const onTextChange = (value: string) => {
     setRawText(value);
   };
 
   const recompute = useCallback(() => {
-    const texts = splitTextIntoSlides(rawText, mode, { targetCount: photos.length });
-    const max = Math.max(texts.length, photos.length);
-    const lastImage = photos.map(p => p.url).filter(Boolean).pop();
-    const computed: Slide[] = [];
-    for (let i = 0; i < max; i++) {
-      computed.push({ body: texts[i] || '', image: photos[i]?.url || lastImage });
-    }
-    const maxN = count === "auto" ? computed.length : Math.min(computed.length, count as number);
-    setSlides(computed.slice(0, maxN));
-  }, [mode, rawText, photos, count]);
+    const texts = splitTextIntoSlides(rawText, mode);
+    setSlides(prev => {
+      const maxN = count === 'auto' ? texts.length : Math.min(texts.length, count as number);
+      const next: Slide[] = [];
+      for (let i = 0; i < maxN; i++) {
+        const ex = prev[i];
+        next.push({ id: ex?.id || genId(), body: texts[i] || '', imageId: ex?.imageId });
+      }
+      return next;
+    });
+  }, [mode, rawText, count]);
 
   useEffect(() => {
     recompute();
@@ -83,8 +105,6 @@ export default function App() {
     res.splice(index, 1, ...items);
     return res;
   }
-
-  const genId = () => Math.random().toString(36).slice(2);
 
   const onReorder = (from: number, to: number) => {
     setSlides(prev => {
@@ -115,10 +135,11 @@ export default function App() {
       ? '-apple-system, BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji",sans-serif'
       : settings.fontFamily;
     const fontStyle = settings.fontItalic ? 'italic' : 'normal';
+    const fontSizePx = Math.round(34 + 26 * settings.textSize);
     const style = {
       fontFamily: settings.fontApplyBody ? fFamily : base,
-      fontSize,
-      lineHeight,
+      fontSize: fontSizePx,
+      lineHeight: settings.lineHeight,
       fontStyle,
       fontWeight: settings.fontApplyBody ? settings.fontWeight : 400,
     };
@@ -133,7 +154,7 @@ export default function App() {
         break;
       }
     }
-  }, [slides, fontSize, lineHeight, settings, mode, autoSplitEnabled, textPosition]);
+  }, [slides, settings, mode, autoSplitEnabled]);
 
   const handleSplit = () => {
     if (splitPrompt == null) return;
@@ -150,10 +171,11 @@ export default function App() {
       ? '-apple-system, BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",Roboto,Inter,"Helvetica Neue",Arial,"Noto Sans","Apple Color Emoji","Segoe UI Emoji",sans-serif'
       : settings.fontFamily;
     const fontStyle = settings.fontItalic ? 'italic' : 'normal';
+    const fontSizePx = Math.round(34 + 26 * settings.textSize);
     const style = {
       fontFamily: settings.fontApplyBody ? fFamily : base,
-      fontSize,
-      lineHeight,
+      fontSize: fontSizePx,
+      lineHeight: settings.lineHeight,
       fontStyle,
       fontWeight: settings.fontApplyBody ? settings.fontWeight : 400,
     };
@@ -169,9 +191,32 @@ export default function App() {
 
   const handleCancelSplit = () => setSplitPrompt(null);
 
-  const onPhotosPicked = (urls: string[]) => {
-    const next: PhotoMeta[] = urls.map((url, idx) => ({ id: `${Date.now()}_${idx}`, url }));
+  const addPhotos = (urls: string[]) => {
+    const next: PhotoMeta[] = urls.map(url => ({ id: genId(), url }));
     setPhotos(prev => [...prev, ...next]);
+  };
+
+  const selectPhoto = (id: string) => {
+    setSlides(prev => prev.map((s,i)=> i===activeIndex ? { ...s, imageId:id } : s));
+    setOpenImages(false);
+  };
+
+  const deletePhoto = (id: string) => {
+    setPhotos(prev => prev.filter(p => p.id !== id));
+  };
+
+  const movePhoto = (id: string, dir: -1 | 1) => {
+    setPhotos(prev => {
+      const idx = prev.findIndex(p=>p.id===id);
+      if (idx<0) return prev;
+      const next = prev.slice();
+      const [item] = next.splice(idx,1);
+      let to = idx + dir;
+      if (to < 0) to = 0;
+      if (to > next.length) to = next.length;
+      next.splice(to,0,item);
+      return next;
+    });
   };
 
 
@@ -194,14 +239,15 @@ export default function App() {
     try {
       setExporting(true);
       await exportAll({
-        slides,
-        theme,
+        slides: slides.map(s => ({ ...s, image: photos.find(p=>p.id===s.imageId)?.url })),
+        theme: settings.template,
         username: username.replace(/^@/, ''),
         mode: mode === 'story' ? 'story' : 'carousel',
         settings,
         defaults: {
-          fontSize,
-          lineHeight,
+          fontSize: Math.round(34 + 26 * settings.textSize),
+          lineHeight: settings.lineHeight,
+          bodyColor: '#fff',
           titleColor: '#fff',
           matchTitleToBody: true,
         },
@@ -235,7 +281,7 @@ export default function App() {
     '--font-style-heading': settings.fontApplyHeading ? fontStyle : 'normal',
     '--overlay-height': settings.overlayHeight,
     '--overlay-opacity': settings.overlayEnabled ? settings.overlayOpacity : 0,
-    '--overlay-rgb': theme === 'dark' ? '0,0,0' : '255,255,255',
+    '--overlay-rgb': settings.template === 'dark' ? '0,0,0' : '255,255,255',
     '--heading-color': settings.headingColor,
   } as React.CSSProperties;
 
@@ -314,7 +360,8 @@ export default function App() {
           {slides.length ? (
             <div className="preview-list dnd-area" onDragOver={(e)=>e.preventDefault()}>
               {slides.map((s, i) => {
-                const [h, b] = settings.headingEnabled ? splitHeading(s.body || '') : ['', s.body];
+                const img = photos.find(p=>p.id===s.imageId)?.url;
+                const [h, b] = settings.headingEnabled && !settings.quoteMode ? splitHeading(s.body || '') : ['', s.body];
                 return (
                   <PreviewCard
                     key={s.id}
@@ -325,12 +372,13 @@ export default function App() {
                     onDelete={() => deleteSlide(i)}
                     style={cardStyle}
                     mode={mode}
-                    image={s.image}
-                    text={(settings.headingEnabled
+                    image={img}
+                    text={(settings.headingEnabled && !settings.quoteMode
                         ? (<>{h && <span className="preview-heading">{h}</span>}{b ? <><br/>{b}</> : null}</>)
                         : s.body) as any}
                     username={username.replace(/^@/, '')}
-                    textPosition={textPosition}
+                    textPosition={settings.quoteMode ? 'center' : settings.textPosition}
+                    onClick={() => setActiveIndex(i)}
                   />
                 );
               })}
@@ -345,15 +393,14 @@ export default function App() {
         <div className="segmented mb-4">
           {(["photo","light","dark"] as const).map(tpl=>(
             <button key={tpl}
-              className={`segmented__item ${theme===tpl?"segmented__item--active":""}`}
+              className={`segmented__item ${settings.template===tpl?"segmented__item--active":""}`}
               onClick={()=>{
-                setTheme(tpl);
                 if (tpl==='photo') {
-                  setSettings({...settings, overlayEnabled:false});
+                  setSettings({...settings, template:tpl, overlayEnabled:false});
                 } else if (tpl==='light') {
-                  setSettings({...settings, overlayEnabled:true, overlayHeight:0.40, overlayOpacity:0.40});
+                  setSettings({...settings, template:tpl, overlayEnabled:true, overlayHeight:0.40, overlayOpacity:0.40});
                 } else {
-                  setSettings({...settings, overlayEnabled:true, overlayHeight:0.40, overlayOpacity:0.70});
+                  setSettings({...settings, template:tpl, overlayEnabled:true, overlayHeight:0.40, overlayOpacity:0.70});
                 }
                 setOpenTemplate(false);
               }}
@@ -376,19 +423,30 @@ export default function App() {
         <div className="space-y-2">
           <label className="flex items-center justify-between">
             <span>Text size</span>
-            <input type="range" min={34} max={60} value={fontSize} onChange={e=>setFontSize(Number(e.target.value))}/>
+            <input type="range" min={34} max={60} value={Math.round(34 + settings.textSize*26)} onChange={e=>setSettings({...settings, textSize:(Number(e.target.value)-34)/26})}/>
           </label>
           <label className="flex items-center justify-between">
             <span>Line height</span>
-            <input type="range" min={1.1} max={1.6} step={0.05} value={lineHeight} onChange={e=>setLineHeight(Number(e.target.value))}/>
+            <input type="range" min={1.1} max={1.6} step={0.05} value={settings.lineHeight} onChange={e=>setSettings({...settings, lineHeight:Number(e.target.value)})}/>
           </label>
           <label className="flex items-center gap-2">
-            <input type="radio" checked={textPosition==='bottom'} onChange={()=>setTextPosition('bottom')} />
+            <input type="radio" checked={settings.textPosition==='bottom'} onChange={()=>setSettings({...settings, textPosition:'bottom'})} />
             Text at bottom
           </label>
           <label className="flex items-center gap-2">
-            <input type="radio" checked={textPosition==='top'} onChange={()=>setTextPosition('top')} />
+            <input type="radio" checked={settings.textPosition==='top'} onChange={()=>setSettings({...settings, textPosition:'top'})} />
             Text at top
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={settings.quoteMode} onChange={e=>{
+              if (e.target.checked) {
+                prevTextPos.current = settings.textPosition as 'top'|'bottom';
+                setSettings({...settings, quoteMode:true, textPosition:'center'});
+              } else {
+                setSettings({...settings, quoteMode:false, textPosition:prevTextPos.current});
+              }
+            }}/>
+            Quote mode
           </label>
           <div className="pt-2 space-y-2 border-t border-neutral-700 mt-2">
             <label className="flex items-center gap-2">
@@ -412,6 +470,14 @@ export default function App() {
             <div className="flex gap-2">
               {['#6E56CF','#4361EE','#2BB673','#F2C94C','#EB5757'].map(c=>(
                 <button key={c} className="w-6 h-6 rounded-full border border-neutral-700" style={{background:c}} onClick={()=>setSettings({...settings, headingColor:c})}/>
+              ))}
+            </div>
+          </div>
+          <div className="pt-2 space-y-2 border-t border-neutral-700 mt-2">
+            <div className="text-sm font-semibold">Presets</div>
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(PRESETS) as (keyof typeof PRESETS)[]).map(p => (
+                <button key={p} onClick={()=>applyPreset(p)} className={`px-3 py-1.5 rounded-xl border border-neutral-700 ${isPresetActive(p)?'bg-neutral-800':''}`}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>
               ))}
             </div>
           </div>
@@ -452,8 +518,12 @@ export default function App() {
 
       <ImagesModal
         open={openImages}
+        photos={photos}
         onClose={()=>setOpenImages(false)}
-        onConfirm={(urls:string[])=>{ onPhotosPicked(urls); setOpenImages(false); }}
+        onAdd={addPhotos}
+        onSelect={selectPhoto}
+        onDelete={deletePhoto}
+        onMove={movePhoto}
       />
 
       <BottomSheet open={openInfo} onClose={()=>setOpenInfo(false)} title="Info">
