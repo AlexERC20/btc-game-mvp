@@ -7,7 +7,7 @@ type Props = {
   text: string;
   username: string;
   textPosition?: 'bottom' | 'top';
-};
+} & React.HTMLAttributes<HTMLDivElement>;
 
 export const PreviewCard: React.FC<Props> = ({
   mode,
@@ -15,6 +15,8 @@ export const PreviewCard: React.FC<Props> = ({
   text,
   username,
   textPosition = 'bottom',
+  style,
+  ...rest
 }) => {
   const ratio = mode === 'story' ? '9 / 16' : '4 / 5';
 
@@ -24,8 +26,10 @@ export const PreviewCard: React.FC<Props> = ({
       style={{
         // основное — держит размер всегда
         '--ratio': ratio,
+        ...((style ?? {}) as React.CSSProperties),
       } as React.CSSProperties}
       data-mode={mode}
+      {...rest}
     >
       {/* Fallback для браузеров без aspect-ratio */}
       <div className="preview-card__ratio-fallback" aria-hidden />

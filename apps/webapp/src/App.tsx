@@ -161,6 +161,8 @@ export default function App() {
 
   const handleDragStart = (idx: number) => (e: React.DragEvent) => {
     dragIndex.current = idx;
+    e.dataTransfer.setData('text/plain', String(idx));
+    e.dataTransfer.effectAllowed = 'move';
     (e.currentTarget as HTMLElement).classList.add('dragging', 'shadow-lg');
   };
   const handleDragEnd = (e: React.DragEvent) => {
@@ -177,9 +179,8 @@ export default function App() {
     const to = Number(target.dataset.index);
     dragIndex.current = null;
     if (from === to) return;
-    const reordered = reorder(slides, from, to);
-    setSlides(reordered);
-    setRawText(reordered.map(s => s.body || '').join('\n\n'));
+    setSlides(reorder(slides, from, to));
+    setPhotos(reorder(photos, from, to));
   };
 
   useEffect(() => {
@@ -388,6 +389,7 @@ export default function App() {
 .preview-card::after {
   height: calc(var(--overlay-height,0.4) * 100%);
   background: linear-gradient(0deg, rgba(var(--overlay-rgb,0,0,0),var(--overlay-opacity,0)) 0%, rgba(var(--overlay-rgb,0,0,0),0) 100%);
+  pointer-events: none;
 }
 .preview-heading {
   font-weight: 700;
@@ -423,28 +425,27 @@ export default function App() {
 
         <div className="lg:col-span-7 builder-preview">
           {slides.length ? (
-            <div className="preview-list" onDragOver={handleDragOver} onDrop={handleDrop}>
+            <div className="preview-list">
               {slides.map((s, i) => {
                 const [h, b] = settings.headingEnabled ? splitHeading(s.body || '') : ['', s.body];
                 return (
-                  <div
+                  <PreviewCard
                     key={s.id}
                     data-index={i}
                     draggable
                     onDragStart={handleDragStart(i)}
+                    onDragOver={handleDragOver}
+                    onDrop={handleDrop}
                     onDragEnd={handleDragEnd}
                     style={cardStyle}
-                  >
-                    <PreviewCard
-                      mode={mode}
-                      image={s.image}
-                      text={(settings.headingEnabled
-                          ? (<>{h && <span className="preview-heading">{h}</span>}{b ? <><br/>{b}</> : null}</>)
-                          : s.body) as any}
-                      username={username.replace(/^@/, '')}
-                      textPosition={textPosition}
-                    />
-                  </div>
+                    mode={mode}
+                    image={s.image}
+                    text={(settings.headingEnabled
+                        ? (<>{h && <span className="preview-heading">{h}</span>}{b ? <><br/>{b}</> : null}</>)
+                        : s.body) as any}
+                    username={username.replace(/^@/, '')}
+                    textPosition={textPosition}
+                  />
                 );
               })}
             </div>
