@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import '../styles/preview-card.css';
+import { IconMoveUp, IconMoveDown, IconTrash, IconGrip } from '../ui/icons';
 
 type Props = {
   mode: 'carousel' | 'story'; // 4:5 | 9:16
@@ -9,6 +10,9 @@ type Props = {
   textPosition?: 'bottom' | 'top';
   index?: number;
   onReorder?: (from: number, to: number) => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  onDelete?: () => void;
 } & React.HTMLAttributes<HTMLDivElement>;
 
 export const PreviewCard: React.FC<Props> = ({
@@ -19,10 +23,26 @@ export const PreviewCard: React.FC<Props> = ({
   textPosition = 'bottom',
   index,
   onReorder,
+  onMoveUp,
+  onMoveDown,
+  onDelete,
   style,
   ...rest
 }) => {
   const ratio = mode === 'story' ? '9 / 16' : '4 / 5';
+  const [show, setShow] = useState(false);
+  const startX = useRef<number | null>(null);
+
+  const handleStart = (e: React.TouchEvent) => {
+    startX.current = e.touches[0].clientX;
+  };
+  const handleEnd = (e: React.TouchEvent) => {
+    if (startX.current === null) return;
+    const dx = e.changedTouches[0].clientX - startX.current;
+    if (dx < -30) setShow(true);
+    if (dx > 30) setShow(false);
+    startX.current = null;
+  };
 
   return (
     <div
@@ -44,6 +64,8 @@ export const PreviewCard: React.FC<Props> = ({
         const to = index!;
         if (!Number.isNaN(from) && from !== to) onReorder(from, to);
       }) : undefined}
+      onTouchStart={handleStart}
+      onTouchEnd={handleEnd}
       {...rest}
     >
       {/* Fallback для браузеров без aspect-ratio */}
@@ -66,6 +88,19 @@ export const PreviewCard: React.FC<Props> = ({
 
       {/* Пэйджер (опционально) */}
       {/* <div className="preview-card__pager">1/5 →</div> */}
+
+      <div className={`preview-card__actions ${show ? 'preview-card__actions--show' : ''}`}>
+        <IconGrip size={20} className="mb-1" />
+        <button aria-label="Move up" onClick={onMoveUp} onDragStart={e=>e.stopPropagation()} className="w-11 h-11 flex items-center justify-center active:scale-[0.96]">
+          <IconMoveUp size={20} />
+        </button>
+        <button aria-label="Move down" onClick={onMoveDown} onDragStart={e=>e.stopPropagation()} className="w-11 h-11 flex items-center justify-center active:scale-[0.96]">
+          <IconMoveDown size={20} />
+        </button>
+        <button aria-label="Delete" onClick={onDelete} onDragStart={e=>e.stopPropagation()} className="w-11 h-11 flex items-center justify-center text-[var(--danger)] active:scale-[0.96]">
+          <IconTrash size={20} />
+        </button>
+      </div>
     </div>
   );
 };
