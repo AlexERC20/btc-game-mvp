@@ -11,6 +11,7 @@ html, body, #root { height: 100%; }
 * { -webkit-tap-highlight-color: transparent; }
 body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
 [data-floating-label="export"] { display: none !important; }
+.dnd-area { touch-action: none; }
 @layer components {
   .slideCard {
     width: min(88vw, 320px);

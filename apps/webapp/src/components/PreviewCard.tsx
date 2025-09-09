@@ -7,6 +7,8 @@ type Props = {
   text: string;
   username: string;
   textPosition?: 'bottom' | 'top';
+  index?: number;
+  onReorder?: (from: number, to: number) => void;
 } & React.HTMLAttributes<HTMLDivElement>;
 
 export const PreviewCard: React.FC<Props> = ({
@@ -15,6 +17,8 @@ export const PreviewCard: React.FC<Props> = ({
   text,
   username,
   textPosition = 'bottom',
+  index,
+  onReorder,
   style,
   ...rest
 }) => {
@@ -29,6 +33,17 @@ export const PreviewCard: React.FC<Props> = ({
         ...((style ?? {}) as React.CSSProperties),
       } as React.CSSProperties}
       data-mode={mode}
+      draggable={typeof index === 'number'}
+      onDragStart={typeof index === 'number' ? (e => {
+        e.dataTransfer.setData('text/plain', String(index));
+      }) : undefined}
+      onDragOver={typeof index === 'number' ? (e => e.preventDefault()) : undefined}
+      onDrop={typeof index === 'number' && onReorder ? (e => {
+        e.preventDefault();
+        const from = Number(e.dataTransfer.getData('text/plain'));
+        const to = index!;
+        if (!Number.isNaN(from) && from !== to) onReorder(from, to);
+      }) : undefined}
       {...rest}
     >
       {/* Fallback для браузеров без aspect-ratio */}

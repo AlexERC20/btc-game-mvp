@@ -85,7 +85,6 @@ export default function App() {
   const [autoSplitEnabled, setAutoSplitEnabled] = useState(true);
   const [splitPrompt, setSplitPrompt] = useState<number|null>(null);
   const promptedRef = useRef<Record<string, boolean>>({});
-  const dragIndex = useRef<number | null>(null);
 
   const DEFAULT_SETTINGS: CarouselSettings = {
     fontFamily: 'Inter',
@@ -131,13 +130,6 @@ export default function App() {
     recompute();
   }, [recompute]);
 
-  function reorder<T>(arr: T[], from: number, to: number) {
-    const a = arr.slice();
-    const [item] = a.splice(from, 1);
-    a.splice(to, 0, item);
-    return a;
-  }
-
   function insertAfter<T>(arr: T[], index: number, items: T[]): T[] {
     const res = arr.slice();
     res.splice(index, 1, ...items);
@@ -146,28 +138,13 @@ export default function App() {
 
   const genId = () => Math.random().toString(36).slice(2);
 
-  const handleDragStart = (idx: number) => (e: React.DragEvent) => {
-    dragIndex.current = idx;
-    e.dataTransfer.setData('text/plain', String(idx));
-    e.dataTransfer.effectAllowed = 'move';
-    (e.currentTarget as HTMLElement).classList.add('dragging', 'shadow-lg');
-  };
-  const handleDragEnd = (e: React.DragEvent) => {
-    (e.currentTarget as HTMLElement).classList.remove('dragging', 'shadow-lg');
-  };
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const from = dragIndex.current;
-    const target = (e.target as HTMLElement).closest('[data-index]') as HTMLElement | null;
-    if (from == null || !target) return;
-    const to = Number(target.dataset.index);
-    dragIndex.current = null;
-    if (from === to) return;
-    setSlides(reorder(slides, from, to));
-    setPhotos(reorder(photos, from, to));
+  const onReorder = (from: number, to: number) => {
+    setSlides(prev => {
+      const next = prev.slice();
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -264,17 +241,15 @@ export default function App() {
       await exportAll({
         slides,
         theme,
+        username: username.replace(/^@/, ''),
+        mode: mode === 'story' ? 'story' : 'carousel',
+        settings,
         defaults: {
           fontSize,
           lineHeight,
-          textPosition,
-          bodyColor: '#fff',
           titleColor: '#fff',
           matchTitleToBody: true,
         },
-        username,
-        mode,
-        settings,
         quality: 0.95,
       });
     } catch (e) {
@@ -283,8 +258,6 @@ export default function App() {
       setExporting(false);
     }
   };
-
-  const canExport = slides.length > 0;
 
   function splitHeading(body: string) {
     const hardBreak = body.indexOf('\n\n');
@@ -384,18 +357,14 @@ export default function App() {
 
         <div className="lg:col-span-7 builder-preview">
           {slides.length ? (
-            <div className="preview-list">
+            <div className="preview-list dnd-area" onDragOver={(e)=>e.preventDefault()}>
               {slides.map((s, i) => {
                 const [h, b] = settings.headingEnabled ? splitHeading(s.body || '') : ['', s.body];
                 return (
                   <PreviewCard
                     key={s.id}
-                    data-index={i}
-                    draggable
-                    onDragStart={handleDragStart(i)}
-                    onDragOver={handleDragOver}
-                    onDrop={handleDrop}
-                    onDragEnd={handleDragEnd}
+                    index={i}
+                    onReorder={onReorder}
                     style={cardStyle}
                     mode={mode}
                     image={s.image}
@@ -562,7 +531,7 @@ export default function App() {
         onPhotos={()=>setOpenImages(true)}
         onInfo={()=>setOpenInfo(true)}
         onExport={handleExport}
-        disabledExport={!slides.length || exporting || !canExport}
+        disabledExport={!slides.length || exporting}
         active={openTemplate?"template":openLayout?"layout":openFonts?"fonts":openImages?"photos":openInfo?"info":undefined}
       />
     </div>
