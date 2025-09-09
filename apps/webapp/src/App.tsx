@@ -99,8 +99,8 @@ export default function App() {
     fontApplyHeading: true,
     fontApplyBody: true,
     overlayEnabled: false,
-    overlayHeight: 0.30,
-    overlayOpacity: 0.20,
+    overlayHeight: 0.40,
+    overlayOpacity: 0.40,
     headingEnabled: false,
     headingColor: '#6E56CF',
   };
@@ -273,7 +273,7 @@ export default function App() {
   font-style: var(--font-style-heading);
 }
 .preview-card::after {
-  height: calc(var(--overlay-height,0.3) * 100%);
+  height: calc(var(--overlay-height,0.4) * 100%);
   background: linear-gradient(0deg, rgba(var(--overlay-rgb,0,0,0),var(--overlay-opacity,0)) 0%, rgba(var(--overlay-rgb,0,0,0),0) 100%);
 }
 .preview-heading {
@@ -344,9 +344,9 @@ export default function App() {
                 if (tpl==='photo') {
                   setSettings({...settings, overlayEnabled:false});
                 } else if (tpl==='light') {
-                  setSettings({...settings, overlayEnabled:true, overlayHeight:0.30, overlayOpacity:0.20});
+                  setSettings({...settings, overlayEnabled:true, overlayHeight:0.40, overlayOpacity:0.40});
                 } else {
-                  setSettings({...settings, overlayEnabled:true, overlayHeight:0.30, overlayOpacity:0.35});
+                  setSettings({...settings, overlayEnabled:true, overlayHeight:0.40, overlayOpacity:0.70});
                 }
                 setOpenTemplate(false);
               }}
