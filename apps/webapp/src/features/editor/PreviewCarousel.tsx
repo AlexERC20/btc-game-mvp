@@ -197,7 +197,7 @@ export function PreviewCarousel() {
         height: '100%',
         overflowY: 'auto',
         WebkitOverflowScrolling: 'touch',
-        overscrollBehaviorY: 'contain',
+        overscrollBehavior: 'contain',
         touchAction: 'pan-y',
       }}
     >

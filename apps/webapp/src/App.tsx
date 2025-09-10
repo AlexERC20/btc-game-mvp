@@ -8,7 +8,7 @@ import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
 import "./styles/preview-list.css";
 import { getWelcomeText, SEED_KEY } from "./core/seed";
-import { quickExportAll } from "./core/export";
+import { exportSlides } from "./features/carousel/utils/exportSlides";
 import { useStore } from "./state/store";
 import type { Slide, CanvasMode, PhotoMeta } from "./types";
 
@@ -333,9 +333,24 @@ export default function App() {
 
   const handleExport = async () => {
     if (exporting) return;
+    setExporting(true);
     try {
-      setExporting(true);
-      await quickExportAll();
+      const size = mode === 'story' ? { w: 1080, h: 1920 } : { w: 1080, h: 1350 };
+      await exportSlides(slides as any, {
+        w: size.w,
+        h: size.h,
+        overlay: { enabled: false, heightPct: 40, intensity: 2 },
+        text: {
+          font: 'Inter',
+          size: 44,
+          lineHeight: 1.2,
+          align: 'center',
+          color: '#fff',
+          titleColor: '#fff',
+          titleEnabled: false,
+        },
+        username,
+      });
     } finally {
       setExporting(false);
     }
@@ -693,7 +708,7 @@ export default function App() {
         </div>
       )}
       </div>
-      <BottomBar onExport={handleExport} disabledExport={!slides.length || exporting} />
+      <BottomBar onExport={handleExport} disabledExport={!slides.length || exporting} exporting={exporting} />
     </div>
     </>
   );

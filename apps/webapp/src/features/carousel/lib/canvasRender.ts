@@ -122,3 +122,15 @@ export async function renderSlideToCanvas(
   drawUsernameAndPager(ctx, settings.username, slide.index, settings.total);
   return canvas;
 }
+
+export async function renderSlideToBlob(
+  slide: Slide & { index: number },
+  settings: Parameters<typeof renderSlideToCanvas>[1],
+  type: 'image/jpeg' | 'image/png' = 'image/jpeg',
+  quality = 0.92,
+): Promise<Blob> {
+  const canvas = await renderSlideToCanvas(slide, settings);
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob failed'))), type, quality);
+  });
+}
