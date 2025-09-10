@@ -4,6 +4,7 @@ import { CANVAS_PRESETS } from "./core/constants";
 import BottomSheet from "./components/BottomSheet";
 import PreviewCard from "./components/PreviewCard";
 import BottomBar from "./components/BottomBar";
+import { ExportSheet } from "./features/editor/ExportSheet";
 import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
 import "./styles/preview-list.css";
@@ -706,28 +707,8 @@ export default function App() {
         </div>
       )}
       </div>
-      <BottomBar
-        onTemplate={() => setOpenTemplate(true)}
-        onLayout={() => setOpenLayout(true)}
-        onFonts={() => setOpenFonts(true)}
-        onPhotos={openPhotos}
-        onInfo={() => setOpenInfo(true)}
-        onExport={handleExport}
-        disabledExport={!slides.length || exporting}
-        active={
-          openTemplate
-            ? 'template'
-            : openLayout
-            ? 'layout'
-            : openFonts
-            ? 'fonts'
-            : isPhotosOpen
-            ? 'photos'
-            : openInfo
-            ? 'info'
-            : undefined
-        }
-      />
+      <BottomBar disabledExport={!slides.length || exporting} />
+      <ExportSheet />
     </div>
     </>
   );

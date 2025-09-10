@@ -59,13 +59,25 @@ body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-seri
     opacity: 0.8;
   }
 
-  .toolbar__item{
-    @apply flex flex-col items-center justify-center gap-2 px-2 py-3 rounded-xl hover:bg-white/5 active:bg-white/10;
+  .toolbar{
+    @apply grid grid-cols-6 gap-12;
+  }
+  .toolbar__btn{
+    @apply flex flex-col items-center justify-center rounded-[14px] px-1.5 py-2.5;
   }
   .toolbar__icon{
-    @apply w-6 h-6 flex items-center justify-center;
+    @apply w-6 h-6 leading-none;
   }
   .toolbar__label{
-    @apply text-[11px] leading-tight opacity-90;
+    @apply mt-1.5 text-[12px] opacity-90;
   }
+  @media (max-width:380px){
+    .toolbar{ @apply gap-8; }
+    .toolbar__label{ @apply text-[11px]; }
+  }
+  .sheet-backdrop{ @apply fixed inset-0 z-[60] bg-black/40; }
+  .sheet{ @apply fixed left-0 right-0 bottom-0 z-[70]; }
+  .sheet__inner{ @apply bg-neutral-900 text-white rounded-t-2xl border border-neutral-800 shadow-2xl pb-[env(safe-area-inset-bottom)]; }
+  .sheet__header{ @apply p-4 flex items-center justify-between border-b border-neutral-800; }
+  .sheet__body{ @apply p-4 max-h-[70vh] overflow-y-auto; }
 }

@@ -7,44 +7,28 @@ import {
   IconInfo,
   IconExport,
 } from '../ui/icons';
+import { useStore } from '../state/store';
 
-interface Props {
-  onTemplate: () => void;
-  onLayout: () => void;
-  onFonts: () => void;
-  onPhotos: () => void;
-  onInfo: () => void;
-  onExport: () => void;
-  disabledExport?: boolean;
-  active?: 'template' | 'layout' | 'fonts' | 'photos' | 'info';
-}
+export default function BottomBar({ disabledExport }: { disabledExport?: boolean }) {
+  const openSheet = useStore(s => s.openSheet);
+  const setOpenSheet = useStore(s => s.setOpenSheet);
 
-export default function BottomBar({
-  onTemplate,
-  onLayout,
-  onFonts,
-  onPhotos,
-  onInfo,
-  onExport,
-  disabledExport,
-  active,
-}: Props) {
   const Item = ({
     icon,
     label,
-    onClick,
+    name,
     disabled,
-    isActive,
   }: {
     icon: React.ReactNode;
     label: string;
-    onClick?: () => void;
+    name: typeof openSheet;
     disabled?: boolean;
-    isActive?: boolean;
   }) => (
     <button
-      className={`toolbar__item ${isActive ? 'text-white' : 'text-white/70'}`}
-      onClick={disabled ? undefined : onClick}
+      className={
+        'toolbar__btn' + (openSheet === name ? ' text-white' : ' text-white/70')
+      }
+      onClick={disabled ? undefined : () => setOpenSheet(name)}
       disabled={disabled}
       aria-label={label}
     >
@@ -54,15 +38,13 @@ export default function BottomBar({
   );
 
   return (
-    <div className="toolbar fixed inset-x-4 bottom-6 z-[60] rounded-2xl backdrop-blur-xl bg-black/50 ring-1 ring-white/10 p-10">
-      <div className="grid grid-cols-6 gap-8">
-        <Item icon={<IconTemplate className="h-6 w-6" />} label="Template" onClick={onTemplate} isActive={active === 'template'} />
-        <Item icon={<IconLayout className="h-6 w-6" />} label="Layout" onClick={onLayout} isActive={active === 'layout'} />
-        <Item icon={<IconFonts className="h-6 w-6" />} label="Fonts" onClick={onFonts} isActive={active === 'fonts'} />
-        <Item icon={<IconPhotos className="h-6 w-6" />} label="Photos" onClick={onPhotos} isActive={active === 'photos'} />
-        <Item icon={<IconInfo className="h-6 w-6" />} label="Info" onClick={onInfo} isActive={active === 'info'} />
-        <Item icon={<IconExport className="h-6 w-6" />} label="Export" onClick={onExport} disabled={disabledExport} />
-      </div>
+    <div className="toolbar fixed inset-x-0 bottom-0 z-[60] p-4 pb-[calc(env(safe-area-inset-bottom,12px)+14px)] bg-black/60 backdrop-blur-xl">
+      <Item icon={<IconTemplate className="h-6 w-6" />} label="Template" name="template" />
+      <Item icon={<IconLayout className="h-6 w-6" />} label="Layout" name="layout" />
+      <Item icon={<IconFonts className="h-6 w-6" />} label="Fonts" name="fonts" />
+      <Item icon={<IconPhotos className="h-6 w-6" />} label="Photos" name="photos" />
+      <Item icon={<IconInfo className="h-6 w-6" />} label="Info" name="info" />
+      <Item icon={<IconExport className="h-6 w-6" />} label="Export" name="export" disabled={disabledExport} />
     </div>
   );
 }

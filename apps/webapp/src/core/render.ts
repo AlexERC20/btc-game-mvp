@@ -179,12 +179,17 @@ export async function renderSlideToCanvas(
 
   if (slide.image) {
     const img = new Image();
+    img.crossOrigin = 'anonymous';
     img.src = slide.image;
-    try { await img.decode(); } catch { /* ignore */ }
+    try { await img.decode(); } catch (err) { console.warn('Image decode failed', err); }
     const r = Math.max(width / img.width, height / img.height);
     const dw = Math.round(img.width * r);
     const dh = Math.round(img.height * r);
-    ctx.drawImage(img, Math.round((width - dw) / 2), Math.round((height - dh) / 2), dw, dh);
+    try {
+      ctx.drawImage(img, Math.round((width - dw) / 2), Math.round((height - dh) / 2), dw, dh);
+    } catch (err) {
+      console.warn('drawImage failed', err);
+    }
   } else {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, width, height);
