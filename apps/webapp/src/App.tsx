@@ -34,7 +34,11 @@ export default function App() {
   const [activeIndex, setActiveIndex] = useState(0);
   const prevTextPos = useRef<'top'|'bottom'>('bottom');
   const promptedRef = useRef<Record<string, boolean>>({});
+codex/fix-vertical-swipe-sticking-issue-yt0786
+  const touchRef = useRef<{ x: number; y: number } | null>(null);
+=======
   const fileRef = useRef<HTMLInputElement>(null);
+main
 
   const genId = () => Math.random().toString(36).slice(2);
 
@@ -66,6 +70,13 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('carouselSettings', JSON.stringify(settings));
   }, [settings]);
+
+  useEffect(() => {
+    const hasModal =
+      openTemplate || openLayout || openFonts || openImages || openInfo;
+    document.body.classList.toggle('overflow-hidden', hasModal);
+    return () => document.body.classList.remove('overflow-hidden');
+  }, [openTemplate, openLayout, openFonts, openImages, openInfo]);
 
   const PRESETS = {
     minimal: { textSize: 0.46, lineHeight: 1.4, textPosition: 'bottom', template: 'photo', overlayEnabled: false, headingEnabled: false, quoteMode: false },
@@ -286,7 +297,27 @@ export default function App() {
     setIsPhotosOpen(false);
   };
 
+ codex/fix-vertical-swipe-sticking-issue-yt0786
+  const onSlideTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchRef.current = { x: t.clientX, y: t.clientY };
+  };
+  const onSlideTouchMove = (e: React.TouchEvent) => {
+    if (!touchRef.current) return;
+    const t = e.touches[0];
+    const dx = t.clientX - touchRef.current.x;
+    const dy = t.clientY - touchRef.current.y;
+    if (Math.abs(dx) > Math.abs(dy) + 6) {
+      e.preventDefault();
+    }
+  };
+  const onSlideTouchEnd = () => {
+    touchRef.current = null;
+  };
+
+
   const onPhotosCancel = () => setIsPhotosOpen(false);
+ main
 
   useEffect(() => {
     if (localStorage.getItem(SEED_KEY)) return;
@@ -397,7 +428,14 @@ export default function App() {
   color: var(--heading-color,#6E56CF);
 }
     `}</style>
-    <div className="min-h-full pt-[calc(12px+env(safe-area-inset-top))] px-4 sm:px-6 bg-neutral-950 text-neutral-100">
+    <div
+      id="scrollRoot"
+      className="relative min-h-full pt-[calc(12px+env(safe-area-inset-top))] px-4 sm:px-6 bg-neutral-950 text-neutral-100 overflow-y-auto overscroll-y-contain"
+      style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
+      onTouchStartCapture={onSlideTouchStart}
+      onTouchMoveCapture={onSlideTouchMove}
+      onTouchEndCapture={onSlideTouchEnd}
+    >
       <div className="pb-[88px] pb-[calc(88px+env(safe-area-inset-bottom))]">
         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-5 space-y-4">
@@ -438,7 +476,7 @@ export default function App() {
                     onMoveUp={() => onReorder(i, i - 1)}
                     onMoveDown={() => onReorder(i, i + 1)}
                     onDelete={() => deleteSlide(i)}
-                    style={cardStyle}
+                    style={{ ...cardStyle, touchAction: 'pan-y' }}
                     mode={mode}
                     image={img}
                     text={(settings.headingEnabled && !settings.quoteMode
@@ -672,6 +710,35 @@ export default function App() {
         </div>
       )}
 
+codex/fix-vertical-swipe-sticking-issue-yt0786
+      <div
+        className="fixed inset-x-0 bottom-0 z-[60] pointer-events-auto"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <BottomBar
+          onTemplate={() => setOpenTemplate(true)}
+          onLayout={() => setOpenLayout(true)}
+          onFonts={() => setOpenFonts(true)}
+          onPhotos={() => setOpenImages(true)}
+          onInfo={() => setOpenInfo(true)}
+          onExport={handleExport}
+          disabledExport={!slides.length || exporting}
+          active={
+            openTemplate
+              ? 'template'
+              : openLayout
+              ? 'layout'
+              : openFonts
+              ? 'fonts'
+              : openImages
+              ? 'photos'
+              : openInfo
+              ? 'info'
+              : undefined
+          }
+        />
+      </div>
+
       <BottomBar
         onTemplate={()=>setOpenTemplate(true)}
         onLayout={()=>setOpenLayout(true)}
@@ -682,6 +749,7 @@ export default function App() {
         disabledExport={!slides.length || exporting}
         active={openTemplate?"template":openLayout?"layout":openFonts?"fonts":isPhotosOpen?"photos":openInfo?"info":undefined}
       />
+main
     </div>
     </>
   );
