@@ -1,7 +1,7 @@
 .preview-list {
   display: grid;
   gap: 16px;
-  padding-bottom: calc(env(safe-area-inset-bottom, 12px) + 78px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 12px) + 96px);
   /* если у тебя горизонтальная лента – сделай flex + overflow-x */
   /* overflow-y: auto;  // для вертикального скролла */
   /* max-height: calc(100vh - 260px); // если нужно ограничить высоту секцией над списком */

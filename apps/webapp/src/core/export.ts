@@ -1,6 +1,27 @@
-import { renderSlideToCanvas, CarouselSettings } from './render';
+import { renderSlideToCanvas as renderSlideToCanvasFull, CarouselSettings } from './render';
 import type { Slide } from '../types';
-import { useStore } from '../state/store';
+import { useStore, getState } from '../state/store';
+import { renderSlideToCanvas } from '../features/carousel/lib/canvasRender';
+
+export async function quickExportAll() {
+  const { slides, mode } = getState();
+  const size = mode === 'story' ? { w: 1080, h: 1920 } : { w: 1080, h: 1350 };
+  for (let i = 0; i < slides.length; i++) {
+    const canvas = await renderSlideToCanvas(slides[i] as any, size as any);
+    const blob: Blob = await new Promise(res =>
+      canvas.toBlob(b => res(b!), 'image/jpeg', 0.92)
+    );
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `slide-${i + 1}.jpg`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    await new Promise(r => setTimeout(r, 160));
+  }
+}
 
 export type ExportOptions = {
   format: 'jpg' | 'png';
@@ -27,7 +48,7 @@ export async function exportSlides(
   const blobs: Blob[] = [];
   for (let i = 0; i < targets.length; i++) {
     const slide = targets[i];
-    await renderSlideToCanvas(slide as any, ctx, {
+    await renderSlideToCanvasFull(slide as any, ctx, {
       frame: { ...frame, width: size.width, height: size.height },
       theme: 'photo',
       defaults,
