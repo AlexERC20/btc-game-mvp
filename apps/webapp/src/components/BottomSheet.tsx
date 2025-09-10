@@ -1,4 +1,5 @@
 import React, { useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore } from '../state/store';
 
 type SheetName = ReturnType<typeof useStore>['openSheet'];
@@ -18,8 +19,10 @@ export default function BottomSheet({
   const isOpen = openSheet === name;
 
   useEffect(() => {
-    if (isOpen) document.body.classList.add('overflow-hidden');
-    else document.body.classList.remove('overflow-hidden');
+    document.body.style.overflow = isOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -37,22 +40,23 @@ export default function BottomSheet({
     }
   };
 
-  return (
-    <div className="sheet-backdrop" onClick={onClose}>
+  const portal = document.getElementById('portal-root');
+  if (!portal) return null;
+
+  return createPortal(
+    <>
+      <div className="sheet-backdrop" onClick={onClose} />
       <div
         className="sheet"
+        role="dialog"
         onClick={e => e.stopPropagation()}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
-        <div className="sheet__inner">
-          <div className="sheet__header">
-            <h3>{title}</h3>
-            <button onClick={onClose}>Close</button>
-          </div>
-          <div className="sheet__body">{children}</div>
-        </div>
+        <div className="sheet__handle" />
+        <div className="sheet__content">{children}</div>
       </div>
-    </div>
+    </>,
+    portal
   );
 }

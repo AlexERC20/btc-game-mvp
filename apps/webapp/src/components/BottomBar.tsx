@@ -12,9 +12,11 @@ import { useStore } from '../state/store';
 export default function BottomBar({
   disabledExport,
   onExport,
+  exporting,
 }: {
   disabledExport?: boolean;
   onExport: () => void;
+  exporting?: boolean;
 }) {
   const openSheet = useStore(s => s.openSheet);
   const setOpenSheet = useStore(s => s.setOpenSheet);
@@ -34,11 +36,9 @@ export default function BottomBar({
   }) => (
     <button
       type="button"
-      className={
-        `flex flex-col items-center justify-center gap-1 px-2 py-2 min-w-[64px] text-[12px] leading-4 ${
-          openSheet === name ? 'text-white' : 'text-white/90 hover:text-white'
-        }`
-      }
+      className={`toolbar__item ${
+        openSheet === name ? 'text-white' : 'text-white/90 hover:text-white'
+      }`}
       onClick={
         disabled
           ? undefined
@@ -51,26 +51,52 @@ export default function BottomBar({
       disabled={disabled}
       aria-label={label}
     >
-      <span className="h-6 w-6 flex items-center justify-center">{icon}</span>
-      <span>{label}</span>
+      <span className="toolbar__icon">{icon}</span>
+      <span className="toolbar__label">{label}</span>
     </button>
   );
 
   return (
-    <div className="toolbar fixed left-1/2 -translate-x-1/2 bottom-5 z-[60] rounded-2xl bg-black/60 backdrop-blur-xl ring-1 ring-white/10 px-3 py-2 w-[min(680px,92vw)]">
-      <div className="grid grid-cols-6 gap-2">
-        <Item icon={<IconTemplate className="h-6 w-6" />} label="Template" name="template" />
-        <Item icon={<IconLayout className="h-6 w-6" />} label="Layout" name="layout" />
-        <Item icon={<IconFonts className="h-6 w-6" />} label="Fonts" name="fonts" />
-        <Item icon={<IconPhotos className="h-6 w-6" />} label="Photos" name="photos" />
-        <Item icon={<IconInfo className="h-6 w-6" />} label="Info" name="info" />
-        <Item
-          icon={<IconExport className="h-6 w-6" />}
-          label="Export"
-          disabled={disabledExport}
-          onClick={onExport}
-        />
-      </div>
+    <div className="toolbar">
+      <Item icon={<IconTemplate />} label="Template" name="template" />
+      <Item icon={<IconLayout />} label="Layout" name="layout" />
+      <Item icon={<IconFonts />} label="Fonts" name="fonts" />
+      <Item icon={<IconPhotos />} label="Photos" name="photos" />
+      <Item icon={<IconInfo />} label="Info" name="info" />
+      <Item
+        icon={
+          exporting ? (
+            <span className="toolbar__icon">
+              <svg
+                className="animate-spin"
+                viewBox="0 0 24 24"
+                width="22"
+                height="22"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                  fill="none"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                />
+              </svg>
+            </span>
+          ) : (
+            <IconExport />
+          )
+        }
+        label="Export"
+        disabled={disabledExport || exporting}
+        onClick={onExport}
+      />
     </div>
   );
 }
