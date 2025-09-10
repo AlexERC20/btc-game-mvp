@@ -53,6 +53,7 @@ export const PreviewCard: React.FC<Props> = ({
         ...((style ?? {}) as React.CSSProperties),
       } as React.CSSProperties}
       data-mode={mode}
+      data-export-card
       draggable={typeof index === 'number'}
       onDragStart={typeof index === 'number' ? (e => {
         e.dataTransfer.setData('text/plain', String(index));
