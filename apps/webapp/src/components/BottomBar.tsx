@@ -38,7 +38,7 @@ export default function BottomBar({ disabledExport }: { disabledExport?: boolean
   );
 
   return (
-    <div className="toolbar fixed inset-x-0 bottom-0 z-[60] p-4 pb-[calc(env(safe-area-inset-bottom,12px)+14px)] bg-black/60 backdrop-blur-xl">
+    <div className="toolbar fixed inset-x-0 bottom-0 z-[60] p-4 pb-[env(safe-area-inset-bottom,0px)] bg-black/60 backdrop-blur-xl">
       <Item icon={<IconTemplate className="h-6 w-6" />} label="Template" name="template" />
       <Item icon={<IconLayout className="h-6 w-6" />} label="Layout" name="layout" />
       <Item icon={<IconFonts className="h-6 w-6" />} label="Fonts" name="fonts" />
