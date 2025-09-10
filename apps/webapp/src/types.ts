@@ -29,6 +29,8 @@ export type Defaults = {
 export type PhotoMeta = {
   id: string;
   url: string;
+  width?: number;
+  height?: number;
 };
 
 export type Theme = 'photo' | 'light' | 'dark';

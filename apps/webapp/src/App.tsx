@@ -34,6 +34,7 @@ export default function App() {
   const [activeIndex, setActiveIndex] = useState(0);
   const prevTextPos = useRef<'top'|'bottom'>('bottom');
   const promptedRef = useRef<Record<string, boolean>>({});
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const genId = () => Math.random().toString(36).slice(2);
 
@@ -221,11 +222,47 @@ export default function App() {
     setHasStageChanges(true);
   };
 
-  const onAddPhoto = (ph: PhotoMeta) => {
-    const newIdx = stagedPhotos.length;
-    setStagedPhotos(p => [...p, ph]);
-    setStagedOrder(o => [...o, newIdx]);
-    setHasStageChanges(true);
+  const readImageSize = (url: string): Promise<{ width: number; height: number }> =>
+    new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.width, height: img.height });
+      img.src = url;
+    });
+
+  const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (!files.length) return;
+
+    const seen = new Set<string>();
+    const unique = files.map(f => ({
+      file: f,
+      id: `${f.name}-${f.size}-${f.lastModified}`,
+    })).filter(f => {
+      if (seen.has(f.id)) return false;
+      seen.add(f.id);
+      return true;
+    });
+
+    const additions: PhotoMeta[] = await Promise.all(
+      unique.map(async ({ file, id }) => {
+        const url = URL.createObjectURL(file);
+        const { width, height } = await readImageSize(url);
+        return { id, url, width, height };
+      })
+    );
+
+    setStagedPhotos(prev => {
+      const existing = new Set(prev.map(p => p.id));
+      const filtered = additions.filter(a => !existing.has(a.id));
+      if (filtered.length) {
+        const start = prev.length;
+        setStagedOrder(o => [...o, ...filtered.map((_, i) => start + i)]);
+        setHasStageChanges(true);
+        return [...prev, ...filtered];
+      }
+      return prev;
+    });
   };
 
   const makeNewSlideFromPhoto = (ph: PhotoMeta): Slide => ({
@@ -250,20 +287,6 @@ export default function App() {
   };
 
   const onPhotosCancel = () => setIsPhotosOpen(false);
-
-  const pickOnePhoto = (cb: (ph: PhotoMeta) => void) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => cb({ id: genId(), url: String(reader.result) });
-      reader.readAsDataURL(file);
-    };
-    input.click();
-  };
 
   useEffect(() => {
     if (localStorage.getItem(SEED_KEY)) return;
@@ -566,14 +589,31 @@ export default function App() {
           <div className="relative w-[min(720px,92vw)] max-h-[85vh] bg-[#161616] text-white rounded-2xl overflow-hidden shadow-2xl pointer-events-auto">
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
               <div className="text-base font-semibold">Photos</div>
-              <button
-                onClick={onPhotosDone}
-                disabled={!hasStageChanges}
-                className="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Done
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="px-3 py-1.5 rounded-md border border-white/20"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  Add photo
+                </button>
+                <button
+                  onClick={onPhotosDone}
+                  disabled={!hasStageChanges}
+                  className="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Done
+                </button>
+              </div>
             </div>
+
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleFiles}
+            />
 
             <div className="p-4 grid grid-cols-3 gap-3 overflow-y-auto" style={{maxHeight: 'calc(85vh - 56px)'}}>
               {stagedOrder.map((ordIdx, i) => {
@@ -596,7 +636,7 @@ export default function App() {
                 );
               })}
               <button
-                onClick={() => pickOnePhoto(onAddPhoto)}
+                onClick={() => fileRef.current?.click()}
                 className="aspect-square rounded-xl border border-white/15 flex items-center justify-center text-sm hover:bg-white/5"
               >
                 Add photo
