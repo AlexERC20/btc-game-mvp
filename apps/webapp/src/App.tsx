@@ -2,7 +2,6 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { measureTextBlocks, splitTextToSlides, exportAll, CarouselSettings } from "./core/render";
 import { CANVAS_PRESETS } from "./core/constants";
 import BottomSheet from "./components/BottomSheet";
-import ImagesModal from "./components/ImagesModal";
 import PreviewCard from "./components/PreviewCard";
 import BottomBar from "./components/BottomBar";
 import "./styles/tailwind.css";
@@ -24,14 +23,22 @@ export default function App() {
   const [openTemplate, setOpenTemplate] = useState(false);
   const [openLayout, setOpenLayout] = useState(false);
   const [openFonts, setOpenFonts] = useState(false);
-  const [openImages, setOpenImages] = useState(false);
   const [openInfo, setOpenInfo] = useState(false);
+  const [isPhotosOpen, setIsPhotosOpen] = useState(false);
+  const [stagedPhotos, setStagedPhotos] = useState<PhotoMeta[]>([]);
+  const [stagedOrder, setStagedOrder] = useState<number[]>([]);
+  const [stagedRemoved, setStagedRemoved] = useState<Set<string>>(new Set());
+  const [hasStageChanges, setHasStageChanges] = useState(false);
   const [autoSplitEnabled, setAutoSplitEnabled] = useState(true);
   const [splitPrompt, setSplitPrompt] = useState<number|null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const prevTextPos = useRef<'top'|'bottom'>('bottom');
   const promptedRef = useRef<Record<string, boolean>>({});
+codex/fix-vertical-swipe-sticking-issue-yt0786
   const touchRef = useRef<{ x: number; y: number } | null>(null);
+=======
+  const fileRef = useRef<HTMLInputElement>(null);
+main
 
   const genId = () => Math.random().toString(36).slice(2);
 
@@ -199,34 +206,98 @@ export default function App() {
 
   const handleCancelSplit = () => setSplitPrompt(null);
 
-  const addPhotos = (urls: string[]) => {
-    const next: PhotoMeta[] = urls.map(url => ({ id: genId(), url }));
-    setPhotos(prev => [...prev, ...next]);
+  const openPhotos = () => {
+    const copy = photos.map(p => ({ ...p }));
+    setStagedPhotos(copy);
+    setStagedOrder(copy.map((_, i) => i));
+    setStagedRemoved(new Set());
+    setHasStageChanges(false);
+    setIsPhotosOpen(true);
   };
 
-  const selectPhoto = (id: string) => {
-    setSlides(prev => prev.map((s,i)=> i===activeIndex ? { ...s, imageId:id } : s));
-    setOpenImages(false);
+  const onRemoveAt = (i: number) => {
+    const idx = stagedOrder[i];
+    const id = stagedPhotos[idx].id;
+    const next = new Set(stagedRemoved);
+    next.add(id);
+    setStagedRemoved(next);
+    setHasStageChanges(true);
   };
 
-  const deletePhoto = (id: string) => {
-    setPhotos(prev => prev.filter(p => p.id !== id));
+  const onMove = (i: number, dir: -1 | 1) => {
+    const o = [...stagedOrder];
+    const j = i + dir;
+    if (j < 0 || j >= o.length) return;
+    [o[i], o[j]] = [o[j], o[i]];
+    setStagedOrder(o);
+    setHasStageChanges(true);
   };
 
-  const movePhoto = (id: string, dir: -1 | 1) => {
-    setPhotos(prev => {
-      const idx = prev.findIndex(p=>p.id===id);
-      if (idx<0) return prev;
-      const next = prev.slice();
-      const [item] = next.splice(idx,1);
-      let to = idx + dir;
-      if (to < 0) to = 0;
-      if (to > next.length) to = next.length;
-      next.splice(to,0,item);
-      return next;
+  const readImageSize = (url: string): Promise<{ width: number; height: number }> =>
+    new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.width, height: img.height });
+      img.src = url;
+    });
+
+  const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (!files.length) return;
+
+    const seen = new Set<string>();
+    const unique = files.map(f => ({
+      file: f,
+      id: `${f.name}-${f.size}-${f.lastModified}`,
+    })).filter(f => {
+      if (seen.has(f.id)) return false;
+      seen.add(f.id);
+      return true;
+    });
+
+    const additions: PhotoMeta[] = await Promise.all(
+      unique.map(async ({ file, id }) => {
+        const url = URL.createObjectURL(file);
+        const { width, height } = await readImageSize(url);
+        return { id, url, width, height };
+      })
+    );
+
+    setStagedPhotos(prev => {
+      const existing = new Set(prev.map(p => p.id));
+      const filtered = additions.filter(a => !existing.has(a.id));
+      if (filtered.length) {
+        const start = prev.length;
+        setStagedOrder(o => [...o, ...filtered.map((_, i) => start + i)]);
+        setHasStageChanges(true);
+        return [...prev, ...filtered];
+      }
+      return prev;
     });
   };
 
+  const makeNewSlideFromPhoto = (ph: PhotoMeta): Slide => ({
+    id: genId(),
+    body: '',
+    imageId: ph.id,
+  });
+
+  const onPhotosDone = () => {
+    const kept = stagedOrder
+      .map(idx => stagedPhotos[idx])
+      .filter(ph => !stagedRemoved.has(ph.id));
+
+    const nextSlides: Slide[] = kept.map((ph, i) => {
+      const prev = slides.find(s => s.imageId === ph.id);
+      return prev ? { ...prev, imageId: ph.id } : makeNewSlideFromPhoto(ph);
+    });
+
+    setPhotos(kept);
+    setSlides(nextSlides);
+    setIsPhotosOpen(false);
+  };
+
+ codex/fix-vertical-swipe-sticking-issue-yt0786
   const onSlideTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
     touchRef.current = { x: t.clientX, y: t.clientY };
@@ -244,6 +315,9 @@ export default function App() {
     touchRef.current = null;
   };
 
+
+  const onPhotosCancel = () => setIsPhotosOpen(false);
+ main
 
   useEffect(() => {
     if (localStorage.getItem(SEED_KEY)) return;
@@ -547,16 +621,68 @@ export default function App() {
           </div>
         </div>
       </BottomSheet>
+      {isPhotosOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={onPhotosCancel}/>
+          <div className="relative w-[min(720px,92vw)] max-h-[85vh] bg-[#161616] text-white rounded-2xl overflow-hidden shadow-2xl pointer-events-auto">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <div className="text-base font-semibold">Photos</div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="px-3 py-1.5 rounded-md border border-white/20"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  Add photo
+                </button>
+                <button
+                  onClick={onPhotosDone}
+                  disabled={!hasStageChanges}
+                  className="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
 
-      <ImagesModal
-        open={openImages}
-        photos={photos}
-        onClose={()=>setOpenImages(false)}
-        onAdd={addPhotos}
-        onSelect={selectPhoto}
-        onDelete={deletePhoto}
-        onMove={movePhoto}
-      />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={handleFiles}
+            />
+
+            <div className="p-4 grid grid-cols-3 gap-3 overflow-y-auto" style={{maxHeight: 'calc(85vh - 56px)'}}>
+              {stagedOrder.map((ordIdx, i) => {
+                const ph = stagedPhotos[ordIdx];
+                const removed = stagedRemoved.has(ph.id);
+                if (removed) return null;
+                return (
+                  <div key={ph.id} className="relative rounded-xl overflow-hidden bg-black/20">
+                    <img src={ph.url} className="aspect-square w-full object-cover"/>
+                    <button
+                      className="absolute top-2 right-2 h-7 w-7 rounded-full bg-black/60 flex items-center justify-center"
+                      onClick={() => onRemoveAt(i)}
+                      aria-label="Remove"
+                    >×</button>
+                    <div className="absolute bottom-2 left-2 right-2 flex justify-between gap-2">
+                      <button className="h-7 w-7 rounded-full bg-black/60" onClick={() => onMove(i, -1)} aria-label="Left">←</button>
+                      <button className="h-7 w-7 rounded-full bg-black/60" onClick={() => onMove(i, +1)} aria-label="Right">→</button>
+                    </div>
+                  </div>
+                );
+              })}
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="aspect-square rounded-xl border border-white/15 flex items-center justify-center text-sm hover:bg-white/5"
+              >
+                Add photo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomSheet open={openInfo} onClose={()=>setOpenInfo(false)} title="Info">
         <div className="space-y-4">
@@ -584,6 +710,7 @@ export default function App() {
         </div>
       )}
 
+codex/fix-vertical-swipe-sticking-issue-yt0786
       <div
         className="fixed inset-x-0 bottom-0 z-[60] pointer-events-auto"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
@@ -611,6 +738,18 @@ export default function App() {
           }
         />
       </div>
+
+      <BottomBar
+        onTemplate={()=>setOpenTemplate(true)}
+        onLayout={()=>setOpenLayout(true)}
+        onFonts={()=>setOpenFonts(true)}
+        onPhotos={openPhotos}
+        onInfo={()=>setOpenInfo(true)}
+        onExport={handleExport}
+        disabledExport={!slides.length || exporting}
+        active={openTemplate?"template":openLayout?"layout":openFonts?"fonts":isPhotosOpen?"photos":openInfo?"info":undefined}
+      />
+main
     </div>
     </>
   );
