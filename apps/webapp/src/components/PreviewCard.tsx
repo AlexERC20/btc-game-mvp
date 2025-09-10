@@ -8,8 +8,6 @@ type Props = {
   text: string;
   username: string;
   textPosition?: 'bottom' | 'top';
-  index?: number;
-  onReorder?: (from: number, to: number) => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onDelete?: () => void;
@@ -21,8 +19,6 @@ export const PreviewCard: React.FC<Props> = ({
   text,
   username,
   textPosition = 'bottom',
-  index,
-  onReorder,
   onMoveUp,
   onMoveDown,
   onDelete,
@@ -54,17 +50,6 @@ export const PreviewCard: React.FC<Props> = ({
       } as React.CSSProperties}
       data-mode={mode}
       data-export-card
-      draggable={typeof index === 'number'}
-      onDragStart={typeof index === 'number' ? (e => {
-        e.dataTransfer.setData('text/plain', String(index));
-      }) : undefined}
-      onDragOver={typeof index === 'number' ? (e => e.preventDefault()) : undefined}
-      onDrop={typeof index === 'number' && onReorder ? (e => {
-        e.preventDefault();
-        const from = Number(e.dataTransfer.getData('text/plain'));
-        const to = index!;
-        if (!Number.isNaN(from) && from !== to) onReorder(from, to);
-      }) : undefined}
       onTouchStart={handleStart}
       onTouchEnd={handleEnd}
       {...rest}
@@ -92,13 +77,25 @@ export const PreviewCard: React.FC<Props> = ({
 
       <div className={`preview-card__actions ${show ? 'preview-card__actions--show' : ''}`}>
         <IconGrip size={20} className="mb-1" />
-        <button aria-label="Move up" onClick={onMoveUp} onDragStart={e=>e.stopPropagation()} className="w-11 h-11 flex items-center justify-center active:scale-[0.96]">
+        <button
+          aria-label="Move up"
+          onClick={onMoveUp}
+          className="w-11 h-11 flex items-center justify-center active:scale-[0.96]"
+        >
           <IconMoveUp size={20} />
         </button>
-        <button aria-label="Move down" onClick={onMoveDown} onDragStart={e=>e.stopPropagation()} className="w-11 h-11 flex items-center justify-center active:scale-[0.96]">
+        <button
+          aria-label="Move down"
+          onClick={onMoveDown}
+          className="w-11 h-11 flex items-center justify-center active:scale-[0.96]"
+        >
           <IconMoveDown size={20} />
         </button>
-        <button aria-label="Delete" onClick={onDelete} onDragStart={e=>e.stopPropagation()} className="w-11 h-11 flex items-center justify-center text-[var(--danger)] active:scale-[0.96]">
+        <button
+          aria-label="Delete"
+          onClick={onDelete}
+          className="w-11 h-11 flex items-center justify-center text-[var(--danger)] active:scale-[0.96]"
+        >
           <IconTrash size={20} />
         </button>
       </div>

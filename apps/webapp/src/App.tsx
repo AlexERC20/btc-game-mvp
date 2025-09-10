@@ -447,24 +447,34 @@ export default function App() {
 
         <div className="lg:col-span-7 builder-preview">
           {slides.length ? (
-            <div className="preview-list dnd-area" onDragOver={(e)=>e.preventDefault()}>
+            <div className="preview-list">
               {slides.map((s, i) => {
-                const img = photos.find(p=>p.id===s.imageId)?.url;
+                const img = photos.find(p => p.id === s.imageId)?.url;
                 const [h, b] = settings.headingEnabled && !settings.quoteMode ? splitHeading(s.body || '') : ['', s.body];
                 return (
                   <PreviewCard
                     key={s.id}
-                    index={i}
-                    onReorder={onReorder}
                     onMoveUp={() => onReorder(i, i - 1)}
                     onMoveDown={() => onReorder(i, i + 1)}
                     onDelete={() => deleteSlide(i)}
                     style={{ ...cardStyle, touchAction: 'pan-y' }}
                     mode={mode}
                     image={img}
-                    text={(settings.headingEnabled && !settings.quoteMode
-                        ? (<>{h && <span className="preview-heading">{h}</span>}{b ? <><br/>{b}</> : null}</>)
-                        : s.body) as any}
+                    text={
+                      (settings.headingEnabled && !settings.quoteMode
+                        ? (
+                            <>
+                              {h && <span className="preview-heading">{h}</span>}
+                              {b ? (
+                                <>
+                                  <br />
+                                  {b}
+                                </>
+                              ) : null}
+                            </>
+                          )
+                        : s.body) as any
+                    }
                     username={username.replace(/^@/, '')}
                     textPosition={settings.quoteMode ? 'center' : settings.textPosition}
                     onClick={() => setActiveIndex(i)}
