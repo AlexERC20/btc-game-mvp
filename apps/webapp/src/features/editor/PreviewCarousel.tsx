@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef } from 'react';
 
 type Slide = {
   id: string;
@@ -10,9 +10,8 @@ export function PreviewCarousel() {
   const [activeSheet, setActiveSheet] = useState<'template' | 'layout' | 'fonts' | 'photos' | 'info' | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const touchRef = useRef<{ x: number; y: number } | null>(null);
 
-  const exportSlides = useCallback(async () => {
+  const exportSlides = async (slides: Slide[]) => {
     for (const s of slides) {
       if (!s.src) continue;
       const img = new Image();
@@ -32,14 +31,14 @@ export function PreviewCarousel() {
         URL.revokeObjectURL(url);
       }
     }
-  }, [slides]);
+  };
 
-  const handleExport = async () => {
+  const onExport = async () => {
     try {
       setIsExporting(true);
-      await exportSlides();
+      await exportSlides(slides);
     } catch (e) {
-      console.error('Export failed', e);
+      console.error(e);
     } finally {
       setIsExporting(false);
     }
@@ -56,25 +55,18 @@ export function PreviewCarousel() {
     e.target.value = '';
   };
 
-  const onTouchStart = (e: React.TouchEvent) => {
-    const t = e.touches[0];
-    touchRef.current = { x: t.clientX, y: t.clientY };
-  };
-
-  const onTouchMove = (e: React.TouchEvent) => {
-    const start = touchRef.current;
-    if (!start) return;
-    const t = e.touches[0];
-    const dx = t.clientX - start.x;
-    const dy = t.clientY - start.y;
-    if (Math.abs(dx) > Math.abs(dy) + 4) {
-      e.preventDefault();
-    }
-  };
-
   return (
-    <div>
-      <div className="slidesScroll" onTouchStart={onTouchStart} onTouchMove={onTouchMove}>
+    <div
+      className="page"
+      style={{
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
+        overscrollBehaviorY: 'contain',
+        height: '100%',
+        touchAction: 'pan-y',
+      }}
+    >
+      <div className="slidesScroll">
         {slides.map((s, i) => (
           <div key={s.id} className="slide">
             {s.src && <img src={s.src} alt={`Slide ${i + 1}`} />}
@@ -146,13 +138,18 @@ export function PreviewCarousel() {
             </span>
             <span className="toolbar__label">Info</span>
           </button>
-          <button className="toolbar__item" onClick={handleExport} aria-label="Export">
+          <button
+            className={`toolbar__item${isExporting ? ' is-loading' : ''}`}
+            onClick={onExport}
+            aria-label="Export"
+            disabled={isExporting}
+          >
             <span className="toolbar__icon">
               <svg viewBox="0 0 24 24">
                 <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" fill="none" />
               </svg>
             </span>
-            <span className="toolbar__label">{isExporting ? 'Exporting' : 'Export'}</span>
+            <span className="toolbar__label">Export</span>
           </button>
         </div>
       </div>
@@ -160,8 +157,11 @@ export function PreviewCarousel() {
       {activeSheet === 'photos' && (
         <div className="photosSheet">
           <div className="photosSheet__header">
-            <button onClick={() => fileInputRef.current?.click()}>Add photo</button>
-            <button onClick={() => setActiveSheet(null)}>Done</button>
+            <span className="photosSheet__title">Photos</span>
+            <div className="photosSheet__actions">
+              <button onClick={() => fileInputRef.current?.click()}>Add photo</button>
+              <button onClick={() => setActiveSheet(null)}>Done</button>
+            </div>
             <input
               ref={fileInputRef}
               type="file"
@@ -187,7 +187,7 @@ export function PreviewCarousel() {
           touch-action: pan-y;
           -webkit-overflow-scrolling: touch;
         }
-        .toolbar { position: sticky; bottom: 0; z-index: 20; padding: 10px 12px; background: rgba(28,28,28,.92); backdrop-filter: blur(12px); border-top-left-radius: 16px; border-top-right-radius: 16px; }
+        .toolbar { position: sticky; bottom: 0; z-index: 20; padding: 10px 12px; background: rgba(28,28,28,.92); backdrop-filter: blur(12px); border-top-left-radius: 16px; border-top-right-radius: 16px; pointer-events: auto; }
         .toolbar__grid { display: flex; justify-content: space-between; gap: 8px; }
         .toolbar__item { flex: 1 1 0; min-width: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 8px 6px; border: 0; background: transparent; color: #fff; }
         .toolbar__item:active { transform: scale(.98); }
@@ -196,7 +196,8 @@ export function PreviewCarousel() {
         .toolbar__icon svg { width: 22px; height: 22px; display: block; }
         .toolbar__label { font-size: 12px; line-height: 14px; opacity: .9; white-space: nowrap; }
         .photosSheet { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; flex-direction: column; }
-        .photosSheet__header { background: #fff; padding: 8px 12px; display: flex; justify-content: space-between; }
+        .photosSheet__header { background: #fff; padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; }
+        .photosSheet__actions { display: flex; gap: 12px; }
         .photosSheet__body { max-height: 72vh; overflow: auto; -webkit-overflow-scrolling: touch; background: #fff; }
         .photosSheet__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px,1fr)); gap: 8px; padding: 8px; }
         .photosSheet__thumb { width: 100%; height: 80px; object-fit: cover; border-radius: 4px; }
