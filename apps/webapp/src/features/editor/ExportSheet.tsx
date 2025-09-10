@@ -1,35 +1,23 @@
 import React, { useState, useRef } from 'react';
-import { Slide } from '../carousel/lib/canvasRender';
 import { exportSlides } from '../carousel/utils/exportSlides';
 
 interface Props {
-  slides: Slide[];
-  settings: {
-    mode: 'story' | 'carousel';
-    overlay: { enabled: boolean; heightPct: number; intensity: number };
-    text: {
-      font: string;
-      size: number;
-      lineHeight: number;
-      align: CanvasTextAlign;
-      color: string;
-      titleColor: string;
-      titleEnabled: boolean;
-    };
-    username: string;
-    quality?: number;
-  };
   onClose: () => void;
 }
 
-export function ExportSheet({ slides, settings, onClose }: Props) {
+export function ExportSheet({ onClose }: Props) {
   const [isExporting, setIsExporting] = useState(false);
   const startY = useRef<number | null>(null);
 
   const handleExport = async () => {
     try {
       setIsExporting(true);
-      await exportSlides(slides, settings);
+      await exportSlides({
+        containerSelector: '#preview-list',
+        hideSelectors: ['.toolbar', '.drag-ghost', '.sheet-backdrop'],
+        format: 'jpeg',
+        quality: 0.92,
+      });
     } catch (e) {
       console.error('Export failed', e);
     } finally {

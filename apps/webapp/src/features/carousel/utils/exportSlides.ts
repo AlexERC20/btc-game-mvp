@@ -1,38 +1,50 @@
-import { saveAs } from 'file-saver';
-import { renderSlideToCanvas, Slide, OverlayOpts } from '../lib/canvasRender';
+import domtoimage from 'dom-to-image-more';
 
-interface ExportSettings {
-  mode: 'story' | 'carousel';
-  overlay: OverlayOpts;
-  text: {
-    font: string;
-    size: number;
-    lineHeight: number;
-    align: CanvasTextAlign;
-    color: string;
-    titleColor: string;
-    titleEnabled: boolean;
-    content?: string;
-  };
-  username: string;
+interface Options {
+  containerSelector: string;
+  hideSelectors?: string[];
+  format?: 'png' | 'jpeg';
   quality?: number;
 }
 
-export async function exportSlides(slides: Slide[], settings: ExportSettings) {
-  const W = settings.mode === 'story' ? 1080 : 1350;
-  const H = settings.mode === 'story' ? 1920 : 1080;
-  for (let i = 0; i < slides.length; i++) {
-    const canvas = await renderSlideToCanvas({ ...slides[i], index: i }, {
-      w: W,
-      h: H,
-      overlay: settings.overlay,
-      text: settings.text,
-      username: settings.username,
-      total: slides.length,
+export async function exportSlides({
+  containerSelector,
+  hideSelectors = [],
+  format = 'jpeg',
+  quality = 0.92,
+}: Options) {
+  const container = document.querySelector<HTMLElement>(containerSelector);
+  if (!container) throw new Error('Container not found');
+  const cards = Array.from(
+    container.querySelectorAll<HTMLElement>('[data-export-card]')
+  );
+
+  const hidden: HTMLElement[] = [];
+  hideSelectors.forEach(sel => {
+    document.querySelectorAll<HTMLElement>(sel).forEach(el => {
+      (el as any).dataset._prevVisibility = el.style.visibility || '';
+      el.style.visibility = 'hidden';
+      hidden.push(el);
     });
-    const blob = await new Promise<Blob>((res) =>
-      canvas.toBlob((b) => res(b!), 'image/jpeg', settings.quality ?? 0.92)
-    );
-    saveAs(blob, `slide-${i + 1}.jpg`);
+  });
+
+  for (let i = 0; i < cards.length; i++) {
+    const cardEl = cards[i];
+    const blob = await domtoimage.toBlob(cardEl, {
+      quality,
+      bgcolor: 'transparent',
+      style: { transform: 'none' },
+    });
+    const ext = format === 'png' ? 'png' : 'jpeg';
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `slide-${i + 1}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
+
+  hidden.forEach(el => {
+    el.style.visibility = (el as any).dataset._prevVisibility || '';
+    delete (el as any).dataset._prevVisibility;
+  });
 }

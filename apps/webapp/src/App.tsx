@@ -34,11 +34,8 @@ export default function App() {
   const [activeIndex, setActiveIndex] = useState(0);
   const prevTextPos = useRef<'top'|'bottom'>('bottom');
   const promptedRef = useRef<Record<string, boolean>>({});
-codex/fix-vertical-swipe-sticking-issue-yt0786
   const touchRef = useRef<{ x: number; y: number } | null>(null);
-=======
   const fileRef = useRef<HTMLInputElement>(null);
-main
 
   const genId = () => Math.random().toString(36).slice(2);
 
@@ -73,10 +70,10 @@ main
 
   useEffect(() => {
     const hasModal =
-      openTemplate || openLayout || openFonts || openImages || openInfo;
+      openTemplate || openLayout || openFonts || isPhotosOpen || openInfo;
     document.body.classList.toggle('overflow-hidden', hasModal);
     return () => document.body.classList.remove('overflow-hidden');
-  }, [openTemplate, openLayout, openFonts, openImages, openInfo]);
+  }, [openTemplate, openLayout, openFonts, isPhotosOpen, openInfo]);
 
   const PRESETS = {
     minimal: { textSize: 0.46, lineHeight: 1.4, textPosition: 'bottom', template: 'photo', overlayEnabled: false, headingEnabled: false, quoteMode: false },
@@ -297,7 +294,6 @@ main
     setIsPhotosOpen(false);
   };
 
- codex/fix-vertical-swipe-sticking-issue-yt0786
   const onSlideTouchStart = (e: React.TouchEvent) => {
     const t = e.touches[0];
     touchRef.current = { x: t.clientX, y: t.clientY };
@@ -317,7 +313,6 @@ main
 
 
   const onPhotosCancel = () => setIsPhotosOpen(false);
- main
 
   useEffect(() => {
     if (localStorage.getItem(SEED_KEY)) return;
@@ -428,15 +423,16 @@ main
   color: var(--heading-color,#6E56CF);
 }
     `}</style>
-    <div
-      id="scrollRoot"
-      className="relative min-h-full pt-[calc(12px+env(safe-area-inset-top))] px-4 sm:px-6 bg-neutral-950 text-neutral-100 overflow-y-auto overscroll-y-contain"
-      style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-y' }}
-      onTouchStartCapture={onSlideTouchStart}
-      onTouchMoveCapture={onSlideTouchMove}
-      onTouchEndCapture={onSlideTouchEnd}
-    >
-      <div className="pb-[88px] pb-[calc(88px+env(safe-area-inset-bottom))]">
+    <div className="h-screen w-screen overflow-hidden">
+      <div
+        id="scroll-root"
+        className="h-full overflow-y-auto overscroll-contain touch-pan-y relative pt-[calc(12px+env(safe-area-inset-top))] px-4 sm:px-6 bg-neutral-950 text-neutral-100"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+        onTouchStartCapture={onSlideTouchStart}
+        onTouchMoveCapture={onSlideTouchMove}
+        onTouchEndCapture={onSlideTouchEnd}
+      >
+        <div className="pb-[calc(88px+env(safe-area-inset-bottom))]">
         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-5 space-y-4">
             <div className="rounded-2xl bg-neutral-900/70 border border-neutral-800 p-4">
@@ -709,47 +705,29 @@ main
           </div>
         </div>
       )}
-
-codex/fix-vertical-swipe-sticking-issue-yt0786
-      <div
-        className="fixed inset-x-0 bottom-0 z-[60] pointer-events-auto"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-      >
-        <BottomBar
-          onTemplate={() => setOpenTemplate(true)}
-          onLayout={() => setOpenLayout(true)}
-          onFonts={() => setOpenFonts(true)}
-          onPhotos={() => setOpenImages(true)}
-          onInfo={() => setOpenInfo(true)}
-          onExport={handleExport}
-          disabledExport={!slides.length || exporting}
-          active={
-            openTemplate
-              ? 'template'
-              : openLayout
-              ? 'layout'
-              : openFonts
-              ? 'fonts'
-              : openImages
-              ? 'photos'
-              : openInfo
-              ? 'info'
-              : undefined
-          }
-        />
       </div>
-
       <BottomBar
-        onTemplate={()=>setOpenTemplate(true)}
-        onLayout={()=>setOpenLayout(true)}
-        onFonts={()=>setOpenFonts(true)}
+        onTemplate={() => setOpenTemplate(true)}
+        onLayout={() => setOpenLayout(true)}
+        onFonts={() => setOpenFonts(true)}
         onPhotos={openPhotos}
-        onInfo={()=>setOpenInfo(true)}
+        onInfo={() => setOpenInfo(true)}
         onExport={handleExport}
         disabledExport={!slides.length || exporting}
-        active={openTemplate?"template":openLayout?"layout":openFonts?"fonts":isPhotosOpen?"photos":openInfo?"info":undefined}
+        active={
+          openTemplate
+            ? 'template'
+            : openLayout
+            ? 'layout'
+            : openFonts
+            ? 'fonts'
+            : isPhotosOpen
+            ? 'photos'
+            : openInfo
+            ? 'info'
+            : undefined
+        }
       />
-main
     </div>
     </>
   );

@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import type { PhotoMeta } from "../types";
 
 export default function ImagesModal({
@@ -19,6 +19,7 @@ export default function ImagesModal({
   onMove: (id: string, dir: -1 | 1) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   if (!open) return null;
 
@@ -35,32 +36,34 @@ export default function ImagesModal({
     Promise.all(arr).then(urls => onAdd(urls));
   };
 
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    onSelect(id);
+  };
+
   return (
-    <div className="fixed inset-0 z-50 pointer-events-none">
+    <div className="fixed inset-0 z-[70] sheet-backdrop">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div
-        className="absolute inset-0 bg-black/40 pointer-events-auto"
-        onClick={onClose}
-      />
-      <div
-        className="absolute left-0 right-0 bottom-0 top-16 bg-neutral-950 text-white rounded-t-2xl border border-neutral-800 shadow-2xl p-4 overflow-y-auto pb-[calc(16px+env(safe-area-inset-bottom))] pointer-events-auto"
+        className="absolute inset-x-0 bottom-0 top-16 bg-neutral-950 text-white rounded-t-2xl border border-neutral-800 shadow-2xl overflow-y-auto pb-[calc(16px+env(safe-area-inset-bottom))]"
         style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
       >
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute top-3 right-3 z-10 px-3 py-1.5 rounded-lg bg-neutral-800/80 text-white text-sm"
-        >
-          Done
-        </button>
-        <div className="flex items-center justify-between mb-3">
-          <div className="font-medium">Photos</div>
-          <button
-            className="px-3 py-1.5 rounded-lg bg-neutral-800 border border-neutral-700"
-            onClick={() => fileRef.current?.click()}
-          >
-            Add photo
-          </button>
-        </div>
+        <header className="sheet__header">
+          <h3>Photos</h3>
+          <div className="ml-auto flex gap-2">
+            <button onClick={() => fileRef.current?.click()} className="btn btn-secondary">
+              Add photo
+            </button>
+            <button onClick={onClose} className="btn btn-primary">
+              Done
+            </button>
+          </div>
+        </header>
 
         <input
           ref={fileRef}
@@ -71,17 +74,16 @@ export default function ImagesModal({
           onChange={e => onFiles(e.target.files)}
         />
 
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-          {photos.map((p, idx) => (
-            <div
+        <div className="grid grid-cols-3 gap-12 p-16">
+          {photos.map(p => (
+            <button
               key={p.id}
-              className="relative rounded-lg overflow-hidden border border-neutral-700"
+              className={`relative rounded-2xl overflow-hidden aspect-square ring-1 ring-white/10 ${
+                selected.has(p.id) ? 'ring-2 ring-blue-400' : ''
+              }`}
+              onClick={() => toggleSelect(p.id)}
             >
-              <img
-                src={p.url}
-                className="w-full aspect-square object-cover"
-                onClick={() => onSelect(p.id)}
-              />
+              <img src={p.url} className="w-full h-full object-cover" />
               <button
                 onClick={e => {
                   e.stopPropagation();
@@ -111,11 +113,10 @@ export default function ImagesModal({
                   →
                 </button>
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>
     </div>
   );
 }
-
