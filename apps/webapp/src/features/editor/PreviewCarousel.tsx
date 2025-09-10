@@ -1,12 +1,11 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { renderSlideToCanvas, Slide } from '../carousel/lib/canvasRender';
+import { ExportSheet } from './ExportSheet';
 
 export function PreviewCarousel() {
   const [slides, setSlides] = useState<Slide[]>([]);
-  const [activeSheet, setActiveSheet] = useState<'template' | 'layout' | 'fonts' | 'photos' | 'info' | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
+  const [activeSheet, setActiveSheet] = useState<'template' | 'layout' | 'fonts' | 'photos' | 'info' | 'export' | null>(null);
   const [mode] = useState<'story' | 'carousel'>('carousel');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const username = 'user';
   const overlayEnabled = true;
@@ -20,63 +19,12 @@ export function PreviewCarousel() {
   const titleColor = '#fff';
   const titleEnabled = true;
 
-  async function saveBlobs(blobs: Blob[]) {
-    blobs.forEach((blob, i) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `slide-${i + 1}.jpg`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
-  }
-
-
-  const exportSlides = useCallback(async () => {
-    const W = mode === 'story' ? 1080 : 1350;
-    const H = mode === 'story' ? 1920 : 1080;
-    const blobs: Blob[] = [];
-    for (let i = 0; i < slides.length; i++) {
-      const canvas = await renderSlideToCanvas({ ...slides[i], index: i }, {
-        w: W,
-        h: H,
-        overlay: { enabled: overlayEnabled, heightPct: overlayHeightPct, intensity: overlayIntensity },
-        text: { font, size, lineHeight, align, color, titleColor, titleEnabled, content: '' },
-        username,
-        total: slides.length,
-      });
-      const blob = await new Promise<Blob>((res) =>
-        canvas.toBlob((b) => res(b!), 'image/jpeg', 0.95)
-      );
-      blobs.push(blob);
-    }
-    await saveBlobs(blobs);
-  }, [
+  const exportSettings = {
     mode,
-    slides,
-    overlayEnabled,
-    overlayHeightPct,
-    overlayIntensity,
-    font,
-    size,
-    lineHeight,
-    align,
-    color,
-    titleColor,
-    titleEnabled,
+    overlay: { enabled: overlayEnabled, heightPct: overlayHeightPct, intensity: overlayIntensity },
+    text: { font, size, lineHeight, align, color, titleColor, titleEnabled, content: '' },
     username,
-  ]);
-
-  const onExport = useCallback(async () => {
-    try {
-      setIsExporting(true);
-      await exportSlides();
-    } catch (e) {
-      console.error('Export failed', e);
-    } finally {
-      setIsExporting(false);
-    }
-  }, [exportSlides]);
+  };
 
   const appendPhotos = (files: File[]) => {
     const next = files.map((file) => {
@@ -104,44 +52,59 @@ export function PreviewCarousel() {
 
   const PhotosSheet: React.FC = () => {
     const inputRef = useRef<HTMLInputElement>(null);
-    const onAddClick = () => inputRef.current?.click();
+    const startY = useRef<number | null>(null);
+    const onAddPhotos = () => inputRef.current?.click();
     const onFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files || []);
       if (!files.length) return;
       appendPhotos(files);
     };
+    const onTouchStart = (e: React.TouchEvent) => {
+      startY.current = e.touches[0].clientY;
+    };
+    const onTouchEnd = (e: React.TouchEvent) => {
+      if (startY.current !== null) {
+        const dy = e.changedTouches[0].clientY - startY.current;
+        if (dy > 50) closePhotosSheet();
+        startY.current = null;
+      }
+    };
     return (
-      <div className="sheet">
-        <div className="sheet__header">
-          <div className="sheet__title">Photos</div>
-          <div className="sheet__actions">
-            <button onClick={onAddClick} className="btn btn--ghost">Add photo</button>
-            <button onClick={closePhotosSheet} className="btn btn--primary">Done</button>
-          </div>
-        </div>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          style={{ display: 'none' }}
-          onChange={onFilesChange}
-        />
-        <div className="grid">
-          {slides.map((s, i) => (
-            <div className="grid__item" key={s.id}>
-              {s.thumb && <img src={s.thumb} alt="" />}
-              <button className="grid__move grid__move--left" onClick={() => moveSlide(i, i - 1)}>
-                ◀
-              </button>
-              <button className="grid__move grid__move--right" onClick={() => moveSlide(i, i + 1)}>
-                ▶
-              </button>
-              <button className="grid__remove" onClick={() => removeSlide(i)}>
-                ✕
-              </button>
+      <div className="sheet" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        <div className="sheet__inner">
+          <div className="sheet__header">
+            <h3>Photos</h3>
+            <div className="sheet__actions">
+              <button onClick={onAddPhotos}>Add photo</button>
+              <button onClick={closePhotosSheet} className="is-primary">Done</button>
             </div>
-          ))}
+          </div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            style={{ display: 'none' }}
+            onChange={onFilesChange}
+          />
+          <div className="sheet__body">
+            <div className="grid">
+              {slides.map((s, i) => (
+                <div className="grid__item" key={s.id}>
+                  {s.thumb && <img src={s.thumb} alt="" />}
+                  <button className="grid__remove" onClick={() => removeSlide(i)}>
+                    ✕
+                  </button>
+                  <button className="grid__move grid__move--left" onClick={() => moveSlide(i, i - 1)}>
+                    ‹
+                  </button>
+                  <button className="grid__move grid__move--right" onClick={() => moveSlide(i, i + 1)}>
+                    ›
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -230,7 +193,7 @@ export function PreviewCarousel() {
 
   return (
     <div
-      className="page"
+      className="carousel-page"
       style={{
         height: '100%',
         overflowY: 'auto',
@@ -245,7 +208,7 @@ export function PreviewCarousel() {
         ))}
       </div>
       <div className="toolbar">
-        <button className="toolbar__btn" onClick={() => setActiveSheet('template')} aria-label="Template">
+        <button className="toolbar__item" onClick={() => setActiveSheet('template')} aria-label="Template">
           <span className="toolbar__icon">
             <svg viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="10" />
@@ -253,7 +216,7 @@ export function PreviewCarousel() {
           </span>
           <span className="toolbar__label">Template</span>
         </button>
-        <button className="toolbar__btn" onClick={() => setActiveSheet('layout')} aria-label="Layout">
+        <button className="toolbar__item" onClick={() => setActiveSheet('layout')} aria-label="Layout">
           <span className="toolbar__icon">
             <svg viewBox="0 0 24 24">
               <rect x="4" y="4" width="16" height="16" />
@@ -261,7 +224,7 @@ export function PreviewCarousel() {
           </span>
           <span className="toolbar__label">Layout</span>
         </button>
-        <button className="toolbar__btn" onClick={() => setActiveSheet('fonts')} aria-label="Fonts">
+        <button className="toolbar__item" onClick={() => setActiveSheet('fonts')} aria-label="Fonts">
           <span className="toolbar__icon">
             <svg viewBox="0 0 24 24">
               <text x="4" y="18" fontSize="16">F</text>
@@ -269,7 +232,7 @@ export function PreviewCarousel() {
           </span>
           <span className="toolbar__label">Fonts</span>
         </button>
-        <button className="toolbar__btn" onClick={() => setActiveSheet('photos')} aria-label="Photos">
+        <button className="toolbar__item" onClick={() => setActiveSheet('photos')} aria-label="Photos">
           <span className="toolbar__icon">
             <svg viewBox="0 0 24 24">
               <path d="M4 4h16v16H4z" />
@@ -277,7 +240,7 @@ export function PreviewCarousel() {
           </span>
           <span className="toolbar__label">Photos</span>
         </button>
-        <button className="toolbar__btn" onClick={() => setActiveSheet('info')} aria-label="Info">
+        <button className="toolbar__item" onClick={() => setActiveSheet('info')} aria-label="Info">
           <span className="toolbar__icon">
             <svg viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="10" />
@@ -286,9 +249,8 @@ export function PreviewCarousel() {
           <span className="toolbar__label">Info</span>
         </button>
         <button
-          className="toolbar__btn"
-          onClick={onExport}
-          disabled={isExporting || slides.length === 0}
+          className="toolbar__item"
+          onClick={() => setActiveSheet('export')}
           aria-label="Export"
         >
           <span className="toolbar__icon">
@@ -300,22 +262,34 @@ export function PreviewCarousel() {
         </button>
       </div>
       {activeSheet === 'photos' && <PhotosSheet />}
+      {activeSheet === 'export' && (
+        <ExportSheet
+          slides={slides}
+          settings={exportSettings}
+          onClose={() => setActiveSheet(null)}
+        />
+      )}
       <style>{`
+        .carousel-page{ overflow-y:auto; -webkit-overflow-scrolling:touch; }
         .slidesScroll { overflow: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
-        .toolbar { position: sticky; bottom: 0; left:0; right:0; display:flex; justify-content:space-between; padding:10px 12px; backdrop-filter:blur(10px); z-index:5; pointer-events:auto; background:rgba(28,28,28,.92); }
-        .toolbar__btn { display:flex; flex-direction:column; align-items:center; gap:6px; min-width:54px; border:0; background:transparent; color:#fff; }
-        .toolbar__icon { display:inline-flex; width:24px; height:24px; }
-        .toolbar__label { font-size:12px; line-height:14px; opacity:.9; }
-        .sheet { position:fixed; inset:0; background:rgba(0,0,0,0.4); display:flex; flex-direction:column; }
-        .sheet__header { background:#fff; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; }
-        .sheet__actions { display:flex; gap:12px; }
-        .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); gap:8px; padding:8px; max-height:70vh; overflow:auto; -webkit-overflow-scrolling:touch; background:#fff; }
-        .grid__item { position:relative; }
-        .grid__item img { width:100%; height:80px; object-fit:cover; border-radius:4px; }
-        .grid__move { position:absolute; top:4px; width:20px; height:20px; }
-        .grid__move--left { left:4px; }
-        .grid__move--right { right:4px; }
-        .grid__remove { position:absolute; bottom:4px; right:4px; }
+        .toolbar{ position: sticky; bottom: 0; z-index:30; display:grid; grid-template-columns:repeat(auto-fit,minmax(72px,1fr)); gap:12px; padding:12px 16px; background:rgba(22,22,24,.9); backdrop-filter:saturate(180%) blur(12px); border-radius:16px 16px 0 0; pointer-events:auto; }
+        .toolbar__item{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:8px 4px; border-radius:12px; border:0; background:transparent; color:#fff; }
+        .toolbar__icon{ width:22px; height:22px; display:inline-flex; }
+        .toolbar__label{ font-size:12px; line-height:14px; color:#e7e7ea; }
+        @media (max-width:380px){ .toolbar{ grid-template-columns:repeat(4,1fr); } }
+        .sheet{ position:fixed; inset:0; z-index:40; background:rgba(0,0,0,0.4); display:flex; justify-content:center; align-items:flex-end; }
+        .sheet[aria-hidden="true"]{ pointer-events:none; }
+        .sheet__inner{ width:100%; max-height:70vh; background:#fff; border-radius:16px 16px 0 0; display:flex; flex-direction:column; overflow:hidden; }
+        .sheet__header{ padding:8px 12px; display:flex; justify-content:space-between; align-items:center; }
+        .sheet__actions{ display:flex; gap:12px; }
+        .sheet__body{ overflow:auto; -webkit-overflow-scrolling:touch; }
+        .grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; padding:8px; }
+        .grid__item{ position:relative; width:100%; aspect-ratio:1/1; }
+        .grid__item img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; border-radius:4px; }
+        .grid__move{ position:absolute; bottom:4px; width:20px; height:20px; }
+        .grid__move--left{ left:4px; }
+        .grid__move--right{ right:4px; }
+        .grid__remove{ position:absolute; top:4px; right:4px; }
         .slide { position:relative; }
         .slide__menu { position:absolute; top:4px; right:4px; display:flex; flex-direction:column; }
       `}</style>
