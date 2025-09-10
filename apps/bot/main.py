@@ -3,17 +3,20 @@ import os
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL")
 
 
 def create_bot() -> Bot:
-  if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN is not set")
-  return Bot(BOT_TOKEN)
+  if not TELEGRAM_BOT_TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN is not set")
+  return Bot(TELEGRAM_BOT_TOKEN)
 
 
 def create_dispatcher() -> Dispatcher:
+  if not WEBAPP_URL:
+    raise RuntimeError("WEBAPP_URL is not set")
+
   dp = Dispatcher()
 
   @dp.message(F.text == "/start")
