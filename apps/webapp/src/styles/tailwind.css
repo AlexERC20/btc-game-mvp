@@ -11,7 +11,6 @@ html, body, #root { height: 100%; }
 * { -webkit-tap-highlight-color: transparent; }
 body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
 [data-floating-label="export"] { display: none !important; }
-.dnd-area { touch-action: none; }
 .preview-card__text--center { top:50%; bottom:auto; transform:translateY(-50%); text-align:center; padding-top:16px; padding-bottom:16px; }
 @layer components {
   .slideCard {
