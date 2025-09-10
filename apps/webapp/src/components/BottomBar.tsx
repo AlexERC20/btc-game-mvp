@@ -8,18 +8,54 @@ import {
   IconExport,
 } from '../ui/icons';
 import { useStore } from '../state/store';
+import { exportSlides } from '../features/carousel/utils/exportSlides';
 
-export default function BottomBar({
-  disabledExport,
-  onExport,
-  exporting,
-}: {
-  disabledExport?: boolean;
-  onExport: () => void;
-  exporting?: boolean;
-}) {
+export default function BottomBar({ disabledExport }: { disabledExport?: boolean }) {
   const openSheet = useStore(s => s.openSheet);
   const setOpenSheet = useStore(s => s.setOpenSheet);
+  const sheetOpen = useStore(s => s.sheetOpen);
+  const slides = useStore(s => s.slides);
+  const frame = useStore(s => s.frame);
+  const defaults = useStore(s => s.defaults);
+  const [exporting, setExporting] = React.useState(false);
+
+  const handleExport = async () => {
+    if (exporting || !slides.length) return;
+    setExporting(true);
+    try {
+      const blobs = await exportSlides(slides as any, {
+        w: frame.width,
+        h: frame.height,
+        overlay: { enabled: false, heightPct: 40, intensity: 2 },
+        text: {
+          font: 'Inter',
+          size: defaults.fontSize,
+          lineHeight: defaults.lineHeight,
+          align: 'center',
+          color: defaults.bodyColor,
+          titleColor: defaults.titleColor,
+          titleEnabled: false,
+        },
+        username: '@username',
+      });
+      const files = blobs.map((b, i) => new File([b], `slide-${i + 1}.png`, { type: 'image/png' }));
+      if (navigator.canShare?.({ files })) {
+        await navigator.share({ files });
+      } else {
+        for (let i = 0; i < blobs.length; i++) {
+          const url = URL.createObjectURL(blobs[i]);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `slide-${i + 1}.png`;
+          a.click();
+          await new Promise(r => setTimeout(r, 120));
+          URL.revokeObjectURL(url);
+        }
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const Item = ({
     icon,
@@ -57,7 +93,7 @@ export default function BottomBar({
   );
 
   return (
-    <div className="toolbar">
+    <div className={`toolbar${sheetOpen ? ' pointer-events-none' : ''}`}>
       <Item icon={<IconTemplate />} label="Template" name="template" />
       <Item icon={<IconLayout />} label="Layout" name="layout" />
       <Item icon={<IconFonts />} label="Fonts" name="fonts" />
@@ -95,7 +131,7 @@ export default function BottomBar({
         }
         label="Export"
         disabled={disabledExport || exporting}
-        onClick={onExport}
+        onClick={handleExport}
       />
     </div>
   );

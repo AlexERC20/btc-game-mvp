@@ -8,7 +8,6 @@ import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
 import "./styles/preview-list.css";
 import { getWelcomeText, SEED_KEY } from "./core/seed";
-import { exportSlides } from "./features/carousel/utils/exportSlides";
 import { useStore } from "./state/store";
 import type { Slide, CanvasMode, PhotoMeta } from "./types";
 
@@ -21,7 +20,6 @@ export default function App() {
   const [count, setCount] = useState<SlideCount>("auto");
   const [username, setUsername] = useState("@username");
   const [mode, setMode] = useState<CanvasMode>('carousel');
-  const [exporting, setExporting] = useState(false);
   const [stagedPhotos, setStagedPhotos] = useState<PhotoMeta[]>([]);
   const [stagedOrder, setStagedOrder] = useState<number[]>([]);
   const [stagedRemoved, setStagedRemoved] = useState<Set<string>>(new Set());
@@ -331,30 +329,6 @@ export default function App() {
     }
   }, []);
 
-  const handleExport = async () => {
-    if (exporting) return;
-    setExporting(true);
-    try {
-      const size = mode === 'story' ? { w: 1080, h: 1920 } : { w: 1080, h: 1350 };
-      await exportSlides(slides as any, {
-        w: size.w,
-        h: size.h,
-        overlay: { enabled: false, heightPct: 40, intensity: 2 },
-        text: {
-          font: 'Inter',
-          size: 44,
-          lineHeight: 1.2,
-          align: 'center',
-          color: '#fff',
-          titleColor: '#fff',
-          titleEnabled: false,
-        },
-        username,
-      });
-    } finally {
-      setExporting(false);
-    }
-  };
 
   function splitHeading(body: string) {
     const hardBreak = body.indexOf('\n\n');
@@ -718,7 +692,7 @@ export default function App() {
         </div>
       )}
       </div>
-      <BottomBar onExport={handleExport} disabledExport={!slides.length || exporting} exporting={exporting} />
+      <BottomBar disabledExport={!slides.length} />
     </div>
     </>
   );

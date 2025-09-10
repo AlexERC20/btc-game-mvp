@@ -1,5 +1,4 @@
 import { renderSlideToBlob, Slide, OverlayOpts } from '../lib/canvasRender';
-import { downloadBlob } from '../../../core/export';
 
 type TextOpts = {
   font: string;
@@ -19,12 +18,16 @@ type ExportOpts = {
   username: string;
 };
 
-export async function exportSlides(slides: Slide[], opts: ExportOpts) {
+export async function exportSlides(slides: Slide[], opts: ExportOpts): Promise<Blob[]> {
+  const res: Blob[] = [];
   for (let i = 0; i < slides.length; i++) {
     const blob = await renderSlideToBlob(
       { ...(slides[i] as any), index: i },
-      { ...opts, text: { ...opts.text, content: (slides[i] as any).body || '' }, total: slides.length }
+      { ...opts, text: { ...opts.text, content: (slides[i] as any).body || '' }, total: slides.length },
+      'image/png',
+      1
     );
-    await downloadBlob(blob, `slide-${i + 1}.jpg`);
+    res.push(blob);
   }
+  return res;
 }

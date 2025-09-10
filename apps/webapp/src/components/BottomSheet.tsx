@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../state/store';
 
@@ -17,13 +17,6 @@ export default function BottomSheet({
   const setOpenSheet = useStore(s => s.setOpenSheet);
   const startY = useRef<number | null>(null);
   const isOpen = openSheet === name;
-
-  useEffect(() => {
-    document.body.style.overflow = isOpen ? 'hidden' : '';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -53,8 +46,13 @@ export default function BottomSheet({
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
-        <div className="sheet__handle" />
-        <div className="sheet__content">{children}</div>
+        <div className="sheet__header">
+          <h3>{title}</h3>
+          <button className="sheet__close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+        <div className="sheet__body">{children}</div>
       </div>
     </>,
     portal
