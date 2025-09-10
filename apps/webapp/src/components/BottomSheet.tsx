@@ -1,17 +1,58 @@
-import React from "react";
+import React, { useRef, useEffect } from 'react';
+import { useStore } from '../state/store';
+
+type SheetName = ReturnType<typeof useStore>['openSheet'];
 
 export default function BottomSheet({
-  open, onClose, title, children
-}:{open:boolean; onClose:()=>void; title:string; children:React.ReactNode}) {
-  if (!open) return null;
+  name,
+  title,
+  children,
+}: {
+  name: Exclude<SheetName, null>;
+  title: string;
+  children: React.ReactNode;
+}) {
+  const openSheet = useStore(s => s.openSheet);
+  const setOpenSheet = useStore(s => s.setOpenSheet);
+  const startY = useRef<number | null>(null);
+  const isOpen = openSheet === name;
+
+  useEffect(() => {
+    if (isOpen) document.body.classList.add('overflow-hidden');
+    else document.body.classList.remove('overflow-hidden');
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const onClose = () => setOpenSheet(null);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    startY.current = e.touches[0].clientY;
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (startY.current !== null) {
+      const dy = e.changedTouches[0].clientY - startY.current;
+      if (dy > 80) onClose();
+      startY.current = null;
+    }
+  };
+
   return (
-    <>
-      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40" onClick={onClose}/>
-      <div className="fixed inset-x-0 bottom-0 z-50 bg-neutral-900 text-white rounded-t-2xl
-                      border border-neutral-800 shadow-2xl pb-[env(safe-area-inset-bottom)]">
-        <div className="p-4 border-b border-neutral-800 font-medium">{title}</div>
-        <div className="p-4">{children}</div>
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div
+        className="sheet"
+        onClick={e => e.stopPropagation()}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
+        <div className="sheet__inner">
+          <div className="sheet__header">
+            <h3>{title}</h3>
+            <button onClick={onClose}>Close</button>
+          </div>
+          <div className="sheet__body">{children}</div>
+        </div>
       </div>
-    </>
+    </div>
   );
 }

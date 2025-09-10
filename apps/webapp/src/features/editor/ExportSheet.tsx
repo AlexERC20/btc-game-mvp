@@ -1,56 +1,37 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
+import BottomSheet from '../../components/BottomSheet';
 import { exportSlides } from '../carousel/utils/exportSlides';
+import { useStore } from '../../state/store';
 
-interface Props {
-  onClose: () => void;
-}
+export function ExportSheet() {
+  const slides = useStore(s => s.slides);
+  const [progress, setProgress] = useState<string>('');
 
-export function ExportSheet({ onClose }: Props) {
-  const [isExporting, setIsExporting] = useState(false);
-  const startY = useRef<number | null>(null);
-
-  const handleExport = async () => {
-    try {
-      setIsExporting(true);
-      await exportSlides({
-        containerSelector: '#preview-list',
-        hideSelectors: ['.toolbar', '.drag-ghost', '.sheet-backdrop'],
-        format: 'jpeg',
-        quality: 0.92,
-      });
-    } catch (e) {
-      console.error('Export failed', e);
-    } finally {
-      setIsExporting(false);
-      onClose();
-    }
-  };
-
-  const onTouchStart = (e: React.TouchEvent) => {
-    startY.current = e.touches[0].clientY;
-  };
-
-  const onTouchEnd = (e: React.TouchEvent) => {
-    if (startY.current !== null) {
-      const dy = e.changedTouches[0].clientY - startY.current;
-      if (dy > 50) onClose();
-      startY.current = null;
-    }
+  const runExport = async (mode: 'all' | 'current') => {
+    setProgress('Export 0/0');
+    const indices = mode === 'current' ? [0] : undefined; // placeholder index
+    await exportSlides({
+      containerSelector: '#preview-list',
+      hideSelectors: ['.toolbar', '.drag-ghost', '.sheet-backdrop'],
+      format: 'jpeg',
+      quality: 0.92,
+      indices,
+      onProgress: (i, total) => setProgress(`Export ${i}/${total}...`),
+    });
+    setProgress('');
   };
 
   return (
-    <div className="sheet" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-      <div className="sheet__inner">
-        <div className="sheet__header">
-          <h3>Export</h3>
-          <div className="sheet__actions">
-            <button onClick={onClose}>Cancel</button>
-            <button onClick={handleExport} className="is-primary" disabled={isExporting}>
-              Save
-            </button>
-          </div>
-        </div>
+    <BottomSheet name="export" title="Export">
+      <div className="flex flex-col gap-4">
+        <button className="btn btn-primary" onClick={() => runExport('all')} disabled={!slides.length}>
+          Save all (ZIP)
+        </button>
+        <button className="btn btn-secondary" onClick={() => runExport('current')} disabled={!slides.length}>
+          Save current
+        </button>
+        {progress && <p className="mt-4 text-center text-sm opacity-80">{progress}</p>}
       </div>
-    </div>
+    </BottomSheet>
   );
 }

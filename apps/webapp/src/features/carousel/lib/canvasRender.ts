@@ -33,17 +33,24 @@ async function drawImageFit(
   h: number
 ) {
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.src = src;
-  await new Promise((res) => {
-    img.onload = res;
-    img.onerror = res;
-  });
+  try {
+    await img.decode();
+  } catch (err) {
+    console.warn('Image load failed', src, err);
+    return;
+  }
   const r = Math.max(w / img.width, h / img.height);
   const nw = img.width * r;
   const nh = img.height * r;
   const dx = (w - nw) / 2;
   const dy = (h - nh) / 2;
-  ctx.drawImage(img, dx, dy, nw, nh);
+  try {
+    ctx.drawImage(img, dx, dy, nw, nh);
+  } catch (err) {
+    console.warn('drawImage failed', src, err);
+  }
 }
 
 function drawSlideText(

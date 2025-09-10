@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { renderSlideToCanvas, Slide } from '../carousel/lib/canvasRender';
-import { ExportSheet } from './ExportSheet';
 
 export function PreviewCarousel() {
   const [slides, setSlides] = useState<Slide[]>([]);
@@ -262,13 +261,7 @@ export function PreviewCarousel() {
         </button>
       </div>
       {activeSheet === 'photos' && <PhotosSheet />}
-      {activeSheet === 'export' && (
-        <ExportSheet
-          slides={slides}
-          settings={exportSettings}
-          onClose={() => setActiveSheet(null)}
-        />
-      )}
+      {/* export sheet handled globally */}
       <style>{`
         .carousel-page{ overflow-y:auto; -webkit-overflow-scrolling:touch; }
         .slidesScroll { overflow: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; }

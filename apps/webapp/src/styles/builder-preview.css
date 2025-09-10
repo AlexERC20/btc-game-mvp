@@ -1,5 +1,5 @@
 .builder-preview {
-  padding: 0 12px 100px;
+  padding: 0 12px calc(env(safe-area-inset-bottom, 12px) + 78px);
 }
 
 .segmented {
