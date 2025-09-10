@@ -1,14 +1,15 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { measureTextBlocks, splitTextToSlides, exportAll, CarouselSettings } from "./core/render";
+import { measureTextBlocks, splitTextToSlides, CarouselSettings } from "./core/render";
 import { CANVAS_PRESETS } from "./core/constants";
 import BottomSheet from "./components/BottomSheet";
 import PreviewCard from "./components/PreviewCard";
 import BottomBar from "./components/BottomBar";
-import { ExportSheet } from "./features/editor/ExportSheet";
 import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
 import "./styles/preview-list.css";
 import { getWelcomeText, SEED_KEY } from "./core/seed";
+import { quickExportAll } from "./core/export";
+import { useStore } from "./state/store";
 import type { Slide, CanvasMode, PhotoMeta } from "./types";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
@@ -21,11 +22,6 @@ export default function App() {
   const [username, setUsername] = useState("@username");
   const [mode, setMode] = useState<CanvasMode>('carousel');
   const [exporting, setExporting] = useState(false);
-  const [openTemplate, setOpenTemplate] = useState(false);
-  const [openLayout, setOpenLayout] = useState(false);
-  const [openFonts, setOpenFonts] = useState(false);
-  const [openInfo, setOpenInfo] = useState(false);
-  const [isPhotosOpen, setIsPhotosOpen] = useState(false);
   const [stagedPhotos, setStagedPhotos] = useState<PhotoMeta[]>([]);
   const [stagedOrder, setStagedOrder] = useState<number[]>([]);
   const [stagedRemoved, setStagedRemoved] = useState<Set<string>>(new Set());
@@ -37,6 +33,9 @@ export default function App() {
   const promptedRef = useRef<Record<string, boolean>>({});
   const touchRef = useRef<{ x: number; y: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const openSheet = useStore(s => s.openSheet);
+  const setOpenSheet = useStore(s => s.setOpenSheet);
 
   const genId = () => Math.random().toString(36).slice(2);
 
@@ -70,11 +69,15 @@ export default function App() {
   }, [settings]);
 
   useEffect(() => {
-    const hasModal =
-      openTemplate || openLayout || openFonts || isPhotosOpen || openInfo;
-    document.body.classList.toggle('overflow-hidden', hasModal);
+    document.body.classList.toggle('overflow-hidden', openSheet !== null);
     return () => document.body.classList.remove('overflow-hidden');
-  }, [openTemplate, openLayout, openFonts, isPhotosOpen, openInfo]);
+  }, [openSheet]);
+
+  useEffect(() => {
+    if (openSheet === 'photos') {
+      openPhotos();
+    }
+  }, [openSheet]);
 
   const PRESETS = {
     minimal: { textSize: 0.46, lineHeight: 1.4, textPosition: 'bottom', template: 'photo', overlayEnabled: false, headingEnabled: false, quoteMode: false },
@@ -210,7 +213,6 @@ export default function App() {
     setStagedOrder(copy.map((_, i) => i));
     setStagedRemoved(new Set());
     setHasStageChanges(false);
-    setIsPhotosOpen(true);
   };
 
   const onRemoveAt = (i: number) => {
@@ -292,7 +294,7 @@ export default function App() {
 
     setPhotos(kept);
     setSlides(nextSlides);
-    setIsPhotosOpen(false);
+    setOpenSheet(null);
   };
 
   const onSlideTouchStart = (e: React.TouchEvent) => {
@@ -313,7 +315,7 @@ export default function App() {
   };
 
 
-  const onPhotosCancel = () => setIsPhotosOpen(false);
+  const onPhotosCancel = () => setOpenSheet(null);
 
   useEffect(() => {
     if (localStorage.getItem(SEED_KEY)) return;
@@ -333,23 +335,7 @@ export default function App() {
     if (exporting) return;
     try {
       setExporting(true);
-      await exportAll({
-        slides: slides.map(s => ({ ...s, image: photos.find(p=>p.id===s.imageId)?.url })),
-        theme: settings.template,
-        username: username.replace(/^@/, ''),
-        mode: mode === 'story' ? 'story' : 'carousel',
-        settings,
-        defaults: {
-          fontSize: Math.round(34 + 26 * settings.textSize),
-          lineHeight: settings.lineHeight,
-          bodyColor: '#fff',
-          titleColor: '#fff',
-          matchTitleToBody: true,
-        },
-        quality: 0.95,
-      });
-    } catch (e) {
-      console.error('Export failed:', e);
+      await quickExportAll();
     } finally {
       setExporting(false);
     }
@@ -492,7 +478,7 @@ export default function App() {
         </div>
       </div>
 
-      <BottomSheet open={openTemplate} onClose={()=>setOpenTemplate(false)} title="Template">
+      <BottomSheet name="template" title="Template">
         <div className="segmented mb-4">
           {(["photo","light","dark"] as const).map(tpl=>(
             <button key={tpl}
@@ -505,7 +491,7 @@ export default function App() {
                 } else {
                   setSettings({...settings, template:tpl, overlayEnabled:true, overlayHeight:0.40, overlayOpacity:0.70});
                 }
-                setOpenTemplate(false);
+                setOpenSheet(null);
               }}
             >{tpl.charAt(0).toUpperCase()+tpl.slice(1)}</button>
           ))}
@@ -522,7 +508,7 @@ export default function App() {
         </div>
       </BottomSheet>
 
-      <BottomSheet open={openLayout} onClose={()=>setOpenLayout(false)} title="Layout">
+      <BottomSheet name="layout" title="Layout">
         <div className="space-y-2">
           <label className="flex items-center justify-between">
             <span>Text size</span>
@@ -587,7 +573,7 @@ export default function App() {
         </div>
       </BottomSheet>
 
-      <BottomSheet open={openFonts} onClose={()=>setOpenFonts(false)} title="Fonts">
+      <BottomSheet name="fonts" title="Fonts">
         <div className="space-y-2">
           <label className="flex flex-col gap-1">
             <span>Font family</span>
@@ -618,7 +604,7 @@ export default function App() {
           </div>
         </div>
       </BottomSheet>
-      {isPhotosOpen && (
+      {openSheet === 'photos' && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={onPhotosCancel}/>
           <div className="relative w-[min(720px,92vw)] max-h-[85vh] bg-[#161616] text-white rounded-2xl overflow-hidden shadow-2xl pointer-events-auto">
@@ -681,7 +667,7 @@ export default function App() {
         </div>
       )}
 
-      <BottomSheet open={openInfo} onClose={()=>setOpenInfo(false)} title="Info">
+      <BottomSheet name="info" title="Info">
         <div className="space-y-4">
           <button
             className="w-full px-4 py-3 rounded-xl bg-neutral-800 border border-neutral-700 text-sm"
@@ -707,8 +693,7 @@ export default function App() {
         </div>
       )}
       </div>
-      <BottomBar disabledExport={!slides.length || exporting} />
-      <ExportSheet />
+      <BottomBar onExport={handleExport} disabledExport={!slides.length || exporting} />
     </div>
     </>
   );

@@ -37,7 +37,7 @@ export type StoreState = {
   defaults: Defaults;
   mode: 'story' | 'carousel';
   frame: FrameSpec;
-  openSheet: null | 'template' | 'layout' | 'fonts' | 'photos' | 'info' | 'export';
+  openSheet: null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
   setOpenSheet: (name: StoreState['openSheet']) => void;
   updateDefaults: (partial: Partial<Defaults>) => void;
   updateSlide: (id: SlideId, partial: Partial<Slide> | { overrides: Partial<Slide['overrides']> }) => void;
@@ -75,5 +75,10 @@ export const useStore = create<StoreState>((set) => ({
     return { slides };
   }),
   setMode: (mode) => set(() => ({ mode, frame: FRAME_SPECS[mode] })),
-  setOpenSheet: (name) => set(() => ({ openSheet: name })),
+  setOpenSheet: (name) => {
+    set({ openSheet: null });
+    if (name) setTimeout(() => set({ openSheet: name }), 0);
+  },
 }));
+
+export const getState = () => useStore.getState();
