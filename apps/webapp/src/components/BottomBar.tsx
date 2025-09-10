@@ -8,18 +8,60 @@ import {
   IconExport,
 } from '../ui/icons';
 import { useStore } from '../state/store';
+import { exportSlides } from '../features/carousel/utils/exportSlides';
 
 export default function BottomBar({
   disabledExport,
-  onExport,
-  exporting,
+  onExport: _legacyOnExport,
+  exporting: _legacyExporting,
 }: {
   disabledExport?: boolean;
-  onExport: () => void;
+  onExport?: () => void;
   exporting?: boolean;
 }) {
   const openSheet = useStore(s => s.openSheet);
   const setOpenSheet = useStore(s => s.setOpenSheet);
+  const slides = useStore(s => s.slides);
+  const mode = useStore(s => s.mode);
+  const [exporting, setExporting] = React.useState(false);
+
+  async function onExport() {
+    if (exporting || !slides.length) return;
+    setExporting(true);
+    try {
+      const uiOptions =
+        mode === 'story'
+          ? { width: 1080, height: 1920 }
+          : { width: 1080, height: 1350 };
+      const story = { slides };
+      const blobs = await exportSlides(story as any, uiOptions);
+      const files = blobs.map(
+        (b, i) => new File([b], `slide-${i + 1}.png`, { type: 'image/png' })
+      );
+
+      if (navigator.canShare?.({ files }) && typeof navigator.share === 'function') {
+        await navigator.share({ files, title: 'Carousel', text: 'Slides' });
+        return;
+      }
+
+      for (let i = 0; i < files.length; i++) {
+        const url = URL.createObjectURL(files[i]);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = files[i].name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise(r => setTimeout(r, 120));
+      }
+    } catch (e) {
+      console.error('Export failed', e);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const Item = ({
     icon,
