@@ -1,10 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-
-type Slide = {
-  id: string;
-  image?: string;
-  thumb?: string;
-};
+import { renderSlideToCanvas, Slide } from '../carousel/lib/canvasRender';
 
 export function PreviewCarousel() {
   const [slides, setSlides] = useState<Slide[]>([]);
@@ -25,71 +20,6 @@ export function PreviewCarousel() {
   const titleColor = '#fff';
   const titleEnabled = true;
 
-  function drawOverlayGradient(
-    ctx: CanvasRenderingContext2D,
-    w: number,
-    h: number,
-    enabled: boolean,
-    heightPct = 40,
-    intensity = 2
-  ) {
-    if (!enabled) return;
-    const overlayH = Math.round(h * (heightPct / 100));
-    const g = ctx.createLinearGradient(0, h - overlayH, 0, h);
-    const a = Math.min(0.18 * intensity, 0.6);
-    g.addColorStop(0, `rgba(0,0,0,${a})`);
-    g.addColorStop(1, `rgba(0,0,0,0)`);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, h - overlayH, w, overlayH);
-  }
-
-  async function drawImageFit(ctx: CanvasRenderingContext2D, src: string, w: number, h: number) {
-    const img = new Image();
-    img.src = src;
-    await new Promise((res) => {
-      img.onload = res;
-      img.onerror = res;
-    });
-    const r = Math.max(w / img.width, h / img.height);
-    const nw = img.width * r;
-    const nh = img.height * r;
-    const dx = (w - nw) / 2;
-    const dy = (h - nh) / 2;
-    ctx.drawImage(img, dx, dy, nw, nh);
-  }
-
-  function drawSlideText(
-    ctx: CanvasRenderingContext2D,
-    text: string | undefined,
-    opts: {
-      font: string;
-      size: number;
-      lineHeight: number;
-      align: CanvasTextAlign;
-      color: string;
-      titleColor: string;
-      titleEnabled: boolean;
-    }
-  ) {
-    if (!text) return;
-    ctx.fillStyle = opts.color;
-    ctx.textAlign = opts.align;
-    ctx.font = `${opts.size}px ${opts.font}`;
-    const lines = text.split('\n');
-    lines.forEach((line, i) => {
-      ctx.fillText(line, ctx.canvas.width / 2, 100 + i * opts.size * opts.lineHeight);
-    });
-  }
-
-  function drawUsernameAndPager(ctx: CanvasRenderingContext2D, username: string, index: number, total: number) {
-    ctx.fillStyle = '#fff';
-    ctx.font = '16px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(username, 12, 24);
-    ctx.textAlign = 'right';
-    ctx.fillText(`${index + 1}/${total}`, ctx.canvas.width - 12, 24);
-  }
-
   async function saveBlobs(blobs: Blob[]) {
     blobs.forEach((blob, i) => {
       const url = URL.createObjectURL(blob);
@@ -101,49 +31,41 @@ export function PreviewCarousel() {
     });
   }
 
-  const renderSlideToCanvas = useCallback(
-    async (slide: Slide & { index: number }, opts: { w: number; h: number }) => {
-      const canvas = document.createElement('canvas');
-      canvas.width = opts.w;
-      canvas.height = opts.h;
-      const ctx = canvas.getContext('2d')!;
-      if (slide.image) {
-        await drawImageFit(ctx, slide.image, opts.w, opts.h);
-      }
-      drawOverlayGradient(ctx, opts.w, opts.h, overlayEnabled, overlayHeightPct, overlayIntensity);
-      drawSlideText(ctx, '', { font, size, lineHeight, align, color, titleColor, titleEnabled });
-      drawUsernameAndPager(ctx, username, slide.index, slides.length);
-      return canvas;
-    },
-    [
-      align,
-      color,
-      font,
-      lineHeight,
-      overlayEnabled,
-      overlayHeightPct,
-      overlayIntensity,
-      slides.length,
-      titleColor,
-      titleEnabled,
-      username,
-      size,
-    ]
-  );
 
   const exportSlides = useCallback(async () => {
     const W = mode === 'story' ? 1080 : 1350;
     const H = mode === 'story' ? 1920 : 1080;
     const blobs: Blob[] = [];
     for (let i = 0; i < slides.length; i++) {
-      const canvas = await renderSlideToCanvas({ ...slides[i], index: i }, { w: W, h: H });
+      const canvas = await renderSlideToCanvas({ ...slides[i], index: i }, {
+        w: W,
+        h: H,
+        overlay: { enabled: overlayEnabled, heightPct: overlayHeightPct, intensity: overlayIntensity },
+        text: { font, size, lineHeight, align, color, titleColor, titleEnabled, content: '' },
+        username,
+        total: slides.length,
+      });
       const blob = await new Promise<Blob>((res) =>
         canvas.toBlob((b) => res(b!), 'image/jpeg', 0.95)
       );
       blobs.push(blob);
     }
     await saveBlobs(blobs);
-  }, [mode, renderSlideToCanvas, slides]);
+  }, [
+    mode,
+    slides,
+    overlayEnabled,
+    overlayHeightPct,
+    overlayIntensity,
+    font,
+    size,
+    lineHeight,
+    align,
+    color,
+    titleColor,
+    titleEnabled,
+    username,
+  ]);
 
   const onExport = useCallback(async () => {
     try {
@@ -234,11 +156,33 @@ export function PreviewCarousel() {
     useEffect(() => {
       (async () => {
         if (!canvasRef.current) return;
-        const c = await renderSlideToCanvas({ ...slide, index }, { w: 300, h: 300 });
+        const c = await renderSlideToCanvas({ ...slide, index }, {
+          w: 300,
+          h: 300,
+          overlay: { enabled: overlayEnabled, heightPct: overlayHeightPct, intensity: overlayIntensity },
+          text: { font, size, lineHeight, align, color, titleColor, titleEnabled, content: '' },
+          username,
+          total: slides.length,
+        });
         const ctx = canvasRef.current.getContext('2d');
         ctx?.drawImage(c, 0, 0);
       })();
-    }, [slide, index, renderSlideToCanvas]);
+    }, [
+      slide,
+      index,
+      overlayEnabled,
+      overlayHeightPct,
+      overlayIntensity,
+      font,
+      size,
+      lineHeight,
+      align,
+      color,
+      titleColor,
+      titleEnabled,
+      username,
+      slides.length,
+    ]);
 
     const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
       startX.current = e.touches[0].clientX;
@@ -274,6 +218,7 @@ export function PreviewCarousel() {
         <canvas ref={canvasRef} width={300} height={300} />
         {open && (
           <div className="slide__menu">
+            <button>⋮</button>
             <button onClick={() => moveSlide(index, index - 1)}>↑</button>
             <button onClick={() => moveSlide(index, index + 1)}>↓</button>
             <button onClick={() => removeSlide(index)}>🗑</button>
@@ -359,7 +304,7 @@ export function PreviewCarousel() {
         .slidesScroll { overflow: auto; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
         .toolbar { position: sticky; bottom: 0; left:0; right:0; display:flex; justify-content:space-between; padding:10px 12px; backdrop-filter:blur(10px); z-index:5; pointer-events:auto; background:rgba(28,28,28,.92); }
         .toolbar__btn { display:flex; flex-direction:column; align-items:center; gap:6px; min-width:54px; border:0; background:transparent; color:#fff; }
-        .toolbar__icon { display:inline-flex; width:20px; height:20px; }
+        .toolbar__icon { display:inline-flex; width:24px; height:24px; }
         .toolbar__label { font-size:12px; line-height:14px; opacity:.9; }
         .sheet { position:fixed; inset:0; background:rgba(0,0,0,0.4); display:flex; flex-direction:column; }
         .sheet__header { background:#fff; padding:8px 12px; display:flex; justify-content:space-between; align-items:center; }
