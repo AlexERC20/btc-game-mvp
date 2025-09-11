@@ -54,15 +54,6 @@ export const IconInfo    = (p:IconProps) => (
   </Base>
 );
 
-export const IconExport  = (p:IconProps) => (
-  <Base {...p}>
-    <path d="M12 3v10"/>
-    <path d="M8 7l4-4 4 4"/>
-    <path d="M5 21h14a2 2 0 0 0 2-2v-4"/>
-    <path d="M19 15l-3 3-3-3"/>
-  </Base>
-);
-
 // Swipe actions
 export const IconTrash   = (p:IconProps) => (
   <Base {...p}>
@@ -110,7 +101,6 @@ export default {
   IconFonts,
   IconPhotos,
   IconInfo,
-  IconExport,
   IconTrash,
   IconMoveUp,
   IconMoveDown,

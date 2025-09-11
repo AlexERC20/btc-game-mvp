@@ -604,9 +604,12 @@ export default function App() {
         </div>
       </BottomSheet>
       {openSheet === 'photos' && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center">
           <div className="absolute inset-0 bg-black/50" onClick={onPhotosCancel}/>
-          <div className="relative w-[min(720px,92vw)] max-h-[85vh] bg-[#161616] text-white rounded-2xl overflow-hidden shadow-2xl pointer-events-auto">
+          <div
+            className="relative w-[min(720px,92vw)] max-h-[85vh] bg-[#161616] text-white rounded-2xl overflow-hidden shadow-2xl pointer-events-auto"
+            style={{ paddingBottom: 'calc(var(--tb-h) + env(safe-area-inset-bottom))' }}
+          >
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
               <div className="text-base font-semibold">Photos</div>
               <div className="flex items-center gap-2">
@@ -635,7 +638,10 @@ export default function App() {
               onChange={handleFiles}
             />
 
-            <div className="p-4 grid grid-cols-3 gap-3 overflow-y-auto" style={{maxHeight: 'calc(85vh - 56px)'}}>
+            <div
+              className="p-4 grid grid-cols-3 gap-3 overflow-y-auto"
+              style={{ maxHeight: 'calc(85vh - 56px - var(--tb-h) - env(safe-area-inset-bottom))' }}
+            >
               {stagedOrder.map((ordIdx, i) => {
                 const ph = stagedPhotos[ordIdx];
                 const removed = stagedRemoved.has(ph.id);
@@ -655,12 +661,6 @@ export default function App() {
                   </div>
                 );
               })}
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="aspect-square rounded-xl border border-white/15 flex items-center justify-center text-sm hover:bg-white/5"
-              >
-                Add photo
-              </button>
             </div>
           </div>
         </div>

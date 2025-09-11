@@ -1,6 +1,5 @@
 import type { Slide, Defaults, Theme } from '../types';
 import type { FrameSpec } from '../state/store';
-import { CANVAS_PRESETS } from './constants';
 
 const BASE_FAMILY = '"SF Pro Display","Inter",system-ui,-apple-system,Segoe UI,Roboto,Arial';
 
@@ -281,79 +280,3 @@ export async function renderSlideToCanvas(
   }
 }
 
-export async function renderSlides(opts: {
-  slides: Slide[];
-  theme: Theme;
-  defaults: Defaults;
-  username: string;
-  mode: 'story' | 'carousel';
-  settings: CarouselSettings;
-  quality?: number;
-}): Promise<Blob[]> {
-  const { slides, theme, defaults, username, mode, settings, quality = 0.95 } = opts;
-  const preset = CANVAS_PRESETS[mode];
-  const cnv = document.createElement('canvas');
-  cnv.width = preset.w;
-  cnv.height = preset.h;
-  const ctx = cnv.getContext('2d')!;
-  const lastImage = slides.map(s => s.image).filter(Boolean).pop();
-  const blobs: Blob[] = [];
-  for (let i = 0; i < slides.length; i++) {
-    const slide = { ...slides[i] } as Slide;
-    if (!slide.image && lastImage) slide.image = lastImage;
-    await renderSlideToCanvas(slide, ctx, {
-      frame: {
-        width: preset.w,
-        height: preset.h,
-        paddingX: 72,
-        paddingTop: 72,
-        paddingBottom: 72,
-        safeNickname: 120,
-        safePagination: 120,
-      },
-      theme,
-      defaults,
-      username: username.replace(/^@/, ''),
-      page: { index: i + 1, total: slides.length, showArrow: i + 1 < slides.length },
-      settings,
-    });
-    const blob = await new Promise<Blob>(res =>
-      cnv.toBlob(b => res(b!), 'image/jpeg', quality)!
-    );
-    blobs.push(blob);
-  }
-  return blobs;
-}
-
-export async function exportAll(opts: {
-  slides: Slide[];
-  theme: Theme;
-  defaults: Defaults;
-  username: string;
-  mode: 'story' | 'carousel';
-  settings: CarouselSettings;
-  quality?: number;
-}) {
-  const blobs = await renderSlides(opts);
-  if (navigator.canShare && typeof navigator.canShare === 'function') {
-    for (const [i, blob] of blobs.entries()) {
-      const file = new File([blob], `slide-${i + 1}.jpg`, { type: 'image/jpeg' });
-      try {
-        await (navigator as any).share({ files: [file], title: 'Carousel' });
-      } catch {}
-    }
-    return;
-  }
-  const { default: JSZip } = await import('https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm');
-  const zip = new JSZip();
-  blobs.forEach((blob, i) => zip.file(`slide-${i + 1}.jpg`, blob));
-  const zipBlob = await zip.generateAsync({ type: 'blob' });
-  const url = URL.createObjectURL(zipBlob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'carousel.zip';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
