@@ -1,68 +1,62 @@
-import React from 'react';
-import { useCarouselStore } from '@/state/store';
-import { exportSlides } from '@/features/carousel/utils/exportSlides';
+import React from 'react'
+import { exportSlides } from '@/features/carousel/utils/exportSlides'
+import { useStore } from '@/state/store'
+import TemplateIcon from '@/icons/TemplateIcon'
+import LayoutIcon from '@/icons/LayoutIcon'
+import PaletteIcon from '@/icons/PaletteIcon'
+import CameraIcon from '@/icons/CameraIcon'
+import InfoIcon from '@/icons/InfoIcon'
+import DownloadIcon from '@/icons/DownloadIcon'
 
-// иконка экспорта — оставьте ваш компонент/путь, если отличается
-import DownloadIcon from '@/icons/DownloadIcon';
+async function onExport() {
+  const state: any = useStore.getState()
+  const story = state.story ?? state
+  const [blob] = await exportSlides(story)
+  const file = new File([blob], 'slide-1.png', { type: 'image/png' })
 
-/**
- * ВНИМАНИЕ: кнопка Export делает только share-sheet (если доступен)
- * или fallback на последовательные загрузки PNG. Никаких модалок.
- */
-export default function BottomBar() {
-  const story = useCarouselStore((s) => s.story);
-  const uiOptions = useCarouselStore((s) => s.uiOptions);
+  const nav: any = navigator
+  if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
+    await nav.share({ files: [file] })
+    return
+  }
 
-  const onExport = async () => {
-    try {
-      const blobs = await exportSlides(story, uiOptions);
-      const files = blobs.map(
-        (b, i) => new File([b], `slide-${i + 1}.png`, { type: 'image/png' })
-      );
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'slide-1.png'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
 
-      // 1) Современный путь: системное меню «Поделиться»
-      if (navigator.canShare?.({ files }) && typeof navigator.share === 'function') {
-        await navigator.share({
-          files,
-          title: 'Carousel',
-          text: 'Slides',
-        });
-        return;
-      }
+export default function BottomBar({ disabledExport }: { disabledExport?: boolean }) {
+  const setOpenSheet = useStore(s => s.setOpenSheet)
 
-      // 2) Фолбэк: поочерёдные загрузки PNG
-      for (let i = 0; i < files.length; i++) {
-        const url = URL.createObjectURL(files[i]);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = files[i].name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        // маленькая задержка, чтобы iOS не «склеивал» клики
-        // eslint-disable-next-line no-await-in-loop
-        await new Promise((r) => setTimeout(r, 120));
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-      }
-    } catch (e) {
-      console.error('Export failed', e);
-    }
-  };
+  const items = [
+    { id: 'template', label: 'Template', icon: <TemplateIcon />, onClick: () => setOpenSheet('template') },
+    { id: 'layout', label: 'Layout', icon: <LayoutIcon />, onClick: () => setOpenSheet('layout') },
+    { id: 'fonts', label: 'Fonts', icon: <PaletteIcon />, onClick: () => setOpenSheet('fonts') },
+    { id: 'photos', label: 'Photos', icon: <CameraIcon />, onClick: () => setOpenSheet('photos') },
+    { id: 'info', label: 'Info', icon: <InfoIcon />, onClick: () => setOpenSheet('info') },
+    { id: 'export', label: 'Export', icon: <DownloadIcon />, onClick: onExport, disabled: disabledExport },
+  ]
 
   return (
-    <div className="toolbar">
-      {/* остальные кнопки Template / Layout / Fonts / Photos / Info — НЕ трогаем */}
-      <button
-        type="button"
-        className="toolbar__btn"
-        onClick={onExport}
-        aria-label="Export"
-      >
-        <span className="toolbar__icon">
-          <DownloadIcon />
-        </span>
-        <span className="toolbar__label">Export</span>
-      </button>
-    </div>
-  );
+    <nav className="toolbar" role="toolbar" aria-label="Carousel toolbar">
+      {items.map(it => (
+        <button
+          key={it.id}
+          type="button"
+          className="toolbar__item"
+          onClick={it.onClick}
+          aria-label={it.label}
+          disabled={it.disabled}
+        >
+          <span className="toolbar__icon">{it.icon}</span>
+          <span className="toolbar__label">{it.label}</span>
+        </button>
+      ))}
+    </nav>
+  )
 }
