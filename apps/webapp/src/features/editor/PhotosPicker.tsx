@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
+import BottomSheet from '../../components/BottomSheet';
 
-export function PhotosPicker({ onPick }: { onPick: (urls: string[]) => void }) {
+export function PhotosPicker({ open, onClose, onPick }: { open: boolean; onClose: () => void; onPick: (urls: string[]) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const trigger = () => inputRef.current?.click();
@@ -20,7 +21,7 @@ export function PhotosPicker({ onPick }: { onPick: (urls: string[]) => void }) {
   };
 
   return (
-    <>
+    <BottomSheet open={open} onClose={onClose} title="Photos" insetBottom>
       <input
         ref={inputRef}
         type="file"
@@ -32,6 +33,6 @@ export function PhotosPicker({ onPick }: { onPick: (urls: string[]) => void }) {
       <button type="button" onClick={trigger} className="btn btn-secondary">
         Add photo
       </button>
-    </>
+    </BottomSheet>
   );
 }

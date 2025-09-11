@@ -1,26 +1,24 @@
 import React, { useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useStore } from '../state/store';
 
-type SheetName = ReturnType<typeof useStore>['openSheet'];
+type BottomSheetProps = {
+  open: boolean;
+  onClose: () => void;
+  title?: string;
+  insetBottom?: boolean;
+  children: React.ReactNode;
+};
 
 export default function BottomSheet({
-  name,
+  open,
+  onClose,
   title,
+  insetBottom = false,
   children,
-}: {
-  name: Exclude<SheetName, null>;
-  title: string;
-  children: React.ReactNode;
-}) {
-  const openSheet = useStore(s => s.openSheet);
-  const setOpenSheet = useStore(s => s.setOpenSheet);
+}: BottomSheetProps) {
+  if (!open) return null;
+
   const startY = useRef<number | null>(null);
-  const isOpen = openSheet === name;
-
-  if (!isOpen) return null;
-
-  const onClose = () => setOpenSheet(null);
 
   const onTouchStart = (e: React.TouchEvent) => {
     startY.current = e.touches[0].clientY;
@@ -37,24 +35,29 @@ export default function BottomSheet({
   if (!portal) return null;
 
   return createPortal(
-    <>
-      <div className="sheet-backdrop" onClick={onClose} />
-      <div
-        className="sheet"
+    <div className="sheet__wrap">
+      <div className="sheet__backdrop" onClick={onClose} />
+      <section
+        className={`sheet ${insetBottom ? 'sheet--inset-bottom' : ''}`}
         role="dialog"
+        aria-modal="true"
+        aria-label={title}
         onClick={e => e.stopPropagation()}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
-        <div className="sheet__header">
-          <h3>{title}</h3>
-          <button className="sheet__close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
-        </div>
+        {title && (
+          <div className="sheet__header">
+            <h3>{title}</h3>
+            <button className="sheet__close" onClick={onClose} aria-label="Close">
+              ×
+            </button>
+          </div>
+        )}
         <div className="sheet__body">{children}</div>
-      </div>
-    </>,
+      </section>
+    </div>,
     portal
   );
 }
+
