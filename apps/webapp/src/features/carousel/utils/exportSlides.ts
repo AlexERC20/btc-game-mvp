@@ -1,5 +1,5 @@
-import { renderSlideToCanvas } from '../lib/canvasRender';
-import type { Story } from '../../../core/story';
+import { renderSlideToCanvas } from '@/features/carousel/lib/canvasRender';
+import type { Story } from '@/core/story';
 
 type ExportOpts = {
   width?: number;
@@ -18,7 +18,6 @@ export async function exportSlides(
 
   for (let i = 0; i < story.slides.length; i++) {
     // canvasRender уже учитывает текущий layout/template/fonts из story/uiOptions
-    // @ts-ignore -- renderSlideToCanvas signature may vary
     const canvas = await renderSlideToCanvas(story, i, opts);
 
     const blob = await new Promise<Blob>((resolve) => {
