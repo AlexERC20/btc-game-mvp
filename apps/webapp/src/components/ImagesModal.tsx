@@ -2,7 +2,8 @@ import React, { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PhotoMeta } from "../types";
 
-const SHEET_HEADER_H = 64; // высота шапки шита (заголовок + кнопки)
+const BOTTOM_BAR_INSET = 72; // фактическая высота нижнего меню (+пара пикселей)
+const HEADER_HEIGHT = 64; // заголовок шита (если у вас другой — подставьте)
 
 export default function ImagesModal({
   open,
@@ -78,8 +79,8 @@ export default function ImagesModal({
         <div
           className="sheet__content overflow-auto -mx-4 px-4"
           style={{
-            maxHeight: `calc(100vh - ${SHEET_HEADER_H}px - var(--bottom-bar-h, 86px) - env(safe-area-inset-bottom,0px))`,
-            paddingBottom: `calc(var(--bottom-bar-h, 86px) + env(safe-area-inset-bottom,0px))`,
+            maxHeight: `calc(100vh - ${HEADER_HEIGHT}px - ${BOTTOM_BAR_INSET}px - env(safe-area-inset-bottom,0px))`,
+            paddingBottom: `calc(${BOTTOM_BAR_INSET}px + env(safe-area-inset-bottom,0px))`,
           }}
         >
           <div className="photos-grid">
@@ -125,7 +126,7 @@ export default function ImagesModal({
             ))}
           </div>
 
-          <div style={{ height: 'var(--bottom-bar-h, 86px)' }} />
+          <div className="h-[72px] shrink-0" />
         </div>
       </div>
     </>,
