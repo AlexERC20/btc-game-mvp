@@ -38,6 +38,7 @@ export type StoreState = {
   mode: 'story' | 'carousel';
   frame: FrameSpec;
   openSheet: null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
+  sheetOpen: boolean;
   setOpenSheet: (name: StoreState['openSheet']) => void;
   updateDefaults: (partial: Partial<Defaults>) => void;
   updateSlide: (id: SlideId, partial: Partial<Slide> | { overrides: Partial<Slide['overrides']> }) => void;
@@ -58,6 +59,7 @@ export const useStore = create<StoreState>((set) => ({
   mode: 'story',
   frame: FRAME_SPECS.story,
   openSheet: null,
+  sheetOpen: false,
   updateDefaults: (partial) => set((state) => ({ defaults: { ...state.defaults, ...partial } })),
   updateSlide: (id, partial) => set((state) => ({
     slides: state.slides.map((s) => {
@@ -76,8 +78,14 @@ export const useStore = create<StoreState>((set) => ({
   }),
   setMode: (mode) => set(() => ({ mode, frame: FRAME_SPECS[mode] })),
   setOpenSheet: (name) => {
-    set({ openSheet: null });
-    if (name) setTimeout(() => set({ openSheet: name }), 0);
+    set({ openSheet: null, sheetOpen: false });
+    document.body.classList.remove('body--sheet-open');
+    if (name) {
+      setTimeout(() => {
+        set({ openSheet: name, sheetOpen: true });
+        document.body.classList.add('body--sheet-open');
+      }, 0);
+    }
   },
 }));
 

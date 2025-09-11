@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { PhotoMeta } from "../types";
 
@@ -21,13 +21,6 @@ export default function ImagesModal({
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    document.body.style.overflow = open ? 'hidden' : '';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [open]);
 
   if (!open) return null;
 
