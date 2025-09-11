@@ -59,7 +59,9 @@ body.body--sheet-open { overflow: hidden; }
     opacity: 0.8;
   }
 
-  .toolbar{ @apply z-[50] pointer-events-auto; }
+  .toolbar{ @apply pointer-events-auto; }
+  .bottom-bar{ @apply z-[40]; }
+  .bottom-sheet{ @apply z-[50]; }
   .sheet-backdrop{ @apply fixed inset-0 z-[55] bg-black/40; }
   .sheet{ @apply fixed left-0 right-0 bottom-0 z-[60] bg-neutral-900 text-white rounded-t-2xl border border-neutral-800 shadow-2xl; max-height:calc(100vh - var(--header-h,56px) - env(safe-area-inset-top) - 12px); padding-bottom:calc(16px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; }
   .sheet__header{ @apply p-4 flex items-center justify-between border-b border-neutral-800; }
