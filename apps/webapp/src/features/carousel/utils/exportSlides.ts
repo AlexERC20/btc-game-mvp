@@ -1,33 +1,31 @@
-import { renderSlideToBlob, Slide, OverlayOpts } from '../lib/canvasRender';
-
-type TextOpts = {
-  font: string;
-  size: number;
-  lineHeight: number;
-  align: CanvasTextAlign;
-  color: string;
-  titleColor: string;
-  titleEnabled: boolean;
-};
+import { renderSlideToCanvas } from '@/features/carousel/lib/canvasRender';
+import type { Story } from '@/core/story';
 
 type ExportOpts = {
-  w: number;
-  h: number;
-  overlay: OverlayOpts;
-  text: TextOpts;
-  username: string;
+  width?: number;
+  height?: number;
 };
 
-export async function exportSlides(slides: Slide[], opts: ExportOpts): Promise<Blob[]> {
-  const res: Blob[] = [];
-  for (let i = 0; i < slides.length; i++) {
-    const blob = await renderSlideToBlob(
-      { ...(slides[i] as any), index: i },
-      { ...opts, text: { ...opts.text, content: (slides[i] as any).body || '' }, total: slides.length },
-      'image/png',
-      1
-    );
-    res.push(blob);
+/**
+ * Рендерим ВСЕ слайды в PNG и отдаём массив Blob'ов.
+ * Никаких ZIP — дальше пусть решает UI (share-sheet или download).
+ */
+export async function exportSlides(
+  story: Story,
+  opts: ExportOpts = {}
+): Promise<Blob[]> {
+  const blobs: Blob[] = [];
+
+  for (let i = 0; i < story.slides.length; i++) {
+    // canvasRender уже учитывает текущий layout/template/fonts из story/uiOptions
+    const canvas = await renderSlideToCanvas(story, i, opts);
+
+    const blob = await new Promise<Blob>((resolve) => {
+      canvas.toBlob((b) => resolve(b as Blob), 'image/png', 1);
+    });
+
+    blobs.push(blob);
   }
-  return res;
+
+  return blobs;
 }
