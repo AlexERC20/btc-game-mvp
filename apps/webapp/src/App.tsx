@@ -4,6 +4,7 @@ import { CANVAS_PRESETS } from "./core/constants";
 import BottomSheet from "./components/BottomSheet";
 import PreviewCard from "./components/PreviewCard";
 import BottomBar from "./components/BottomBar";
+import ExportSheet from "./features/editor/ExportSheet";
 import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
 import "./styles/preview-list.css";
@@ -26,6 +27,7 @@ export default function App() {
   const [hasStageChanges, setHasStageChanges] = useState(false);
   const [autoSplitEnabled, setAutoSplitEnabled] = useState(true);
   const [splitPrompt, setSplitPrompt] = useState<number|null>(null);
+  const [isExportOpen, setExportOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const prevTextPos = useRef<'top'|'bottom'>('bottom');
   const promptedRef = useRef<Record<string, boolean>>({});
@@ -692,7 +694,15 @@ export default function App() {
         </div>
       )}
       </div>
-      <BottomBar disabledExport={!slides.length} />
+      <BottomBar
+        disabledExport={!slides.length}
+        onOpenExport={() => setExportOpen(true)}
+      />
+      <ExportSheet
+        isOpen={isExportOpen}
+        onClose={() => setExportOpen(false)}
+        story={{ slides } as any}
+      />
     </div>
     </>
   );

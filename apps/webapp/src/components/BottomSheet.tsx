@@ -39,13 +39,13 @@ export default function BottomSheet({
   return createPortal(
     <>
       <div className="sheet-backdrop" onClick={onClose} />
-      <div
-        className="sheet"
-        role="dialog"
-        onClick={e => e.stopPropagation()}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
-      >
+        <div
+          className="sheet bottom-sheet"
+          role="dialog"
+          onClick={e => e.stopPropagation()}
+          onTouchStart={onTouchStart}
+          onTouchEnd={onTouchEnd}
+        >
         <div className="sheet__header">
           <h3>{title}</h3>
           <button className="sheet__close" onClick={onClose} aria-label="Close">

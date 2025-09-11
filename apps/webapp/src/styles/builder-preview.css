@@ -20,6 +20,7 @@
 }
 
 
+
 .sheet-backdrop{
   position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:55;
 }
@@ -32,9 +33,11 @@
 
 
 .toolbar{
-  position:fixed;left:16px;right:16px;bottom:16px;z-index:50;background:rgba(20,20,20,.92);
+  position:fixed;left:16px;right:16px;bottom:16px;background:rgba(20,20,20,.92);
   backdrop-filter:blur(12px);border-radius:16px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(6,1fr);gap:8px;
 }
+.bottom-bar{z-index:40;}
+.bottom-sheet{z-index:50;}
 .toolbar__item{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 0;border-radius:12px;}
 .toolbar__icon svg{width:22px;height:22px;display:block;}
 .toolbar__label{font-size:12px;line-height:14px;color:#ddd;}
