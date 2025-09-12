@@ -3,11 +3,11 @@ import { renderSlideToCanvas, Slide } from '../carousel/lib/canvasRender';
 import BottomBar from '../../components/BottomBar';
 import LayoutSheet from '../../components/sheets/LayoutSheet';
 import BottomSheet from '../../components/BottomSheet';
-import { PhotosPicker } from './PhotosPicker';
+import PhotosPicker from './PhotosPicker';
 
 type Sheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
 
-export function PreviewCarousel() {
+export default function PreviewCarousel() {
   const [slides, setSlides] = useState<Slide[]>([]);
   const [activeSheet, setActiveSheet] = useState<Sheet>(null);
   const [mode] = useState<'story' | 'carousel'>('carousel');
@@ -53,6 +53,9 @@ export function PreviewCarousel() {
   const removeSlide = (index: number) => {
     setSlides((prev) => prev.filter((_, i) => i !== index));
   };
+
+  const openSheet = (name: Sheet) => setActiveSheet(name);
+  const closeSheet = () => setActiveSheet(null);
 
   const SlideCard: React.FC<{ slide: Slide; index: number }> = ({ slide, index }) => {
     const [open, setOpen] = useState(false);
@@ -151,15 +154,12 @@ export function PreviewCarousel() {
           <SlideCard key={s.id} slide={s} index={i} />
         ))}
       </div>
-      <BottomBar
-        activeSheet={activeSheet}
-        onOpenSheet={name => setActiveSheet(s => (s === name ? null : name))}
-      />
-      <TemplateSheet open={activeSheet === 'template'} onClose={() => setActiveSheet(null)} />
-      <LayoutSheet open={activeSheet === 'layout'} onClose={() => setActiveSheet(null)} />
-      <FontsSheet open={activeSheet === 'fonts'} onClose={() => setActiveSheet(null)} />
-      <PhotosPicker open={activeSheet === 'photos'} onClose={() => setActiveSheet(null)} onPick={appendPhotos} />
-      <InfoSheet open={activeSheet === 'info'} onClose={() => setActiveSheet(null)} />
+      <BottomBar onOpenSheet={openSheet} />
+      <TemplateSheet open={activeSheet === 'template'} onClose={closeSheet} />
+      <LayoutSheet open={activeSheet === 'layout'} onClose={closeSheet} />
+      <FontsSheet open={activeSheet === 'fonts'} onClose={closeSheet} />
+      <PhotosPicker open={activeSheet === 'photos'} onClose={closeSheet} onPick={appendPhotos} />
+      <InfoSheet open={activeSheet === 'info'} onClose={closeSheet} />
       {/* export sheet handled globally */}
     </div>
   );

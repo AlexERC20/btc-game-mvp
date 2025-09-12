@@ -1,32 +1,23 @@
-import React from 'react';
 import { createPortal } from 'react-dom';
 
 type BottomSheetProps = {
-  open: boolean
-  onClose: () => void
-  title?: string
-  withToolbarGap?: boolean
-  children: React.ReactNode
-}
+  open: boolean;
+  title?: string;
+  onClose: () => void;
+  children: React.ReactNode;
+};
 
-export default function BottomSheet({
-  open,
-  onClose,
-  title,
-  withToolbarGap = false,
-  children,
-}: BottomSheetProps) {
-  if (!open) return null
+export default function BottomSheet({ open, title, onClose, children }: BottomSheetProps) {
+  if (!open) return null;
 
   return createPortal(
-    <div className="sheet-wrap" role="dialog" aria-modal="true">
-      <div className="sheet-backdrop" onClick={onClose} />
-      <section className={`sheet ${withToolbarGap ? 'sheet--with-toolbar-gap' : ''}`}>
-        {title && <header className="sheet__title">{title}</header>}
+    <div className="sheet" onClick={onClose}>
+      <div className="sheet__panel" onClick={e => e.stopPropagation()}>
+        {title && <div className="sheet__title">{title}</div>}
         <div className="sheet__content">{children}</div>
-      </section>
+      </div>
     </div>,
     document.body
-  )
+  );
 }
 
