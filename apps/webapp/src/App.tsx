@@ -477,7 +477,7 @@ export default function App() {
         </div>
       </div>
 
-      <BottomSheet name="template" title="Template">
+      <BottomSheet open={openSheet === 'template'} onClose={() => setOpenSheet(null)} title="Template">
         <div className="segmented mb-4">
           {(["photo","light","dark"] as const).map(tpl=>(
             <button key={tpl}
@@ -507,7 +507,7 @@ export default function App() {
         </div>
       </BottomSheet>
 
-      <BottomSheet name="layout" title="Layout">
+      <BottomSheet open={openSheet === 'layout'} onClose={() => setOpenSheet(null)} title="Layout">
         <div className="space-y-2">
           <label className="flex items-center justify-between">
             <span>Text size</span>
@@ -572,7 +572,7 @@ export default function App() {
         </div>
       </BottomSheet>
 
-      <BottomSheet name="fonts" title="Fonts">
+      <BottomSheet open={openSheet === 'fonts'} onClose={() => setOpenSheet(null)} title="Fonts">
         <div className="space-y-2">
           <label className="flex flex-col gap-1">
             <span>Font family</span>
@@ -666,7 +666,7 @@ export default function App() {
         </div>
       )}
 
-      <BottomSheet name="info" title="Info">
+      <BottomSheet open={openSheet === 'info'} onClose={() => setOpenSheet(null)} title="Info">
         <div className="space-y-4">
           <button
             className="w-full px-4 py-3 rounded-xl bg-neutral-800 border border-neutral-700 text-sm"
@@ -692,7 +692,7 @@ export default function App() {
         </div>
       )}
       </div>
-      <BottomBar disabledExport={!slides.length} />
+      <BottomBar onOpenSheet={setOpenSheet} />
     </div>
     </>
   );

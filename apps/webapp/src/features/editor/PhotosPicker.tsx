@@ -1,15 +1,13 @@
-import React, { useRef } from 'react'
+import { useRef } from 'react'
 import BottomSheet from '../../components/BottomSheet'
 
-export function PhotosPicker({
-  open,
-  onClose,
-  onPick,
-}: {
+type Props = {
   open: boolean
   onClose: () => void
   onPick: (urls: string[]) => void
-}) {
+}
+
+export default function PhotosPicker({ open, onClose, onPick }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const trigger = () => inputRef.current?.click()
@@ -29,7 +27,7 @@ export function PhotosPicker({
   }
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Photos" withToolbarGap>
+    <BottomSheet open={open} onClose={onClose} title="Photos">
       <input
         ref={inputRef}
         type="file"

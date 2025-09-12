@@ -1,37 +1,33 @@
-import React from 'react'
 import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons'
 
-type Sheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info'
-
 type Props = {
-  activeSheet: Sheet
-  onOpenSheet: (name: Exclude<Sheet, null>) => void
+  onOpenSheet: (name: 'template' | 'layout' | 'fonts' | 'photos' | 'info') => void
 }
 
-export default function BottomBar({ activeSheet, onOpenSheet }: Props) {
-  const items: { id: Exclude<Sheet, null>; label: string; icon: JSX.Element }[] = [
-    { id: 'template', label: 'Template', icon: <IconTemplate /> },
-    { id: 'layout', label: 'Layout', icon: <IconLayout /> },
-    { id: 'fonts', label: 'Fonts', icon: <IconFonts /> },
-    { id: 'photos', label: 'Photos', icon: <IconPhotos /> },
-    { id: 'info', label: 'Info', icon: <IconInfo /> },
-  ]
-
+export default function BottomBar({ onOpenSheet }: Props) {
   return (
-    <nav className="toolbar" role="toolbar" aria-label="Carousel toolbar">
-      {items.map(it => (
-        <button
-          key={it.id}
-          type="button"
-          className="toolbar__item"
-          onClick={() => onOpenSheet(it.id)}
-          aria-pressed={activeSheet === it.id}
-          aria-label={it.label}
-        >
-          <span className="toolbar__icon">{it.icon}</span>
-          <span className="toolbar__label">{it.label}</span>
-        </button>
-      ))}
-    </nav>
+    <div className="toolbar">
+      <button className="toolbar__btn" onClick={() => onOpenSheet('template')}>
+        <span className="toolbar__icon"><IconTemplate /></span>
+        <span className="toolbar__label">Template</span>
+      </button>
+      <button className="toolbar__btn" onClick={() => onOpenSheet('layout')}>
+        <span className="toolbar__icon"><IconLayout /></span>
+        <span className="toolbar__label">Layout</span>
+      </button>
+      <button className="toolbar__btn" onClick={() => onOpenSheet('fonts')}>
+        <span className="toolbar__icon"><IconFonts /></span>
+        <span className="toolbar__label">Fonts</span>
+      </button>
+      <button className="toolbar__btn" onClick={() => onOpenSheet('photos')}>
+        <span className="toolbar__icon"><IconPhotos /></span>
+        <span className="toolbar__label">Photos</span>
+      </button>
+      <button className="toolbar__btn" onClick={() => onOpenSheet('info')}>
+        <span className="toolbar__icon"><IconInfo /></span>
+        <span className="toolbar__label">Info</span>
+      </button>
+    </div>
   )
 }
+
