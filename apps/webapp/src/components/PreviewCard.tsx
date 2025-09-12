@@ -49,7 +49,6 @@ export const PreviewCard: React.FC<Props> = ({
         ...((style ?? {}) as React.CSSProperties),
       } as React.CSSProperties}
       data-mode={mode}
-      data-export-card
       onTouchStart={handleStart}
       onTouchEnd={handleEnd}
       {...rest}

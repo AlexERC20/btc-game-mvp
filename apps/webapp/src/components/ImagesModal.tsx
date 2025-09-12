@@ -1,9 +1,6 @@
-import React, { useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import type { PhotoMeta } from "../types";
-
-const BOTTOM_BAR_INSET = 72; // фактическая высота нижнего меню (+пара пикселей)
-const HEADER_HEIGHT = 64; // заголовок шита (если у вас другой — подставьте)
+import React, { useRef, useState } from 'react';
+import BottomSheet from './BottomSheet';
+import type { PhotoMeta } from '../types';
 
 export default function ImagesModal({
   open,
@@ -25,8 +22,6 @@ export default function ImagesModal({
   const fileRef = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  if (!open) return null;
-
   const onFiles = (files: FileList | null) => {
     if (!files || !files.length) return;
     const arr: Promise<string>[] = Array.from(files).map(
@@ -37,7 +32,7 @@ export default function ImagesModal({
           r.readAsDataURL(f);
         })
     );
-    Promise.all(arr).then(urls => onAdd(urls));
+    Promise.all(arr).then(onAdd);
   };
 
   const toggleSelect = (id: string) => {
@@ -50,86 +45,72 @@ export default function ImagesModal({
     onSelect(id);
   };
 
-  return createPortal(
-    <>
-      <div className="sheet-backdrop" onClick={onClose} />
-      <div className="sheet" role="dialog" onClick={e => e.stopPropagation()}>
-        <div className="sheet__handle" />
-        <header className="flex items-center justify-between px-4 py-2 sticky top-0 bg-[#111] z-10">
-          <h3>Photos</h3>
-          <div className="flex gap-2 ml-auto">
-            <button onClick={() => fileRef.current?.click()} className="btn btn-secondary">
-              Add photo
-            </button>
-            <button onClick={onClose} className="btn btn-primary">
-              Done
-            </button>
-          </div>
-        </header>
-
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={e => onFiles(e.target.files)}
-        />
-
-        <div
-          className="sheet__content overflow-auto -mx-4 px-4"
-          style={{
-            maxHeight: `calc(100vh - ${HEADER_HEIGHT}px - ${BOTTOM_BAR_INSET}px - env(safe-area-inset-bottom,0px))`,
-            paddingBottom: `calc(${BOTTOM_BAR_INSET}px + env(safe-area-inset-bottom,0px))`,
-          }}
-        >
-          <div className="photos-grid">
-            {photos.map(p => (
-              <button
-                key={p.id}
-                className={`relative rounded-2xl overflow-hidden aspect-square ring-1 ring-white/10 ${
-                  selected.has(p.id) ? 'ring-2 ring-blue-400' : ''
-                }`}
-                onClick={() => toggleSelect(p.id)}
-              >
-                <img src={p.url} className="w-full h-full object-cover" />
-                <button
-                  onClick={e => {
-                    e.stopPropagation();
-                    onDelete(p.id);
-                  }}
-                  className="absolute top-1 right-1 text-xs bg-black/60 rounded px-1.5 py-0.5"
-                >
-                  ×
-                </button>
-                <div className="absolute bottom-1 left-1 right-1 flex justify-between text-xs">
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      onMove(p.id, -1);
-                    }}
-                    className="bg-black/60 rounded px-1"
-                  >
-                    ←
-                  </button>
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      onMove(p.id, 1);
-                    }}
-                    className="bg-black/60 rounded px-1"
-                  >
-                    →
-                  </button>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <div className="h-[72px] shrink-0" />
+  return (
+    <BottomSheet open={open} onClose={onClose}>
+      <header className="flex items-center justify-between py-2 sticky top-0 bg-[#111]/90 backdrop-blur z-10">
+        <h3>Photos</h3>
+        <div className="flex gap-2">
+          <button onClick={() => fileRef.current?.click()} className="btn btn-secondary">
+            Add photo
+          </button>
+          <button onClick={onClose} className="btn btn-primary">
+            Done
+          </button>
         </div>
+      </header>
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={e => onFiles(e.target.files)}
+      />
+
+      <div className="photos-grid">
+        {photos.map(p => (
+          <button
+            key={p.id}
+            className={`relative rounded-2xl overflow-hidden aspect-square ring-1 ring-white/10 ${
+              selected.has(p.id) ? 'ring-2 ring-blue-400' : ''
+            }`}
+            onClick={() => toggleSelect(p.id)}
+          >
+            <img src={p.url} className="w-full h-full object-cover" />
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                onDelete(p.id);
+              }}
+              className="absolute top-1 right-1 text-xs bg-black/60 rounded px-1.5 py-0.5"
+            >
+              ×
+            </button>
+            <div className="absolute bottom-1 left-1 right-1 flex justify-between text-xs">
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  onMove(p.id, -1);
+                }}
+                className="bg-black/60 rounded px-1"
+              >
+                ←
+              </button>
+              <button
+                onClick={e => {
+                  e.stopPropagation();
+                  onMove(p.id, 1);
+                }}
+                className="bg-black/60 rounded px-1"
+              >
+                →
+              </button>
+            </div>
+          </button>
+        ))}
       </div>
-    </>,
-    document.getElementById('portal-root') as HTMLElement
+    </BottomSheet>
   );
 }
+

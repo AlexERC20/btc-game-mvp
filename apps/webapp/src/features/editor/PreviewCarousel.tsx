@@ -3,7 +3,7 @@ import { renderSlideToCanvas, Slide } from '../carousel/lib/canvasRender';
 import BottomBar from '../../components/BottomBar';
 import LayoutSheet from '../../components/sheets/LayoutSheet';
 import BottomSheet from '../../components/BottomSheet';
-import PhotosPicker from './PhotosPicker';
+import PhotosSheet from '../../components/ImagesModal';
 
 type Sheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
 
@@ -23,13 +23,6 @@ export default function PreviewCarousel() {
   const color = '#fff';
   const titleColor = '#fff';
   const titleEnabled = true;
-
-  const exportSettings = {
-    mode,
-    overlay: { enabled: overlayEnabled, heightPct: overlayHeightPct, intensity: overlayIntensity },
-    text: { font, size, lineHeight, align, color, titleColor, titleEnabled, content: '' },
-    username,
-  };
 
   const appendPhotos = (urls: string[]) => {
     const next = urls.map((url) => ({
@@ -52,6 +45,23 @@ export default function PreviewCarousel() {
 
   const removeSlide = (index: number) => {
     setSlides((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const removeSlideById = (id: string) => {
+    setSlides(prev => prev.filter(s => s.id !== id));
+  };
+
+  const moveSlideById = (id: string, dir: -1 | 1) => {
+    setSlides(prev => {
+      const arr = [...prev];
+      const index = arr.findIndex(s => s.id === id);
+      if (index === -1) return arr;
+      const newIndex = index + dir;
+      if (newIndex < 0 || newIndex >= arr.length) return arr;
+      const [sp] = arr.splice(index, 1);
+      arr.splice(newIndex, 0, sp);
+      return arr;
+    });
   };
 
   const openSheet = (name: Sheet) => setActiveSheet(name);
@@ -158,9 +168,16 @@ export default function PreviewCarousel() {
       <TemplateSheet open={activeSheet === 'template'} onClose={closeSheet} />
       <LayoutSheet open={activeSheet === 'layout'} onClose={closeSheet} />
       <FontsSheet open={activeSheet === 'fonts'} onClose={closeSheet} />
-      <PhotosPicker open={activeSheet === 'photos'} onClose={closeSheet} onPick={appendPhotos} />
+      <PhotosSheet
+        open={activeSheet === 'photos'}
+        onClose={closeSheet}
+        photos={slides.map(s => ({ id: s.id, url: s.image ?? s.thumb }))}
+        onAdd={appendPhotos}
+        onSelect={() => {}}
+        onDelete={removeSlideById}
+        onMove={moveSlideById}
+      />
       <InfoSheet open={activeSheet === 'info'} onClose={closeSheet} />
-      {/* export sheet handled globally */}
     </div>
   );
 }
