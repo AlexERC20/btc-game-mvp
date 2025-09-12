@@ -4,6 +4,7 @@ import { CANVAS_PRESETS } from "./core/constants";
 import BottomSheet from "./components/BottomSheet";
 import PreviewCard from "./components/PreviewCard";
 import BottomBar from "./components/BottomBar";
+import PhotosSheet from "./components/PhotosSheet";
 import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
 import "./styles/preview-list.css";
@@ -23,17 +24,15 @@ export default function App() {
   const [stagedPhotos, setStagedPhotos] = useState<PhotoMeta[]>([]);
   const [stagedOrder, setStagedOrder] = useState<number[]>([]);
   const [stagedRemoved, setStagedRemoved] = useState<Set<string>>(new Set());
-  const [hasStageChanges, setHasStageChanges] = useState(false);
   const [autoSplitEnabled, setAutoSplitEnabled] = useState(true);
   const [splitPrompt, setSplitPrompt] = useState<number|null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const prevTextPos = useRef<'top'|'bottom'>('bottom');
   const promptedRef = useRef<Record<string, boolean>>({});
   const touchRef = useRef<{ x: number; y: number } | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
-  const openSheet = useStore(s => s.openSheet);
-  const setOpenSheet = useStore(s => s.setOpenSheet);
+  const activeSheet = useStore(s => s.activeSheet);
+  const closeSheet = useStore(s => s.closeSheet);
 
   const genId = () => Math.random().toString(36).slice(2);
 
@@ -67,15 +66,15 @@ export default function App() {
   }, [settings]);
 
   useEffect(() => {
-    document.body.classList.toggle('overflow-hidden', openSheet !== null);
+    document.body.classList.toggle('overflow-hidden', activeSheet !== null);
     return () => document.body.classList.remove('overflow-hidden');
-  }, [openSheet]);
+  }, [activeSheet]);
 
   useEffect(() => {
-    if (openSheet === 'photos') {
+    if (activeSheet === 'photos') {
       openPhotos();
     }
-  }, [openSheet]);
+  }, [activeSheet]);
 
   const PRESETS = {
     minimal: { textSize: 0.46, lineHeight: 1.4, textPosition: 'bottom', template: 'photo', overlayEnabled: false, headingEnabled: false, quoteMode: false },
@@ -210,25 +209,23 @@ export default function App() {
     setStagedPhotos(copy);
     setStagedOrder(copy.map((_, i) => i));
     setStagedRemoved(new Set());
-    setHasStageChanges(false);
   };
 
-  const onRemoveAt = (i: number) => {
-    const idx = stagedOrder[i];
-    const id = stagedPhotos[idx].id;
+  const onPhotosDelete = (id: string) => {
     const next = new Set(stagedRemoved);
     next.add(id);
     setStagedRemoved(next);
-    setHasStageChanges(true);
   };
 
-  const onMove = (i: number, dir: -1 | 1) => {
+  const onPhotosMove = (id: string, dir: -1 | 1) => {
+    const idx = stagedPhotos.findIndex(p => p.id === id);
+    if (idx === -1) return;
+    const orderIdx = stagedOrder.indexOf(idx);
+    const j = orderIdx + dir;
+    if (j < 0 || j >= stagedOrder.length) return;
     const o = [...stagedOrder];
-    const j = i + dir;
-    if (j < 0 || j >= o.length) return;
-    [o[i], o[j]] = [o[j], o[i]];
+    [o[orderIdx], o[j]] = [o[j], o[orderIdx]];
     setStagedOrder(o);
-    setHasStageChanges(true);
   };
 
   const readImageSize = (url: string): Promise<{ width: number; height: number }> =>
@@ -238,39 +235,18 @@ export default function App() {
       img.src = url;
     });
 
-  const handleFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = '';
-    if (!files.length) return;
-
-    const seen = new Set<string>();
-    const unique = files.map(f => ({
-      file: f,
-      id: `${f.name}-${f.size}-${f.lastModified}`,
-    })).filter(f => {
-      if (seen.has(f.id)) return false;
-      seen.add(f.id);
-      return true;
-    });
-
+  const onPhotosAdd = async (urls: string[]) => {
     const additions: PhotoMeta[] = await Promise.all(
-      unique.map(async ({ file, id }) => {
-        const url = URL.createObjectURL(file);
+      urls.map(async url => {
         const { width, height } = await readImageSize(url);
-        return { id, url, width, height };
+        return { id: genId(), url, width, height };
       })
     );
 
     setStagedPhotos(prev => {
-      const existing = new Set(prev.map(p => p.id));
-      const filtered = additions.filter(a => !existing.has(a.id));
-      if (filtered.length) {
-        const start = prev.length;
-        setStagedOrder(o => [...o, ...filtered.map((_, i) => start + i)]);
-        setHasStageChanges(true);
-        return [...prev, ...filtered];
-      }
-      return prev;
+      const start = prev.length;
+      setStagedOrder(o => [...o, ...additions.map((_, i) => start + i)]);
+      return [...prev, ...additions];
     });
   };
 
@@ -292,7 +268,7 @@ export default function App() {
 
     setPhotos(kept);
     setSlides(nextSlides);
-    setOpenSheet(null);
+    closeSheet();
   };
 
   const onSlideTouchStart = (e: React.TouchEvent) => {
@@ -313,7 +289,7 @@ export default function App() {
   };
 
 
-  const onPhotosCancel = () => setOpenSheet(null);
+  const onPhotosCancel = () => closeSheet();
 
   useEffect(() => {
     if (localStorage.getItem(SEED_KEY)) return;
@@ -477,7 +453,7 @@ export default function App() {
         </div>
       </div>
 
-      <BottomSheet open={openSheet === 'template'} onClose={() => setOpenSheet(null)} title="Template">
+      <BottomSheet open={activeSheet === 'template'} onClose={closeSheet} title="Template">
         <div className="segmented mb-4">
           {(["photo","light","dark"] as const).map(tpl=>(
             <button key={tpl}
@@ -490,7 +466,7 @@ export default function App() {
                 } else {
                   setSettings({...settings, template:tpl, overlayEnabled:true, overlayHeight:0.40, overlayOpacity:0.70});
                 }
-                setOpenSheet(null);
+                closeSheet();
               }}
             >{tpl.charAt(0).toUpperCase()+tpl.slice(1)}</button>
           ))}
@@ -507,7 +483,7 @@ export default function App() {
         </div>
       </BottomSheet>
 
-      <BottomSheet open={openSheet === 'layout'} onClose={() => setOpenSheet(null)} title="Layout">
+      <BottomSheet open={activeSheet === 'layout'} onClose={closeSheet} title="Layout">
         <div className="space-y-2">
           <label className="flex items-center justify-between">
             <span>Text size</span>
@@ -572,7 +548,7 @@ export default function App() {
         </div>
       </BottomSheet>
 
-      <BottomSheet open={openSheet === 'fonts'} onClose={() => setOpenSheet(null)} title="Fonts">
+      <BottomSheet open={activeSheet === 'fonts'} onClose={closeSheet} title="Fonts">
         <div className="space-y-2">
           <label className="flex flex-col gap-1">
             <span>Font family</span>
@@ -603,70 +579,17 @@ export default function App() {
           </div>
         </div>
       </BottomSheet>
-      {openSheet === 'photos' && (
-        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={onPhotosCancel}/>
-          <div
-            className="relative w-[min(720px,92vw)] max-h-[85vh] bg-[#161616] text-white rounded-2xl overflow-hidden shadow-2xl pointer-events-auto"
-            style={{ paddingBottom: 'calc(var(--tb-h) + env(safe-area-inset-bottom))' }}
-          >
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-              <div className="text-base font-semibold">Photos</div>
-              <div className="flex items-center gap-2">
-                <button
-                  className="px-3 py-1.5 rounded-md border border-white/20"
-                  onClick={() => fileRef.current?.click()}
-                >
-                  Add photo
-                </button>
-                <button
-                  onClick={onPhotosDone}
-                  disabled={!hasStageChanges}
-                  className="px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/15 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Done
-                </button>
-              </div>
-            </div>
+        <PhotosSheet
+          open={activeSheet === 'photos'}
+          onClose={onPhotosCancel}
+          onDone={onPhotosDone}
+          photos={stagedOrder.map(idx => stagedPhotos[idx]).filter(ph => !stagedRemoved.has(ph.id))}
+          onAdd={onPhotosAdd}
+          onDelete={onPhotosDelete}
+          onMove={onPhotosMove}
+        />
 
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={handleFiles}
-            />
-
-            <div
-              className="p-4 grid grid-cols-3 gap-3 overflow-y-auto"
-              style={{ maxHeight: 'calc(85vh - 56px - var(--tb-h) - env(safe-area-inset-bottom))' }}
-            >
-              {stagedOrder.map((ordIdx, i) => {
-                const ph = stagedPhotos[ordIdx];
-                const removed = stagedRemoved.has(ph.id);
-                if (removed) return null;
-                return (
-                  <div key={ph.id} className="relative rounded-xl overflow-hidden bg-black/20">
-                    <img src={ph.url} className="aspect-square w-full object-cover"/>
-                    <button
-                      className="absolute top-2 right-2 h-7 w-7 rounded-full bg-black/60 flex items-center justify-center"
-                      onClick={() => onRemoveAt(i)}
-                      aria-label="Remove"
-                    >×</button>
-                    <div className="absolute bottom-2 left-2 right-2 flex justify-between gap-2">
-                      <button className="h-7 w-7 rounded-full bg-black/60" onClick={() => onMove(i, -1)} aria-label="Left">←</button>
-                      <button className="h-7 w-7 rounded-full bg-black/60" onClick={() => onMove(i, +1)} aria-label="Right">→</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <BottomSheet open={openSheet === 'info'} onClose={() => setOpenSheet(null)} title="Info">
+      <BottomSheet open={activeSheet === 'info'} onClose={closeSheet} title="Info">
         <div className="space-y-4">
           <button
             className="w-full px-4 py-3 rounded-xl bg-neutral-800 border border-neutral-700 text-sm"
@@ -692,7 +615,7 @@ export default function App() {
         </div>
       )}
       </div>
-      <BottomBar onOpenSheet={setOpenSheet} />
+      <BottomBar />
     </div>
     </>
   );

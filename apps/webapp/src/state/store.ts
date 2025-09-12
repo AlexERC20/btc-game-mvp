@@ -32,14 +32,16 @@ const FRAME_SPECS: Record<'story' | 'carousel', FrameSpec> = {
   },
 };
 
+export type UISheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
+
 export type StoreState = {
   slides: Slide[];
   defaults: Defaults;
   mode: 'story' | 'carousel';
   frame: FrameSpec;
-  openSheet: null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
-  sheetOpen: boolean;
-  setOpenSheet: (name: StoreState['openSheet']) => void;
+  activeSheet: UISheet;
+  openSheet: (s: Exclude<UISheet, null>) => void;
+  closeSheet: () => void;
   updateDefaults: (partial: Partial<Defaults>) => void;
   updateSlide: (id: SlideId, partial: Partial<Slide> | { overrides: Partial<Slide['overrides']> }) => void;
   reorderSlides: (fromIndex: number, toIndex: number) => void;
@@ -58,8 +60,9 @@ export const useStore = create<StoreState>((set) => ({
   },
   mode: 'story',
   frame: FRAME_SPECS.story,
-  openSheet: null,
-  sheetOpen: false,
+  activeSheet: null,
+  openSheet: (s) => set({ activeSheet: s }),
+  closeSheet: () => set({ activeSheet: null }),
   updateDefaults: (partial) => set((state) => ({ defaults: { ...state.defaults, ...partial } })),
   updateSlide: (id, partial) => set((state) => ({
     slides: state.slides.map((s) => {
@@ -77,16 +80,6 @@ export const useStore = create<StoreState>((set) => ({
     return { slides };
   }),
   setMode: (mode) => set(() => ({ mode, frame: FRAME_SPECS[mode] })),
-  setOpenSheet: (name) => {
-    set({ openSheet: null, sheetOpen: false });
-    document.body.classList.remove('body--sheet-open');
-    if (name) {
-      setTimeout(() => {
-        set({ openSheet: name, sheetOpen: true });
-        document.body.classList.add('body--sheet-open');
-      }, 0);
-    }
-  },
 }));
 
 export const getState = () => useStore.getState();

@@ -1,7 +1,7 @@
 .preview-list {
   display: grid;
   gap: 16px;
-  padding-bottom: calc(120px + env(safe-area-inset-bottom, 0));
+  padding-bottom: calc(var(--toolbar-h) + 12px);
   overscroll-behavior: contain;
   /* если у тебя горизонтальная лента – сделай flex + overflow-x */
   /* overflow-y: auto;  // для вертикального скролла */
