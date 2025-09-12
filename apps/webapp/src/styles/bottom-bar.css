@@ -2,10 +2,10 @@
   --toolbar-h: calc(64px + env(safe-area-inset-bottom));
 }
 .toolbar {
-  position: fixed;
+  position: sticky;
+  bottom: 0;
   left: 0;
   right: 0;
-  bottom: 0;
   height: var(--toolbar-h);
   display: grid;
   grid-template-columns: repeat(6, 1fr);
@@ -16,7 +16,7 @@
            calc(env(safe-area-inset-right) + 8px);
   background: rgba(22,22,24,.72);
   backdrop-filter: blur(20px);
-  z-index: 900;
+  z-index: 20;
   -webkit-user-select: none;
 }
 
