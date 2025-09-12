@@ -1,16 +1,21 @@
 import React from 'react'
-import { useStore } from '../state/store'
 import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons'
 
-export default function BottomBar() {
-  const setOpenSheet = useStore(s => s.setOpenSheet)
+type Sheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info'
 
-  const items = [
-    { id: 'template', label: 'Template', icon: <IconTemplate />, onClick: () => setOpenSheet('template') },
-    { id: 'layout', label: 'Layout', icon: <IconLayout />, onClick: () => setOpenSheet('layout') },
-    { id: 'fonts', label: 'Fonts', icon: <IconFonts />, onClick: () => setOpenSheet('fonts') },
-    { id: 'photos', label: 'Photos', icon: <IconPhotos />, onClick: () => setOpenSheet('photos') },
-    { id: 'info', label: 'Info', icon: <IconInfo />, onClick: () => setOpenSheet('info') },
+export default function BottomBar({
+  activeSheet,
+  setActiveSheet,
+}: {
+  activeSheet: Sheet
+  setActiveSheet: React.Dispatch<React.SetStateAction<Sheet>>
+}) {
+  const items: { id: Exclude<Sheet, null>; label: string; icon: JSX.Element }[] = [
+    { id: 'template', label: 'Template', icon: <IconTemplate /> },
+    { id: 'layout', label: 'Layout', icon: <IconLayout /> },
+    { id: 'fonts', label: 'Fonts', icon: <IconFonts /> },
+    { id: 'photos', label: 'Photos', icon: <IconPhotos /> },
+    { id: 'info', label: 'Info', icon: <IconInfo /> },
   ]
 
   return (
@@ -20,7 +25,7 @@ export default function BottomBar() {
           key={it.id}
           type="button"
           className="toolbar__item"
-          onClick={it.onClick}
+          onClick={() => setActiveSheet(s => (s === it.id ? null : it.id))}
           aria-label={it.label}
         >
           <span className="toolbar__icon">{it.icon}</span>
