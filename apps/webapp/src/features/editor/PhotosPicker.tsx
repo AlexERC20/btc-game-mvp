@@ -1,27 +1,35 @@
-import React, { useRef } from 'react';
-import BottomSheet from '../../components/BottomSheet';
+import React, { useRef } from 'react'
+import BottomSheet from '../../components/BottomSheet'
 
-export function PhotosPicker({ open, onClose, onPick }: { open: boolean; onClose: () => void; onPick: (urls: string[]) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+export function PhotosPicker({
+  open,
+  onClose,
+  onPick,
+}: {
+  open: boolean
+  onClose: () => void
+  onPick: (urls: string[]) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const trigger = () => inputRef.current?.click();
+  const trigger = () => inputRef.current?.click()
 
   const onChange = async (files: FileList | null) => {
-    if (!files || !files.length) return;
-    const urls: string[] = [];
+    if (!files || !files.length) return
+    const urls: string[] = []
     for (const f of Array.from(files)) {
       const data = await new Promise<string>(res => {
-        const r = new FileReader();
-        r.onload = () => res(String(r.result));
-        r.readAsDataURL(f);
-      });
-      urls.push(data);
+        const r = new FileReader()
+        r.onload = () => res(String(r.result))
+        r.readAsDataURL(f)
+      })
+      urls.push(data)
     }
-    onPick(urls);
-  };
+    onPick(urls)
+  }
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Photos" insetBottom>
+    <BottomSheet open={open} onClose={onClose} title="Photos" withToolbarGap>
       <input
         ref={inputRef}
         type="file"
@@ -34,5 +42,6 @@ export function PhotosPicker({ open, onClose, onPick }: { open: boolean; onClose
         Add photo
       </button>
     </BottomSheet>
-  );
+  )
 }
+
