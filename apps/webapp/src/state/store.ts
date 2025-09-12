@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Slide, Defaults, SlideId } from '../types';
+import type { Story } from '@/core/story';
 
 export type FrameSpec = {
   width: number;
@@ -83,3 +84,10 @@ export const useStore = create<StoreState>((set) => ({
 }));
 
 export const getState = () => useStore.getState();
+
+export const useCarouselStore = <T>(
+  selector: (s: StoreState & { story: Story }) => T,
+): T =>
+  useStore((state) =>
+    selector({ ...(state as StoreState), story: { slides: state.slides } })
+  );

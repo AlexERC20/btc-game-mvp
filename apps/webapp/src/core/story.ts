@@ -1,3 +1,6 @@
+import type { Slide } from '@/types';
+
+export type Story = { slides: Slide[] };
 export type SlideSpec = { title?: string; subtitle?: string; body?: string[] }
 
 export function makeStory(raw: string, n: number): SlideSpec[] {
