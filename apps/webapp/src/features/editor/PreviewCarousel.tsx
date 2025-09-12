@@ -5,9 +5,10 @@ import LayoutSheet from '../../components/sheets/LayoutSheet';
 import BottomSheet from '../../components/BottomSheet';
 import { PhotosPicker } from './PhotosPicker';
 
+type Sheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
+
 export function PreviewCarousel() {
   const [slides, setSlides] = useState<Slide[]>([]);
-  type Sheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
   const [activeSheet, setActiveSheet] = useState<Sheet>(null);
   const [mode] = useState<'story' | 'carousel'>('carousel');
 
@@ -150,7 +151,10 @@ export function PreviewCarousel() {
           <SlideCard key={s.id} slide={s} index={i} />
         ))}
       </div>
-      <BottomBar activeSheet={activeSheet} setActiveSheet={setActiveSheet} />
+      <BottomBar
+        activeSheet={activeSheet}
+        onOpenSheet={name => setActiveSheet(s => (s === name ? null : name))}
+      />
       <TemplateSheet open={activeSheet === 'template'} onClose={() => setActiveSheet(null)} />
       <LayoutSheet open={activeSheet === 'layout'} onClose={() => setActiveSheet(null)} />
       <FontsSheet open={activeSheet === 'fonts'} onClose={() => setActiveSheet(null)} />

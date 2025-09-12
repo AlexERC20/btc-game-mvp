@@ -3,13 +3,12 @@ import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui
 
 type Sheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info'
 
-export default function BottomBar({
-  activeSheet,
-  setActiveSheet,
-}: {
+type Props = {
   activeSheet: Sheet
-  setActiveSheet: React.Dispatch<React.SetStateAction<Sheet>>
-}) {
+  onOpenSheet: (name: Exclude<Sheet, null>) => void
+}
+
+export default function BottomBar({ activeSheet, onOpenSheet }: Props) {
   const items: { id: Exclude<Sheet, null>; label: string; icon: JSX.Element }[] = [
     { id: 'template', label: 'Template', icon: <IconTemplate /> },
     { id: 'layout', label: 'Layout', icon: <IconLayout /> },
@@ -25,7 +24,8 @@ export default function BottomBar({
           key={it.id}
           type="button"
           className="toolbar__item"
-          onClick={() => setActiveSheet(s => (s === it.id ? null : it.id))}
+          onClick={() => onOpenSheet(it.id)}
+          aria-pressed={activeSheet === it.id}
           aria-label={it.label}
         >
           <span className="toolbar__icon">{it.icon}</span>
