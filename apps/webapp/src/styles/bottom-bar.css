@@ -1,17 +1,41 @@
 :root {
   --toolbar-h: calc(64px + env(safe-area-inset-bottom));
 }
-.toolbar{
-  position: fixed; left: 0; right: 0; bottom: 0;
+.toolbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
   height: var(--toolbar-h);
-  padding: 8px 10px env(safe-area-inset-bottom);
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(6, 1fr);
+  align-items: center;
+  gap: 0;
+  padding: 8px calc(env(safe-area-inset-left) + 8px)
+           max(8px, env(safe-area-inset-bottom))
+           calc(env(safe-area-inset-right) + 8px);
   background: rgba(22,22,24,.72);
   backdrop-filter: blur(20px);
   z-index: 900;
+  -webkit-user-select: none;
 }
-.toolbar__btn{ display:flex; flex-direction:column; align-items:center; gap:4px; }
-.toolbar__icon{ line-height:0; }
-.toolbar__label{ font-size:12px; opacity:.9; }
+
+.toolbar__btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding: 6px 4px;
+}
+
+.toolbar__icon {
+  display: block;
+  line-height: 1;
+}
+
+.toolbar__label {
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+  opacity: .9;
+}

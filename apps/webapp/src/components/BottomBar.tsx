@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
-import { useStore } from '../state/store';
-import { shareSlides } from '../features/carousel/utils/exportSlides';
+import { useCarouselStore } from '@/state/store';
+import { shareSlides } from '@/features/carousel/utils/exportSlides';
 import '../styles/bottom-bar.css';
 
 export default function BottomBar() {
-  const openSheet = useStore(s => s.openSheet);
-  const slides = useStore(s => s.slides);
+  const openSheet = useCarouselStore((s) => s.openSheet);
+  const story = useCarouselStore((s) => s.story);
   const [isSharing, setIsSharing] = useState(false);
 
   const actions = [
@@ -22,10 +22,10 @@ export default function BottomBar() {
     if (isSharing) return;
     try {
       setIsSharing(true);
-      await shareSlides({ slides });
+      await shareSlides(story);
     } catch (e) {
       console.error(e);
-      alert('Не удалось открыть системное меню "Поделиться". Попробуйте ещё раз.');
+      alert('Не удалось поделиться. Попробуйте ещё раз.');
     } finally {
       setIsSharing(false);
     }
