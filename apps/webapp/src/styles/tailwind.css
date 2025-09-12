@@ -11,7 +11,6 @@ html, body, #root { height: 100%; }
 * { -webkit-tap-highlight-color: transparent; }
 body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
 body.body--sheet-open { overflow: hidden; }
-[data-floating-label="export"] { display: none !important; }
 .preview-card__text--center { top:50%; bottom:auto; transform:translateY(-50%); text-align:center; padding-top:16px; padding-bottom:16px; }
 @layer components {
   .slideCard {
@@ -59,7 +58,7 @@ body.body--sheet-open { overflow: hidden; }
     opacity: 0.8;
   }
 
-  .toolbar{ @apply sticky bottom-0 z-[50] pointer-events-auto; }
+  .toolbar{ @apply fixed left-0 right-0 bottom-0 z-[30] pointer-events-auto; }
   .sheet-wrap{ @apply fixed inset-0 z-[60] pointer-events-none; }
   .sheet-backdrop{ @apply absolute inset-0 bg-black/40 pointer-events-auto; }
   .sheet{ @apply absolute left-0 right-0 bottom-0 bg-neutral-900 text-white rounded-t-2xl border border-neutral-800 shadow-2xl pointer-events-auto; max-height:min(78vh,720px); padding-bottom:calc(env(safe-area-inset-bottom)); display:flex; flex-direction:column; }

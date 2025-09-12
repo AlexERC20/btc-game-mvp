@@ -7,7 +7,7 @@ type Props = {
 
 export const PreviewList: React.FC<Props> = ({ children }) => {
   return (
-    <div id="preview-list" data-export-scope className="preview-list">
+    <div id="preview-list" className="preview-list">
       {children}
     </div>
   );
