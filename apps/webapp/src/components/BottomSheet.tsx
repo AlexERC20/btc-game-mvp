@@ -31,14 +31,11 @@ export default function BottomSheet({
     }
   };
 
-  const portal = document.getElementById('portal-root');
-  if (!portal) return null;
-
   return createPortal(
-    <div className="sheet__wrap">
-      <div className="sheet__backdrop" onClick={onClose} />
+    <div className="sheet-wrap">
+      <div className="sheet-backdrop" onClick={onClose} />
       <section
-        className={`sheet ${insetBottom ? 'sheet--inset-bottom' : ''}`}
+        className={`sheet ${insetBottom ? 'sheet--inset' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-label={title}
@@ -57,7 +54,7 @@ export default function BottomSheet({
         <div className="sheet__body">{children}</div>
       </section>
     </div>,
-    portal
+    document.body
   );
 }
 
