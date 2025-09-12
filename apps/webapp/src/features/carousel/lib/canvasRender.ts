@@ -10,6 +10,22 @@ export type OverlayOpts = {
   intensity: number;
 };
 
+export async function loadImageSafe(src: string): Promise<HTMLImageElement> {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.decoding = 'async';
+  img.loading = 'eager';
+  img.src = src;
+  await img.decode().catch(
+    () =>
+      new Promise((res, rej) => {
+        img.onload = () => res(null as any);
+        img.onerror = rej;
+      }),
+  );
+  return img;
+}
+
 export function drawOverlayGradient(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -32,15 +48,7 @@ async function drawImageFit(
   w: number,
   h: number
 ) {
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.src = src;
-  try {
-    await img.decode();
-  } catch (err) {
-    console.warn('Image load failed', src, err);
-    return;
-  }
+  const img = await loadImageSafe(src);
   const r = Math.max(w / img.width, h / img.height);
   const nw = img.width * r;
   const nh = img.height * r;

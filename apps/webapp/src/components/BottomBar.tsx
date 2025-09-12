@@ -20,8 +20,8 @@ export default function BottomBar() {
 
   const onShare = async () => {
     if (isSharing) return;
+    setIsSharing(true);
     try {
-      setIsSharing(true);
       await shareSlides(story);
     } catch (e) {
       console.error(e);
