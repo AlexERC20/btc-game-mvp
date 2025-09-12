@@ -54,6 +54,19 @@ export const IconInfo    = (p:IconProps) => (
   </Base>
 );
 
+export const PlusIcon = (p:IconProps) => (
+  <Base {...p}>
+    <path d="M12 5v14"/>
+    <path d="M5 12h14"/>
+  </Base>
+);
+
+export const CheckIcon = (p:IconProps) => (
+  <Base {...p}>
+    <path d="M5 13l4 4L19 7"/>
+  </Base>
+);
+
 // Swipe actions
 export const IconTrash   = (p:IconProps) => (
   <Base {...p}>
@@ -101,6 +114,8 @@ export default {
   IconFonts,
   IconPhotos,
   IconInfo,
+  PlusIcon,
+  CheckIcon,
   IconTrash,
   IconMoveUp,
   IconMoveDown,
