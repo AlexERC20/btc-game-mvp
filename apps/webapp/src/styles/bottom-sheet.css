@@ -15,5 +15,19 @@
   background: #1c1c1e;
   overflow: auto;
 }
-.sheet__title{ font-weight:600; padding:16px 20px 8px; }
+.sheet__header{
+  position: sticky; top: 0;
+  z-index: 1;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 12px;
+  background: inherit;
+  border-radius: 16px 16px 0 0;
+}
+.sheet__title{
+  font-size: 20px; font-weight: 600;
+}
+.sheet__actions{
+  display: flex; align-items: center; gap: 8px;
+}
 .sheet__content{ padding: 0 16px 16px; }
