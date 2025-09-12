@@ -1,50 +1,28 @@
 import { createPortal } from 'react-dom';
-import { useEffect, useRef } from 'react';
+import '../styles/bottom-sheet.css';
 
-type BottomSheetProps = {
+type Props = {
   open: boolean;
-  title?: string;
   onClose: () => void;
+  title?: string;
   children: React.ReactNode;
 };
 
-export default function BottomSheet({ open, title, onClose, children }: BottomSheetProps) {
-  const startY = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    document.body.classList.add('body--sheet-open');
-    return () => document.body.classList.remove('body--sheet-open');
-  }, [open]);
-
+export default function BottomSheet({ open, onClose, title, children }: Props) {
   if (!open) return null;
+  const root = document.getElementById('sheets-root');
+  if (!root) return null;
 
-  const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-    startY.current = e.touches[0].clientY;
-  };
-  const onTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (startY.current === null) return;
-    const dy = e.touches[0].clientY - startY.current;
-    if (dy > 50) onClose();
-  };
-  const onTouchEnd = () => {
-    startY.current = null;
-  };
-
-  return createPortal(
-    <div className="sheet" onClick={onClose}>
-      <div
-        className="sheet__panel"
-        onClick={e => e.stopPropagation()}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-      >
+  const sheet = (
+    <div className="sheet__overlay" onClick={onClose}>
+      <div className="sheet" onClick={e => e.stopPropagation()}>
         {title && <div className="sheet__title">{title}</div>}
         <div className="sheet__content">{children}</div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
+
+  return createPortal(sheet, root);
 }
+
 

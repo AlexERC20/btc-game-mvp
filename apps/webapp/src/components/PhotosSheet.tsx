@@ -5,6 +5,7 @@ import type { PhotoMeta } from '../types';
 export default function PhotosSheet({
   open,
   onClose,
+  onDone,
   photos,
   onAdd,
   onDelete,
@@ -12,6 +13,7 @@ export default function PhotosSheet({
 }: {
   open: boolean;
   onClose: () => void;
+  onDone: () => void;
   photos: PhotoMeta[];
   onAdd: (urls: string[]) => void;
   onDelete: (id: string) => void;
@@ -34,14 +36,14 @@ export default function PhotosSheet({
 
   return (
     <BottomSheet open={open} onClose={onClose} title="Photos">
-      <div className="flex gap-2 mb-4">
-        <button onClick={() => fileRef.current?.click()} className="btn btn-secondary">
-          Add photo
-        </button>
-        <button onClick={onClose} className="btn btn-primary">
-          Done
-        </button>
-      </div>
+        <div className="flex gap-2 mb-4">
+          <button onClick={() => fileRef.current?.click()} className="btn btn-secondary">
+            Add photo
+          </button>
+          <button onClick={onDone} className="btn btn-primary">
+            Done
+          </button>
+        </div>
 
       <input
         ref={fileRef}

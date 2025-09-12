@@ -4,13 +4,13 @@ import BottomBar from '../../components/BottomBar';
 import LayoutSheet from '../../components/sheets/LayoutSheet';
 import BottomSheet from '../../components/BottomSheet';
 import PhotosSheet from '../../components/PhotosSheet';
-
-type Sheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
+import { useStore } from '../../state/store';
 
 export default function PreviewCarousel() {
-  const [slides, setSlides] = useState<Slide[]>([]);
-  const [activeSheet, setActiveSheet] = useState<Sheet>(null);
-  const [mode] = useState<'story' | 'carousel'>('carousel');
+    const [slides, setSlides] = useState<Slide[]>([]);
+    const [mode] = useState<'story' | 'carousel'>('carousel');
+    const activeSheet = useStore(s => s.activeSheet);
+    const closeSheet = useStore(s => s.closeSheet);
 
   const username = 'user';
   const overlayEnabled = true;
@@ -64,8 +64,6 @@ export default function PreviewCarousel() {
     });
   };
 
-  const openSheet = (name: Sheet) => setActiveSheet(name);
-  const closeSheet = () => setActiveSheet(null);
 
   const SlideCard: React.FC<{ slide: Slide; index: number }> = ({ slide, index }) => {
     const [open, setOpen] = useState(false);
@@ -164,7 +162,7 @@ export default function PreviewCarousel() {
           <SlideCard key={s.id} slide={s} index={i} />
         ))}
       </div>
-      <BottomBar onOpenSheet={openSheet} />
+        <BottomBar />
       <TemplateSheet open={activeSheet === 'template'} onClose={closeSheet} />
       <LayoutSheet open={activeSheet === 'layout'} onClose={closeSheet} />
       <FontsSheet open={activeSheet === 'fonts'} onClose={closeSheet} />

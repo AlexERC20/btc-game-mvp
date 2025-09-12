@@ -1,47 +1,27 @@
-import { useEffect, useRef } from 'react';
-import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons'
+import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons';
+import { useStore } from '../state/store';
+import '../styles/bottom-bar.css';
 
-type Props = {
-  onOpenSheet: (name: 'template' | 'layout' | 'fonts' | 'photos' | 'info') => void
-}
+export default function BottomBar() {
+  const openSheet = useStore(s => s.openSheet);
 
-export default function BottomBar({ onOpenSheet }: Props) {
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const ro = new ResizeObserver(([e]) => {
-      const h = e.contentRect.height
-      document.documentElement.style.setProperty('--toolbar-h', `${h}px`)
-    })
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
+  const actions = [
+    { key: 'template', label: 'Template', icon: <IconTemplate /> },
+    { key: 'layout',   label: 'Layout',   icon: <IconLayout /> },
+    { key: 'fonts',    label: 'Fonts',    icon: <IconFonts /> },
+    { key: 'photos',   label: 'Photos',   icon: <IconPhotos /> },
+    { key: 'info',     label: 'Info',     icon: <IconInfo /> },
+  ];
 
   return (
-    <div className="toolbar" ref={ref}>
-      <button className="toolbar__btn" onClick={() => onOpenSheet('template')}>
-        <span className="toolbar__icon"><IconTemplate /></span>
-        <span className="toolbar__label">Template</span>
-      </button>
-      <button className="toolbar__btn" onClick={() => onOpenSheet('layout')}>
-        <span className="toolbar__icon"><IconLayout /></span>
-        <span className="toolbar__label">Layout</span>
-      </button>
-      <button className="toolbar__btn" onClick={() => onOpenSheet('fonts')}>
-        <span className="toolbar__icon"><IconFonts /></span>
-        <span className="toolbar__label">Fonts</span>
-      </button>
-      <button className="toolbar__btn" onClick={() => onOpenSheet('photos')}>
-        <span className="toolbar__icon"><IconPhotos /></span>
-        <span className="toolbar__label">Photos</span>
-      </button>
-      <button className="toolbar__btn" onClick={() => onOpenSheet('info')}>
-        <span className="toolbar__icon"><IconInfo /></span>
-        <span className="toolbar__label">Info</span>
-      </button>
-    </div>
-  )
+    <nav className="toolbar" role="toolbar">
+      {actions.map(a => (
+        <button key={a.key} className="toolbar__btn" onClick={() => openSheet(a.key as any)}>
+          <span className="toolbar__icon">{a.icon}</span>
+          <span className="toolbar__label">{a.label}</span>
+        </button>
+      ))}
+    </nav>
+  );
 }
 
