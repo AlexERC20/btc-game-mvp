@@ -1,13 +1,12 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import BottomSheet from './BottomSheet';
 import type { PhotoMeta } from '../types';
 
-export default function ImagesModal({
+export default function PhotosSheet({
   open,
   onClose,
   photos,
   onAdd,
-  onSelect,
   onDelete,
   onMove,
 }: {
@@ -15,12 +14,10 @@ export default function ImagesModal({
   onClose: () => void;
   photos: PhotoMeta[];
   onAdd: (urls: string[]) => void;
-  onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, dir: -1 | 1) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const onFiles = (files: FileList | null) => {
     if (!files || !files.length) return;
@@ -35,29 +32,16 @@ export default function ImagesModal({
     Promise.all(arr).then(onAdd);
   };
 
-  const toggleSelect = (id: string) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-    onSelect(id);
-  };
-
   return (
-    <BottomSheet open={open} onClose={onClose}>
-      <header className="flex items-center justify-between py-2 sticky top-0 bg-[#111]/90 backdrop-blur z-10">
-        <h3>Photos</h3>
-        <div className="flex gap-2">
-          <button onClick={() => fileRef.current?.click()} className="btn btn-secondary">
-            Add photo
-          </button>
-          <button onClick={onClose} className="btn btn-primary">
-            Done
-          </button>
-        </div>
-      </header>
+    <BottomSheet open={open} onClose={onClose} title="Photos">
+      <div className="flex gap-2 mb-4">
+        <button onClick={() => fileRef.current?.click()} className="btn btn-secondary">
+          Add photo
+        </button>
+        <button onClick={onClose} className="btn btn-primary">
+          Done
+        </button>
+      </div>
 
       <input
         ref={fileRef}
@@ -70,12 +54,9 @@ export default function ImagesModal({
 
       <div className="photos-grid">
         {photos.map(p => (
-          <button
+          <div
             key={p.id}
-            className={`relative rounded-2xl overflow-hidden aspect-square ring-1 ring-white/10 ${
-              selected.has(p.id) ? 'ring-2 ring-blue-400' : ''
-            }`}
-            onClick={() => toggleSelect(p.id)}
+            className="relative rounded-2xl overflow-hidden aspect-square ring-1 ring-white/10"
           >
             <img src={p.url} className="w-full h-full object-cover" />
             <button
@@ -107,7 +88,7 @@ export default function ImagesModal({
                 →
               </button>
             </div>
-          </button>
+          </div>
         ))}
       </div>
     </BottomSheet>

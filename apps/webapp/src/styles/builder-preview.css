@@ -1,10 +1,18 @@
 /* Bottom bar */
+:root{
+  --toolbar-h: 88px;
+}
+
+body{
+  padding-bottom: calc(var(--toolbar-h, 88px) + env(safe-area-inset-bottom, 0));
+}
+
 .toolbar{
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 30;
+  z-index: 40;
   display: flex;
   gap: 12px;
   padding: 6px 16px calc(6px + env(safe-area-inset-bottom, 0));
@@ -40,7 +48,7 @@
 .sheet{
   position: fixed;
   inset: 0;
-  z-index: 50;
+  z-index: 49;
   background: rgba(0,0,0,.4);
 }
 
@@ -48,19 +56,21 @@
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: calc(var(--toolbar-h, 88px) + env(safe-area-inset-bottom,0));
+  z-index: 50;
   border-top-left-radius: 22px;
   border-top-right-radius: 22px;
   background: #151515;
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom,0));
-  max-height: 80vh;
+  max-height: min(70vh, 600px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
 }
 
 .sheet__content{
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
   padding-bottom: env(safe-area-inset-bottom,0);
 }
 
@@ -71,7 +81,11 @@
 
 /* Misc styles retained from original file */
 .builder-preview {
-  padding: 0 12px calc(120px + env(safe-area-inset-bottom, 0));
+  padding: 0 12px calc(var(--toolbar-h, 88px) + env(safe-area-inset-bottom, 0));
+}
+
+.carousel-page{
+  padding-bottom: calc(var(--toolbar-h, 88px) + env(safe-area-inset-bottom, 0));
 }
 
 .segmented {

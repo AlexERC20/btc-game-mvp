@@ -3,7 +3,7 @@ import { renderSlideToCanvas, Slide } from '../carousel/lib/canvasRender';
 import BottomBar from '../../components/BottomBar';
 import LayoutSheet from '../../components/sheets/LayoutSheet';
 import BottomSheet from '../../components/BottomSheet';
-import PhotosSheet from '../../components/ImagesModal';
+import PhotosSheet from '../../components/PhotosSheet';
 
 type Sheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
 
@@ -173,7 +173,6 @@ export default function PreviewCarousel() {
         onClose={closeSheet}
         photos={slides.map(s => ({ id: s.id, url: s.image ?? s.thumb }))}
         onAdd={appendPhotos}
-        onSelect={() => {}}
         onDelete={removeSlideById}
         onMove={moveSlideById}
       />

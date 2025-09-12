@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons'
 
 type Props = {
@@ -5,8 +6,21 @@ type Props = {
 }
 
 export default function BottomBar({ onOpenSheet }: Props) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver(([e]) => {
+      const h = e.contentRect.height
+      document.documentElement.style.setProperty('--toolbar-h', `${h}px`)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
   return (
-    <div className="toolbar">
+    <div className="toolbar" ref={ref}>
       <button className="toolbar__btn" onClick={() => onOpenSheet('template')}>
         <span className="toolbar__icon"><IconTemplate /></span>
         <span className="toolbar__label">Template</span>
