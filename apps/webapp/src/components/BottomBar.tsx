@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
 import { useCarouselStore } from '@/state/store';
@@ -8,7 +8,6 @@ import '../styles/bottom-bar.css';
 export default function BottomBar() {
   const openSheet = useCarouselStore((s) => s.openSheet);
   const story = useCarouselStore((s) => s.story);
-  const [isSharing, setIsSharing] = useState(false);
 
   const actions = [
     { key: 'template', label: 'Template', icon: <IconTemplate /> },
@@ -19,15 +18,10 @@ export default function BottomBar() {
   ];
 
   const onShare = async () => {
-    if (isSharing) return;
-    setIsSharing(true);
     try {
       await shareSlides(story);
     } catch (e) {
-      console.error(e);
-      alert('Не удалось поделиться. Попробуйте ещё раз.');
-    } finally {
-      setIsSharing(false);
+      console.error('[share] handler failed:', e);
     }
   };
 
@@ -43,7 +37,6 @@ export default function BottomBar() {
         className="toolbar__btn"
         onClick={onShare}
         aria-label="Share"
-        disabled={isSharing}
       >
         <span className="toolbar__icon">
           <ShareIcon />
