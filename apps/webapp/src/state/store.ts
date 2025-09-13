@@ -71,7 +71,7 @@ export type StoreState = {
   setMode: (mode: 'story' | 'carousel') => void;
 };
 
-export const useCarouselStore = create<StoreState>((set) => ({
+const createStore = () => create<StoreState>((set) => ({
   slides: [],
   story: { slides: [] }, // не используется для экспорта; поддерживается для совместимости
   defaults: {
@@ -129,23 +129,10 @@ export const useCarouselStore = create<StoreState>((set) => ({
     })),
 }));
 
-/** Сокращение на случай, если где-то импортируется useStore */
+export const useCarouselStore = (window as any).__CAROUSEL_STORE__ ?? ((window as any).__CAROUSEL_STORE__ = createStore());
+
 export const useStore = useCarouselStore;
 
-/**
- * ЕДИНЫЙ способ получить Story для рендера/экспорта/шеринга.
- * Собирает объект на лету из текущего состояния стора — без риска взять «устаревший» story.
- */
-export const getStory = (): Story => {
-  const s = useCarouselStore.getState();
+export const getStory = () => useCarouselStore.getState().story;
+export const getSlidesCount = () => useCarouselStore.getState().slides.length;
 
-  // Если тип Story в вашем проекте ожидает больше полей — добавьте их здесь.
-  // Минимально известно, что там точно есть slides.
-  return {
-    slides: s.slides,
-    // Пример, если Story ожидает ещё настройки:
-    // defaults: s.defaults,
-    // mode: s.mode,
-    // frame: s.frame,
-  } as Story;
-};

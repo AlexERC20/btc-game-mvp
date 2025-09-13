@@ -1,5 +1,5 @@
 import type { Slide, Defaults, Theme } from '../types';
-import type { FrameSpec } from '../state/store';
+import type { FrameSpec } from '@/state/store';
 
 const BASE_FAMILY = '"SF Pro Display","Inter",system-ui,-apple-system,Segoe UI,Roboto,Arial';
 

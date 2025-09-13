@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import BottomSheet from './BottomSheet';
-import { useStore } from '../state/store';
+import { useStore } from '@/state/store';
 import type { SlideId } from '../types';
 
 export default function SlideEditor({ open, onClose, currentSlideId }: { open: boolean; onClose: () => void; currentSlideId?: SlideId }) {
