@@ -16,13 +16,14 @@ export async function loadImageSafe(src: string): Promise<HTMLImageElement> {
   img.decoding = 'async';
   img.loading = 'eager';
   img.src = src;
-  await img.decode().catch(
-    () =>
-      new Promise((res, rej) => {
-        img.onload = () => res(null as any);
-        img.onerror = rej;
-      }),
-  );
+  try {
+    await img.decode();
+  } catch {
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res();
+      img.onerror = () => rej(new Error('image load failed'));
+    });
+  }
   return img;
 }
 
