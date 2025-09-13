@@ -25,7 +25,6 @@ async function handleShare() {
       return;
     }
 
-    // Пакуем в File[] (без деструктуризации)
     const files: File[] = [];
     for (let i = 0; i < blobs.length; i++) {
       const b = blobs[i];
@@ -37,7 +36,7 @@ async function handleShare() {
       return;
     }
 
-    // Web Share Level 2 (если доступно)
+    // Web Share Level 2
     try {
       const canShareFiles =
         typeof (navigator as any).canShare === 'function' && (navigator as any).canShare({ files });
@@ -49,7 +48,7 @@ async function handleShare() {
       console.warn('[share] native share failed, fallback to download', e);
     }
 
-    // Фолбэк: скачивание (по одному файлу, чтобы Safari не ругался)
+    // Фолбэк: последовательное скачивание
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const url = URL.createObjectURL(f);
@@ -60,7 +59,7 @@ async function handleShare() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      // маленькая пауза между скачиваниями — помогает мобильным браузерам
+      // маленькая пауза помогает iOS
       // eslint-disable-next-line no-await-in-loop
       await new Promise((r) => setTimeout(r, 120));
     }

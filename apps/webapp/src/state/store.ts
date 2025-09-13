@@ -3,35 +3,33 @@ import type { Slide, Defaults, SlideId } from '../types';
 import type { Story } from '@/core/story';
 
 export type FrameSpec = {
-  width: number;
-  height: number;
-  paddingX: number;
-  paddingTop: number;
-  paddingBottom: number;
-  safeNickname: number;
-  safePagination: number;
+  width: number; height: number;
+  paddingX: number; paddingTop: number; paddingBottom: number;
+  safeNickname: number; safePagination: number;
 };
 
-const FRAME_SPECS: Record<'story' | 'carousel', FrameSpec> = {
-  story: { width: 1080, height: 1920, paddingX: 72, paddingTop: 72, paddingBottom: 72, safeNickname: 120, safePagination: 120 },
-  carousel: { width: 1080, height: 1350, paddingX: 72, paddingTop: 72, paddingBottom: 72, safeNickname: 120, safePagination: 120 },
+const FRAME_SPECS: Record<'story'|'carousel', FrameSpec> = {
+  story:   { width:1080, height:1920, paddingX:72, paddingTop:72, paddingBottom:72, safeNickname:120, safePagination:120 },
+  carousel:{ width:1080, height:1350, paddingX:72, paddingTop:72, paddingBottom:72, safeNickname:120, safePagination:120 },
 };
 
 export type UISheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
 
-type StoreState = {
+export type StoreState = {
   slides: Slide[];
   story: Story;
   defaults: Defaults;
-  mode: 'story' | 'carousel';
+  mode: 'story'|'carousel';
   frame: FrameSpec;
   activeSheet: UISheet;
-  openSheet: (s: Exclude<UISheet, null>) => void;
+
+  openSheet: (s: Exclude<UISheet,null>) => void;
   closeSheet: () => void;
+
   updateDefaults: (partial: Partial<Defaults>) => void;
   updateSlide: (id: SlideId, partial: Partial<Slide> | { overrides: Partial<Slide['overrides']> }) => void;
   reorderSlides: (fromIndex: number, toIndex: number) => void;
-  setMode: (mode: 'story' | 'carousel') => void;
+  setMode: (mode: 'story'|'carousel') => void;
 };
 
 function createStore() {
@@ -49,9 +47,13 @@ function createStore() {
     mode: 'story',
     frame: FRAME_SPECS.story,
     activeSheet: null,
+
     openSheet: (s) => set({ activeSheet: s }),
     closeSheet: () => set({ activeSheet: null }),
-    updateDefaults: (partial) => set((state) => ({ defaults: { ...state.defaults, ...partial } })),
+
+    updateDefaults: (partial) =>
+      set((state) => ({ defaults: { ...state.defaults, ...partial } })),
+
     updateSlide: (id, partial) =>
       set((state) => {
         const slides = state.slides.map((s) => {
@@ -63,6 +65,7 @@ function createStore() {
         });
         return { slides, story: { slides } };
       }),
+
     reorderSlides: (fromIndex, toIndex) =>
       set((state) => {
         const slides = [...state.slides];
@@ -70,21 +73,22 @@ function createStore() {
         slides.splice(toIndex, 0, moved);
         return { slides, story: { slides } };
       }),
+
     setMode: (mode) => set(() => ({ mode, frame: FRAME_SPECS[mode] })),
   }));
 }
 
-// один инстанс стора (чтобы CodeSandbox/GH Pages кэш не создавал копии)
+// единый экземпляр стора
 export const useCarouselStore =
   (window as any).__CAROUSEL_STORE__ ?? ((window as any).__CAROUSEL_STORE__ = createStore());
 
-export const useStore = useCarouselStore;
+export const useStore  = useCarouselStore;
+export const getState = () => useCarouselStore.getState();
 
-// безопасные геттеры (без деструктуризации)
-export const getSlides = () => useCarouselStore.getState().slides;
-export const getSlidesCount = () => (useCarouselStore.getState().slides?.length ?? 0);
+export const getSlides = () => getState().slides;
+export const getSlidesCount = () => getState().slides?.length ?? 0;
 
-// для экспорта всегда собираем стори из ТЕКУЩИХ slides
+// Для экспорта всегда собираем story из актуальных slides
 export const buildCurrentStory = (): Story => {
   const slides = getSlides();
   return { slides: Array.isArray(slides) ? slides : [] } as Story;
