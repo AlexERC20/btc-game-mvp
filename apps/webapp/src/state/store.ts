@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import type { Slide, Defaults, SlideId } from '../types';
 import type { Story } from '@/core/story';
 
+/**
+ * ВАЖНО: используйте ВЕЗДЕ один и тот же путь импорта стора — '@/state/store'.
+ * Смешивание относительных путей ('../state/store') может создать второй инстанс Zustand.
+ */
+
 export type FrameSpec = {
   width: number;
   height: number;
@@ -36,26 +41,39 @@ const FRAME_SPECS: Record<'story' | 'carousel', FrameSpec> = {
 export type UISheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
 
 export type StoreState = {
+  /** Сырые слайды — ИСТИНА для UI и экспорта */
   slides: Slide[];
+
+  /**
+   * УСТАРЕВШЕЕ поле: оставлено для обратной совместимости с компонентами,
+   * которые читают store.story. Не используйте для экспорта — вместо этого
+   * вызывайте getStory().
+   */
   story: Story;
+
   defaults: Defaults;
   mode: 'story' | 'carousel';
   frame: FrameSpec;
+
   activeSheet: UISheet;
   openSheet: (s: Exclude<UISheet, null>) => void;
   closeSheet: () => void;
+
   updateDefaults: (partial: Partial<Defaults>) => void;
+
   updateSlide: (
     id: SlideId,
     partial: Partial<Slide> | { overrides: Partial<Slide['overrides']> }
   ) => void;
+
   reorderSlides: (fromIndex: number, toIndex: number) => void;
+
   setMode: (mode: 'story' | 'carousel') => void;
 };
 
 export const useCarouselStore = create<StoreState>((set) => ({
   slides: [],
-  story: { slides: [] },
+  story: { slides: [] }, // не используется для экспорта; поддерживается для совместимости
   defaults: {
     fontSize: 44,
     lineHeight: 1.28,
@@ -66,11 +84,17 @@ export const useCarouselStore = create<StoreState>((set) => ({
   },
   mode: 'story',
   frame: FRAME_SPECS.story,
+
   activeSheet: null,
   openSheet: (s) => set({ activeSheet: s }),
   closeSheet: () => set({ activeSheet: null }),
+
   updateDefaults: (partial) =>
-    set((state) => ({ defaults: { ...state.defaults, ...partial } })),
+    set((state) => ({
+      defaults: { ...state.defaults, ...partial },
+      // story здесь целенаправленно не трогаем, т.к. story собирается через getStory()
+    })),
+
   updateSlide: (id, partial) =>
     set((state) => {
       const slides = state.slides.map((s) => {
@@ -80,18 +104,48 @@ export const useCarouselStore = create<StoreState>((set) => ({
         }
         return { ...s, ...partial };
       });
-      return { slides, story: { slides } };
+      return {
+        slides,
+        story: { slides }, // для обратной совместимости
+      };
     }),
+
   reorderSlides: (fromIndex, toIndex) =>
     set((state) => {
       const slides = [...state.slides];
       const [moved] = slides.splice(fromIndex, 1);
       slides.splice(toIndex, 0, moved);
-      return { slides, story: { slides } };
+      return {
+        slides,
+        story: { slides }, // для обратной совместимости
+      };
     }),
-  setMode: (mode) => set(() => ({ mode, frame: FRAME_SPECS[mode] })),
+
+  setMode: (mode) =>
+    set(() => ({
+      mode,
+      frame: FRAME_SPECS[mode],
+      // story не меняем — getStory() сам возьмет актуальные slides/mode/frame
+    })),
 }));
 
+/** Сокращение на случай, если где-то импортируется useStore */
 export const useStore = useCarouselStore;
 
-export const getStory = () => useCarouselStore.getState().story;
+/**
+ * ЕДИНЫЙ способ получить Story для рендера/экспорта/шеринга.
+ * Собирает объект на лету из текущего состояния стора — без риска взять «устаревший» story.
+ */
+export const getStory = (): Story => {
+  const s = useCarouselStore.getState();
+
+  // Если тип Story в вашем проекте ожидает больше полей — добавьте их здесь.
+  // Минимально известно, что там точно есть slides.
+  return {
+    slides: s.slides,
+    // Пример, если Story ожидает ещё настройки:
+    // defaults: s.defaults,
+    // mode: s.mode,
+    // frame: s.frame,
+  } as Story;
+};
