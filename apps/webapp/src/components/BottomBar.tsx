@@ -57,45 +57,40 @@ export default function BottomBar() {
     if (busy) return;
     setBusy(true);
     try {
-      const story = useCarouselStore.getState().story;
+      const { story } = useCarouselStore.getState();
       const blobs = await exportSlides(story);
-      console.info('[share] rendered blobs:', blobs.length);
+      console.info('[share] blobs:', blobs.length);
+      if (!blobs.length) return;
 
-      if (!blobs.length) {
-        console.info('[share] no files to share');
-        return;
-      }
+      const files = blobs.map((b, i) =>
+        new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' })
+      );
 
-      const files = blobs.map((b, i) => new File([b], `slide-${i + 1}.png`, { type: 'image/png' }));
-
-      const canShareFiles = !!navigator.canShare?.({ files });
-      const hasShare = typeof navigator.share === 'function';
-
-      console.info('[share] support:', { hasShare, hasCanShare: !!navigator.canShare, filesCount: files.length });
-
-      if (canShareFiles && hasShare) {
+      const canShare = !!navigator.canShare?.({ files }) && typeof navigator.share === 'function';
+      if (canShare) {
         try {
           await navigator.share({ files });
           return;
         } catch (e: any) {
-          if (e?.name !== 'AbortError') console.warn('[share] share failed, fallback to download', e);
           if (e?.name === 'AbortError') return;
+          console.warn('[share] share failed, fallback to download', e);
         }
       }
 
-      for (const file of files) {
-        const url = URL.createObjectURL(file);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-      }
+      const first = files[0];
+      const url = URL.createObjectURL(first);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = first.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch (e) {
       console.error('[share] failed', e);
-      alert('Не удалось поделиться. Попробуйте ещё раз.');
+      try {
+        (window as any).Telegram?.WebApp?.showAlert?.('Не удалось поделиться…');
+      } catch {}
     } finally {
       setBusy(false);
     }
