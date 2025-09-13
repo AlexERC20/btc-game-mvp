@@ -3,7 +3,8 @@ export function getTg() {
 }
 
 function cmpVersion(a = '0.0', b = '0.0') {
-  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const da = pa[i] ?? 0, db = pb[i] ?? 0;
     if (da !== db) return da > db ? 1 : -1;
@@ -23,34 +24,21 @@ export const tgSupport = {
 };
 
 export function showAlertSafe(message: string) {
-  try {
-    if (tgSupport.hasShowAlert()) {
-      getTg().showAlert(message);
-      return;
-    }
-  } catch {}
-  // максимально безопасный fallback
-  try { window.alert(message); } catch {}
+  const tg = getTg();
+  if (tgSupport.hasShowAlert()) {
+    try { tg.showAlert(message); return; } catch {}
+  }
+  alert(message);
 }
 
 export const haptic = {
   impact(style: 'light'|'medium'|'heavy'|'rigid'|'soft' = 'light') {
-    try {
-      if (tgSupport.hasHaptics()) {
-        getTg().HapticFeedback.impactOccurred(style);
-        return true;
-      }
-    } catch {}
-    if ('vibrate' in navigator) { try { (navigator as any).vibrate?.(20); } catch {} }
-    return false;
-  },
-  selection() {
-    try {
-      if (tgSupport.hasHaptics()) {
-        getTg().HapticFeedback.selectionChanged();
-        return true;
-      }
-    } catch {}
+    const tg = getTg();
+    if (tgSupport.hasHaptics()) {
+      try { tg.HapticFeedback.impactOccurred(style); return true; } catch {}
+    }
+    // лёгкий тик на Android
+    try { (navigator as any).vibrate?.(20); } catch {}
     return false;
   },
 };
