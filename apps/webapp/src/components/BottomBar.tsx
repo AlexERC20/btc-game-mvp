@@ -1,7 +1,7 @@
 import React from 'react';
 import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
-import { useCarouselStore } from '@/state/store';
+import { useCarouselStore, getStory } from '@/state/store';
 import { exportSlides } from '@/features/carousel/utils/exportSlides';
 import '../styles/bottom-bar.css';
 
