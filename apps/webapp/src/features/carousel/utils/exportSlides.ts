@@ -10,18 +10,13 @@ export async function exportSlides(story: Story, opts: ExportOpts = {}): Promise
   const slideIndexes = indices ?? story.slides.map((_, i) => i); // no filtering by content
 
   for (const i of slideIndexes) {
-    const canvas = await renderSlideToCanvas(story, i, {
-      width: opts.width,
-      height: opts.height,
-    });
-
+    const canvas = await renderSlideToCanvas(story, i, opts);
     const blob: Blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((b) => {
         if (!b) return reject(new Error('canvas.toBlob returned null'));
         resolve(b);
       }, 'image/png', 0.92);
     });
-
     blobs.push(blob);
   }
 
