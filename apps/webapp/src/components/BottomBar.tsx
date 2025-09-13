@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
 import { useCarouselStore } from '@/state/store';
-import { shareSlides } from '@/features/carousel/utils/exportSlides';
+import { exportSlides } from '@/features/carousel/utils/exportSlides';
 import '../styles/bottom-bar.css';
 
 // Хаптик: Telegram WebApp (iOS/Android) → fallback на Vibration API (Android)
@@ -43,7 +43,6 @@ function withHaptic<T extends any[]>(fn: (...args: T) => void, style: Parameters
 
 export default function BottomBar() {
   const openSheet = useCarouselStore((s) => s.openSheet);
-  const story = useCarouselStore((s) => s.story);
   const [busy, setBusy] = useState(false);
 
   const actions = [
@@ -58,7 +57,42 @@ export default function BottomBar() {
     if (busy) return;
     setBusy(true);
     try {
-      await shareSlides(story);
+      const story = useCarouselStore.getState().story;
+      const blobs = await exportSlides(story);
+      console.info('[share] rendered blobs:', blobs.length);
+
+      if (!blobs.length) {
+        console.info('[share] no files to share');
+        return;
+      }
+
+      const files = blobs.map((b, i) => new File([b], `slide-${i + 1}.png`, { type: 'image/png' }));
+
+      const canShareFiles = !!navigator.canShare?.({ files });
+      const hasShare = typeof navigator.share === 'function';
+
+      console.info('[share] support:', { hasShare, hasCanShare: !!navigator.canShare, filesCount: files.length });
+
+      if (canShareFiles && hasShare) {
+        try {
+          await navigator.share({ files });
+          return;
+        } catch (e: any) {
+          if (e?.name !== 'AbortError') console.warn('[share] share failed, fallback to download', e);
+          if (e?.name === 'AbortError') return;
+        }
+      }
+
+      for (const file of files) {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
     } catch (e) {
       console.error('[share] failed', e);
       alert('Не удалось поделиться. Попробуйте ещё раз.');
