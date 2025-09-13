@@ -15,44 +15,30 @@ function cmpVersion(a = '0.0', b = '0.0') {
 export const tgSupport = {
   hasShowAlert(): boolean {
     const tg = getTg();
-    return !!(tg && typeof tg.showAlert === 'function');
+    return !!(tg && typeof tg.showAlert === 'function' && cmpVersion(tg.version, '6.2') >= 0);
   },
   hasHaptics(): boolean {
     const tg = getTg();
     return !!(tg && tg.HapticFeedback && typeof tg.HapticFeedback.impactOccurred === 'function');
   },
-  webAppVersionAtLeast(v: string): boolean {
-    const tg = getTg();
-    return !!(tg && cmpVersion(tg.version, v) >= 0);
-  },
-};
-
-export const haptic = {
-  impact(style: 'light'|'medium'|'heavy'|'rigid'|'soft' = 'light') {
-    try {
-      const tg = getTg();
-      if (tgSupport.hasHaptics()) {
-        tg.HapticFeedback.impactOccurred(style);
-        return true;
-      }
-    } catch {}
-    if ('vibrate' in navigator) {
-      (navigator as any).vibrate?.(20);
-      return true;
-    }
-    return false;
-  }
 };
 
 export function showAlertSafe(message: string) {
-  try {
-    const tg = getTg();
-    if (tgSupport.hasShowAlert()) {
-      tg.showAlert(message);
-      return;
-    }
-  } catch {}
-  // Фолбэк браузера
+  const tg = getTg();
+  if (tgSupport.hasShowAlert()) {
+    try { tg.showAlert(message); return; } catch {}
+  }
   alert(message);
 }
 
+export const haptic = {
+  impact(style: 'light'|'medium'|'heavy'|'rigid'|'soft' = 'light') {
+    const tg = getTg();
+    if (tgSupport.hasHaptics()) {
+      try { tg.HapticFeedback.impactOccurred(style); return true; } catch {}
+    }
+    // лёгкий тик на Android
+    try { (navigator as any).vibrate?.(20); } catch {}
+    return false;
+  },
+};
