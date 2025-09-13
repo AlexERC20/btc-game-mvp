@@ -4,13 +4,14 @@ import BottomBar from '../../components/BottomBar';
 import LayoutSheet from '../../components/sheets/LayoutSheet';
 import BottomSheet from '../../components/BottomSheet';
 import PhotosSheet from '../../components/PhotosSheet';
-import { useStore } from '@/state/store';
+import { useStore, useCarouselStore } from '@/state/store';
 
 export default function PreviewCarousel() {
     const [slides, setSlides] = useState<Slide[]>([]);
     const [mode] = useState<'story' | 'carousel'>('carousel');
     const activeSheet = useStore(s => s.activeSheet);
     const closeSheet = useStore(s => s.closeSheet);
+    const syncStory = useCarouselStore.getState().syncStory;
 
   const username = 'user';
   const overlayEnabled = true;
@@ -63,6 +64,10 @@ export default function PreviewCarousel() {
       return arr;
     });
   };
+
+  useEffect(() => {
+    if (slides.length) syncStory({ slides });
+  }, [slides, syncStory]);
 
 
   const SlideCard: React.FC<{ slide: Slide; index: number }> = ({ slide, index }) => {
