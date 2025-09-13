@@ -139,8 +139,14 @@ export const useCarouselStore = (window as any).__CAROUSEL_STORE__ ?? ((window a
 
 export const useStore = useCarouselStore;
 export const getState = () => useCarouselStore.getState();
-
-export const getSlidesCount = () => getState().slides.length;
-export const getSlides = () => getState().slides;
 export const getStory = () => getState().story;
+
+export const getSlides = () => useCarouselStore.getState().slides;
+export const getSlidesCount = () => (useCarouselStore.getState().slides?.length ?? 0);
+
+// Для экспорта всегда строим "актуальную story" из текущих slides
+export const buildCurrentStory = (): Story => {
+  const slides = getSlides();
+  return { slides: Array.isArray(slides) ? slides : [] } as Story;
+};
 
