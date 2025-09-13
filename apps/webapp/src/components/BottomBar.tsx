@@ -7,82 +7,65 @@ import { exportSlides } from '@/features/carousel/utils/exportSlides';
 import { haptic, showAlertSafe } from '@/lib/tg';
 import '../styles/bottom-bar.css';
 
-function withHaptic<T extends any[]>(
-  fn: (...args: T) => void,
-  style: Parameters<typeof haptic.impact>[0] = 'light'
-) {
-  return (...args: T) => {
-    haptic.impact(style);
-    fn(...args);
-  };
-}
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-async function downloadOneByOne(files: File[]) {
-  for (const f of files) {
-    const url = URL.createObjectURL(f);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = f.name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-    // маленькая пауза, чтобы iOS не «съедал» клики
-    await sleep(200);
-  }
-}
-
 async function handleShare() {
   try {
+    haptic.impact('medium');
+
     const count = getSlidesCount();
     console.info('[share] slides count =', count);
-
-    if (!count) {
+    if (!count || count <= 0) {
       showAlertSafe('Добавьте текст или фотографию.');
       return;
     }
 
-    // Всегда строим актуальную story из store
     const story = buildCurrentStory();
-
     const blobs = await exportSlides(story, { count });
-    if (!blobs.length) {
-      showAlertSafe('Не удалось подготовить слайды. Попробуйте ещё раз.');
+    if (!blobs || !Array.isArray(blobs) || blobs.length === 0) {
+      showAlertSafe('Не удалось подготовить слайды.');
       return;
     }
 
-    const files: File[] = blobs.map(
-      (b, i) =>
-        new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' })
-    );
-
-    // Безопасная проверка canShare (некоторые webview кидают тут исключение)
-    let canShareFiles = false;
-    try {
-      canShareFiles = !!(navigator as any).canShare?.({ files });
-    } catch {
-      canShareFiles = false;
+    // Пакуем в File[] (без деструктуризации)
+    const files: File[] = [];
+    for (let i = 0; i < blobs.length; i++) {
+      const b = blobs[i];
+      if (!(b instanceof Blob)) continue;
+      files.push(new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' }));
+    }
+    if (files.length === 0) {
+      showAlertSafe('Нет файлов для шаринга.');
+      return;
     }
 
-    if (canShareFiles) {
-      try {
-        await (navigator as any).share({ files });
-        return;
-      } catch (err) {
-        console.warn('[share] share() rejected, fallback to downloads', err);
-        await downloadOneByOne(files);
+    // Web Share Level 2 (если доступно)
+    try {
+      const canShareFiles =
+        typeof (navigator as any).canShare === 'function' && (navigator as any).canShare({ files });
+      if (canShareFiles && typeof (navigator as any).share === 'function') {
+        await (navigator as any).share({ files }); // iOS покажет нативный шэр-шит
         return;
       }
+    } catch (e) {
+      console.warn('[share] native share failed, fallback to download', e);
     }
 
-    // Фолбэк по умолчанию
-    await downloadOneByOne(files);
-  } catch (e) {
-    console.error('[share] failed', e);
+    // Фолбэк: скачивание (по одному файлу, чтобы Safari не ругался)
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const url = URL.createObjectURL(f);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = f.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      // маленькая пауза между скачиваниями — помогает мобильным браузерам
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, 120));
+    }
+  } catch (err) {
+    console.error('[share] failed', err);
     showAlertSafe('Не удалось поделиться. Попробуйте ещё раз.');
   }
 }
@@ -96,28 +79,26 @@ export default function BottomBar() {
     { key: 'fonts',    label: 'Fonts',    icon: <IconFonts /> },
     { key: 'photos',   label: 'Photos',   icon: <IconPhotos /> },
     { key: 'info',     label: 'Info',     icon: <IconInfo /> },
-  ] as const;
+  ];
 
   return (
     <nav className="toolbar" role="toolbar">
-      {actions.map(a => (
+      {actions.map((a) => (
         <button
           key={a.key}
           className="toolbar__btn"
-          onClick={withHaptic(() => openSheet(a.key), 'light')}
+          onClick={() => { haptic.impact('light'); openSheet(a.key as any); }}
         >
           <span className="toolbar__icon">{a.icon}</span>
           <span className="toolbar__label">{a.label}</span>
         </button>
       ))}
-      <button
-        className="toolbar__btn"
-        onClick={withHaptic(handleShare, 'medium')}
-        aria-label="Share"
-      >
+
+      <button className="toolbar__btn" onClick={handleShare} aria-label="Share">
         <span className="toolbar__icon"><ShareIcon /></span>
         <span className="toolbar__label">Share</span>
       </button>
     </nav>
   );
 }
+
