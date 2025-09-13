@@ -9,8 +9,10 @@ type ExportOpts = {
 };
 
 export async function exportSlides(story: Story, opts: ExportOpts = {}): Promise<Blob[]> {
-  const count = typeof opts.count === 'number' ? opts.count : 0;
-  if (!count) return [];
+  const requested =
+    typeof opts.count === 'number' ? opts.count : story.slides.length;
+  const count = Math.min(Math.max(requested, 0), story.slides.length);
+  if (count === 0) return [];
 
   const blobs: Blob[] = [];
   for (let i = 0; i < count; i++) {

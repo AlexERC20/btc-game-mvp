@@ -1,7 +1,7 @@
 import React from 'react';
 import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
-import { useCarouselStore, getStory, getSlidesCount } from '@/state/store';
+import { useCarouselStore } from '@/state/store';
 import { exportSlides } from '@/features/carousel/utils/exportSlides';
 import '../styles/bottom-bar.css';
 
@@ -27,48 +27,44 @@ const withHaptic =
   };
 
 // ---------- SHARE ----------
-function tgAlert(message: string) {
-  const tg = (window as any).Telegram?.WebApp;
-  if (tg?.showAlert) return tg.showAlert(message);
-  alert(message);
-}
-
 async function handleShare() {
   try {
-    const count = getSlidesCount();
-    console.info('[share] slides in store =', count);
-    if (!count) {
-      tgAlert('Добавьте текст или фотографию.');
+    const slides = useCarouselStore.getState().slides;
+    if (slides.length === 0) {
+      window.alert('Добавьте текст или фотографию.');
       return;
     }
 
-    const story = getStory();
-    const blobs = await exportSlides(story, { count });
+    const blobs = await exportSlides({ slides } as any, { count: slides.length });
     if (!blobs.length) {
-      tgAlert('Не удалось подготовить слайды. Попробуйте ещё раз.');
+      window.alert('Не удалось подготовить слайды. Попробуйте ещё раз.');
       return;
     }
 
-    const files = blobs.map((b, i) =>
-      new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' }),
+    const files = blobs.map(
+      (b, i) =>
+        new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, {
+          type: 'image/png',
+        }),
     );
 
-    if (navigator.canShare?.({ files })) {
+    if (navigator.canShare?.({ files }) && navigator.share) {
       await navigator.share({ files });
       return;
     }
 
-    const url = URL.createObjectURL(files[0]);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = files[0].name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+    if (files[0]) {
+      const url = URL.createObjectURL(files[0]);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = files[0].name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
   } catch (e) {
-    console.error('[share] failed', e);
-    tgAlert('Не удалось поделиться. Попробуйте ещё раз.');
+    window.alert('Не удалось поделиться. Попробуйте ещё раз.');
   }
 }
 
