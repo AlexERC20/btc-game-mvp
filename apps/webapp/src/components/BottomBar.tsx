@@ -5,11 +5,11 @@ import { useCarouselStore, getStory } from '@/state/store';
 import { exportSlides } from '@/features/carousel/utils/exportSlides';
 import '../styles/bottom-bar.css';
 
-// Хаптик: Telegram WebApp (если есть) → fallback вибрация
+// --- HAPTIC ----------------------------------------------------
 const haptic = {
   impact(style: 'light'|'medium'|'heavy'|'rigid'|'soft' = 'light') {
     try {
-      const tg = (window as any).Telegram?.WebApp;
+      const tg = (window as any)?.Telegram?.WebApp;
       if (tg?.HapticFeedback?.impactOccurred) {
         tg.HapticFeedback.impactOccurred(style);
         return true;
@@ -22,92 +22,76 @@ const haptic = {
     return false;
   },
 };
-
-function withHaptic<T extends any[]>(fn: (...args: T) => void, style: Parameters<typeof haptic.impact>[0] = 'light') {
-  return (...args: T) => {
+const withHaptic =
+  <T extends any[]>(fn: (...args: T) => void, style: Parameters<typeof haptic.impact>[0] = 'light') =>
+  (...args: T) => {
     haptic.impact(style);
     fn(...args);
   };
-}
 
+// --- SHARE -----------------------------------------------------
 async function handleShare() {
+  const tg = (window as any)?.Telegram?.WebApp;
+
   try {
-    // Берём СФОРМИРОВАННУЮ историю (со слайдами) — это важно!
     const story = getStory();
-    const slidesCount = Array.isArray(story?.slides) ? story.slides.length : 0;
+    // критично: берем количество слайдов из zustand-стора
+    const { slides } = useCarouselStore.getState();
+    const count = Array.isArray(slides) ? slides.length : 0;
 
-    console.info('[share] slides in story =', slidesCount);
+    console.info('[share] slides in store =', count);
 
-    if (!slidesCount) {
-      const msg = 'Не удалось подготовить слайды. Добавьте текст/фото.';
-      (window as any).Telegram?.WebApp?.showAlert?.(msg) ?? alert(msg);
+    // Если вообще пусто — подскажем пользователю
+    const hasContent =
+      !!story?.text?.trim?.() ||
+      (Array.isArray((story as any)?.photos) && (story as any).photos.length > 0) ||
+      count > 0;
+
+    if (!hasContent) {
+      tg?.showAlert?.('Добавьте текст или фотографию.');
       return;
     }
 
-    // На всякий случай ждём шрифты (частая причина пустых канвасов)
-    try { await (document as any).fonts?.ready; } catch {}
-
-    const blobs = await exportSlides(story);
-    console.info('[share] produced blobs =', blobs.length);
+    // Экспортируем ровно count слайдов
+    const blobs = await exportSlides(story, { count });
+    console.info('[share] blobs:', blobs.length);
 
     if (!blobs.length) {
-      const msg = 'Не удалось подготовить слайды. Добавьте текст/фото.';
-      (window as any).Telegram?.WebApp?.showAlert?.(msg) ?? alert(msg);
+      tg?.showAlert?.('Не удалось подготовить слайды. Добавьте текст/фото.');
       return;
     }
 
+    // Готовим File[] для Web Share Level 2
     const files = blobs.map(
-      (b, i) => new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' }),
+      (b, i) =>
+        new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, {
+          type: 'image/png',
+        }),
     );
 
-    // Web Share API
-    const canShareFiles = (navigator as any).canShare?.({ files });
-    if (canShareFiles && (navigator as any).share) {
-      await (navigator as any).share({ files });
+    // iOS/Android: если можно — открываем системный Share Sheet
+    if (navigator.canShare?.({ files })) {
+      await navigator.share({ files }).catch(() => {});
       return;
     }
 
-    // Фолбэк: скачиваем первый файл
-    const url = URL.createObjectURL(files[0]);
+    // Фолбэк: скачиваем первый слайд как PNG
+    const first = files[0];
+    const url = URL.createObjectURL(first);
     const a = document.createElement('a');
     a.href = url;
-    a.download = files[0].name;
+    a.download = first.name;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
   } catch (e) {
-    console.error('[share] failed:', e);
-    const msg = 'Не удалось поделиться. Попробуйте ещё раз.';
-    (window as any).Telegram?.WebApp?.showAlert?.(msg) ?? alert(msg);
-  }
-}
-    // 4) собираем File[] для Web Share API
-    const files = blobs.map(
-      (b, i) => new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' })
-    );
-
-    // 5) Web Share API (если доступен)
-    if ((navigator as any).canShare?.({ files }) && (navigator as any).share) {
-      await (navigator as any).share({ files });
-      return;
-    }
-
-    // 6) Фолбэк: отдаем первый файл как download
-    const url = URL.createObjectURL(files[0]);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = files[0].name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    console.error('[share] failed:', e);
-    (window as any).Telegram?.WebApp?.showAlert?.('Не удалось поделиться. Попробуйте ещё раз.');
+    console.error('[share] failed', e);
+    (window as any)?.Telegram?.WebApp?.showAlert?.('Не удалось поделиться. Попробуйте ещё раз.');
   }
 }
 
+// --- UI --------------------------------------------------------
 export default function BottomBar() {
   const openSheet = useCarouselStore((s) => s.openSheet);
 
@@ -126,6 +110,7 @@ export default function BottomBar() {
           key={a.key}
           className="toolbar__btn"
           onClick={withHaptic(() => openSheet(a.key as any), 'light')}
+          aria-label={a.label}
         >
           <span className="toolbar__icon">{a.icon}</span>
           <span className="toolbar__label">{a.label}</span>
