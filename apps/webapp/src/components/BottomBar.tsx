@@ -5,20 +5,17 @@ import { useCarouselStore, getStory } from '@/state/store';
 import { exportSlides } from '@/features/carousel/utils/exportSlides';
 import '../styles/bottom-bar.css';
 
-// --- HAPTIC ----------------------------------------------------
+// ---------- HAPTIC ----------
 const haptic = {
-  impact(style: 'light'|'medium'|'heavy'|'rigid'|'soft' = 'light') {
+  impact(style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft' = 'light') {
     try {
-      const tg = (window as any)?.Telegram?.WebApp;
+      const tg = (window as any).Telegram?.WebApp;
       if (tg?.HapticFeedback?.impactOccurred) {
         tg.HapticFeedback.impactOccurred(style);
         return true;
       }
     } catch {}
-    if ('vibrate' in navigator) {
-      (navigator as any).vibrate?.(20);
-      return true;
-    }
+    if ('vibrate' in navigator) (navigator as any).vibrate?.(20);
     return false;
   },
 };
@@ -29,99 +26,86 @@ const withHaptic =
     fn(...args);
   };
 
-// --- SHARE -----------------------------------------------------
+// ---------- SHARE ----------
 async function handleShare() {
-  const tg = (window as any)?.Telegram?.WebApp;
+  const tg = (window as any).Telegram?.WebApp;
 
   try {
-    const story = getStory();
-    // критично: берем количество слайдов из zustand-стора
-    const { slides } = useCarouselStore.getState();
-    const count = Array.isArray(slides) ? slides.length : 0;
+    // 1) Берём актуальный story из стора (не из UI)
+    const story = getStory(); // ВАЖНО: см. правку в store.ts ниже
+    const slidesCount = story?.slides?.length ?? 0;
 
-    console.info('[share] slides in store =', count);
+    console.info('[share] slides in story =', slidesCount);
 
-    // Если вообще пусто — подскажем пользователю
-    const hasContent =
-      !!story?.text?.trim?.() ||
-      (Array.isArray((story as any)?.photos) && (story as any).photos.length > 0) ||
-      count > 0;
-
-    if (!hasContent) {
+    if (slidesCount === 0) {
+      // Никаких showPopup — его нет в v6.0
       tg?.showAlert?.('Добавьте текст или фотографию.');
       return;
     }
 
-    // Экспортируем ровно count слайдов
-    const blobs = await exportSlides(story, { count });
+    // 2) Рендерим PNG для всех текущих слайдов
+    const blobs = await exportSlides(story);
     console.info('[share] blobs:', blobs.length);
 
     if (!blobs.length) {
-      tg?.showAlert?.('Не удалось подготовить слайды. Добавьте текст/фото.');
+      tg?.showAlert?.('Не удалось подготовить слайды. Попробуйте еще раз.');
       return;
     }
 
-    // Готовим File[] для Web Share Level 2
     const files = blobs.map(
       (b, i) =>
-        new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, {
-          type: 'image/png',
-        }),
+        new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' }),
     );
 
-    // iOS/Android: если можно — открываем системный Share Sheet
+    // 3) iOS/Android native share — если доступен
     if (navigator.canShare?.({ files })) {
-      await navigator.share({ files }).catch(() => {});
+      await navigator.share({ files });
       return;
     }
 
-    // Фолбэк: скачиваем первый слайд как PNG
-    const first = files[0];
-    const url = URL.createObjectURL(first);
+    // 4) Фолбэк: скачать первый файл (минимально полезно)
+    const url = URL.createObjectURL(files[0]);
     const a = document.createElement('a');
     a.href = url;
-    a.download = first.name;
+    a.download = files[0].name;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
   } catch (e) {
     console.error('[share] failed', e);
-    (window as any)?.Telegram?.WebApp?.showAlert?.('Не удалось поделиться. Попробуйте ещё раз.');
+    (window as any).Telegram?.WebApp?.showAlert?.('Не удалось поделиться. Попробуйте ещё раз.');
   }
 }
 
-// --- UI --------------------------------------------------------
 export default function BottomBar() {
   const openSheet = useCarouselStore((s) => s.openSheet);
 
   const actions = [
     { key: 'template', label: 'Template', icon: <IconTemplate /> },
-    { key: 'layout',   label: 'Layout',   icon: <IconLayout /> },
-    { key: 'fonts',    label: 'Fonts',    icon: <IconFonts /> },
-    { key: 'photos',   label: 'Photos',   icon: <IconPhotos /> },
-    { key: 'info',     label: 'Info',     icon: <IconInfo /> },
+    { key: 'layout', label: 'Layout', icon: <IconLayout /> },
+    { key: 'fonts', label: 'Fonts', icon: <IconFonts /> },
+    { key: 'photos', label: 'Photos', icon: <IconPhotos /> },
+    { key: 'info', label: 'Info', icon: <IconInfo /> },
   ];
 
   return (
     <nav className="toolbar" role="toolbar">
-      {actions.map(a => (
+      {actions.map((a) => (
         <button
           key={a.key}
           className="toolbar__btn"
           onClick={withHaptic(() => openSheet(a.key as any), 'light')}
-          aria-label={a.label}
         >
           <span className="toolbar__icon">{a.icon}</span>
           <span className="toolbar__label">{a.label}</span>
         </button>
       ))}
-      <button
-        className="toolbar__btn"
-        onClick={withHaptic(handleShare, 'medium')}
-        aria-label="Share"
-      >
-        <span className="toolbar__icon"><ShareIcon /></span>
+
+      <button className="toolbar__btn" onClick={withHaptic(handleShare, 'medium')} aria-label="Share">
+        <span className="toolbar__icon">
+          <ShareIcon />
+        </span>
         <span className="toolbar__label">Share</span>
       </button>
     </nav>
