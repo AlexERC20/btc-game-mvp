@@ -1,7 +1,8 @@
 import { renderSlideToCanvas } from '@/features/carousel/lib/canvasRender';
 import type { Story } from '@/core/story';
 
-function log(...args: any[]) { console.info('[share]', ...args); }
+// [DEBUG] единый логер
+const __log = (...a: any[]) => console.info('[share]', ...a);
 
 async function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   const blob = await new Promise<Blob|null>(res =>
@@ -10,7 +11,7 @@ async function canvasToPngBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   if (blob) return blob;
 
   // iOS иногда даёт null → безопасный фолбэк
-  log('toBlob(null) → fallback toDataURL');
+  __log('toBlob(null) → fallback toDataURL'); // [DEBUG]
   const dataUrl = canvas.toDataURL('image/png');
   const bin = atob(dataUrl.split(',')[1]);
   const bytes = new Uint8Array(bin.length);
@@ -24,12 +25,16 @@ export async function exportSlidesAsFiles(story: Story): Promise<File[]> {
   for (let i = 0; i < limit; i++) {
     const canvas = await renderSlideToCanvas(story, i);
     const blob = await canvasToPngBlob(canvas);
-    if (!blob || blob.size === 0) log(`slide #${i+1}: empty blob`);
-    files.push(new File([blob], `slide-${String(i+1).padStart(2,'0')}.png`, { type:'image/png' }));
+    // [DEBUG]
+    if (!blob || blob.size === 0) __log(`slide #${i + 1}: toBlob(null) — таинт/шрифт не прогрузился?`);
+    files.push(new File([blob], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' }));
     // даём браузеру «вздохнуть», чтобы не потерять user-gesture
     // eslint-disable-next-line no-await-in-loop
     await new Promise(r => setTimeout(r, 0));
   }
+  // [DEBUG]
+  __log('candidates:', files.map((f, i) => ({ i, name: f.name, type: f.type, size: f.size })));
+
   return files;
 }
 
@@ -37,9 +42,19 @@ export async function shareSlides(story: Story): Promise<void> {
   const files = await exportSlidesAsFiles(story);
   const nav: any = navigator;
 
-  log('candidates:', files.map((f,i)=>({i,name:f.name,type:f.type,size:f.size})));
-  const can = !!nav?.canShare?.({ files });
-  log('support:', { hasShare: !!nav?.share, hasCanShare: !!nav?.canShare, canShareFiles: can });
+  // [DEBUG] сводка окружения
+  __log('support:', {
+    hasShare: !!nav?.share,
+    hasCanShare: !!nav?.canShare,
+    filesCount: files.length,
+  });
+
+  let can = false;
+  if (nav?.canShare) {
+    try { can = nav.canShare({ files }); }
+    catch (e) { __log('canShare threw:', e); } // [DEBUG]
+  }
+  __log('canShare({files}) =', can); // [DEBUG]
 
   const isTelegram = /Telegram/i.test(navigator.userAgent);
   const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -52,15 +67,15 @@ export async function shareSlides(story: Story): Promise<void> {
   if (files.length && nav?.share && can) {
     try {
       await nav.share({ files, title: 'Carousel' });
-      log('share(): OK');
+      __log('share(): OK');
       return;
     } catch (e) {
-      log('share() error:', e);
+      __log('share() error:', e);
     }
   }
 
   // Фолбэк: последовательное скачивание PNG (если WebView блокирует — см. пункт 4)
-  log('fallback: download');
+  __log('fallback: download one-by-one'); // [DEBUG]
   for (const f of files) {
     const url = URL.createObjectURL(f);
     const a = document.createElement('a');
@@ -70,9 +85,12 @@ export async function shareSlides(story: Story): Promise<void> {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    __log('downloaded', f.name, f.size); // [DEBUG]
     // маленькая пауза между файлами
     // eslint-disable-next-line no-await-in-loop
     await new Promise(r => setTimeout(r, 120));
   }
+
+  if (!files.length) __log('no files to share'); // [DEBUG]
 }
 
