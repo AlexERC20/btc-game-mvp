@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
 import { useCarouselStore } from '@/state/store';
@@ -44,6 +44,7 @@ function withHaptic<T extends any[]>(fn: (...args: T) => void, style: Parameters
 export default function BottomBar() {
   const openSheet = useCarouselStore((s) => s.openSheet);
   const story = useCarouselStore((s) => s.story);
+  const [busy, setBusy] = useState(false);
 
   const actions = [
     { key: 'template', label: 'Template', icon: <IconTemplate /> },
@@ -54,10 +55,15 @@ export default function BottomBar() {
   ];
 
   const onShare = async () => {
+    if (busy) return;
+    setBusy(true);
     try {
       await shareSlides(story);
     } catch (e) {
-      console.error('[share] handler failed:', e);
+      console.error('[share] failed', e);
+      alert('Не удалось поделиться. Попробуйте ещё раз.');
+    } finally {
+      setBusy(false);
     }
   };
 
