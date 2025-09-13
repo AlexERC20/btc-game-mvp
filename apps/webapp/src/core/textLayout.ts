@@ -1,5 +1,5 @@
 export type LayoutInput = {
-  frame: import('../state/store').FrameSpec;
+  frame: import('@/state/store').FrameSpec;
   fontFamily: string;
   fontSize: number;
   lineHeight: number;

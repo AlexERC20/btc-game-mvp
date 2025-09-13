@@ -4,7 +4,7 @@ import BottomBar from '../../components/BottomBar';
 import LayoutSheet from '../../components/sheets/LayoutSheet';
 import BottomSheet from '../../components/BottomSheet';
 import PhotosSheet from '../../components/PhotosSheet';
-import { useStore } from '../../state/store';
+import { useStore } from '@/state/store';
 
 export default function PreviewCarousel() {
     const [slides, setSlides] = useState<Slide[]>([]);

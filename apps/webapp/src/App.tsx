@@ -9,7 +9,7 @@ import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
 import "./styles/preview-list.css";
 import { getWelcomeText, SEED_KEY } from "./core/seed";
-import { useStore } from "./state/store";
+import { useStore } from "@/state/store";
 import type { Slide, CanvasMode, PhotoMeta } from "./types";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;

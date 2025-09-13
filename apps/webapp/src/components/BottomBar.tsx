@@ -1,7 +1,7 @@
 import React from 'react';
 import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
-import { useCarouselStore, getStory } from '@/state/store';
+import { useCarouselStore, getStory, getSlidesCount } from '@/state/store';
 import { exportSlides } from '@/features/carousel/utils/exportSlides';
 import '../styles/bottom-bar.css';
 
@@ -31,20 +31,17 @@ async function handleShare() {
   const tg = (window as any).Telegram?.WebApp;
 
   try {
-    // 1) Берём актуальный story из стора (не из UI)
-    const story = getStory(); // ВАЖНО: см. правку в store.ts ниже
-    const slidesCount = story?.slides?.length ?? 0;
+    const story = getStory();
+    const count = getSlidesCount();
 
-    console.info('[share] slides in story =', slidesCount);
+    console.info('[share] slides in story =', count);
 
-    if (slidesCount === 0) {
-      // Никаких showPopup — его нет в v6.0
+    if (!count) {
       tg?.showAlert?.('Добавьте текст или фотографию.');
       return;
     }
 
-    // 2) Рендерим PNG для всех текущих слайдов
-    const blobs = await exportSlides(story);
+    const blobs = await exportSlides(story, { count });
     console.info('[share] blobs:', blobs.length);
 
     if (!blobs.length) {
