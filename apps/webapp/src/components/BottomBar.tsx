@@ -27,40 +27,37 @@ const withHaptic =
   };
 
 // ---------- SHARE ----------
-async function handleShare() {
+function tgAlert(message: string) {
   const tg = (window as any).Telegram?.WebApp;
+  if (tg?.showAlert) return tg.showAlert(message);
+  alert(message);
+}
 
+async function handleShare() {
   try {
-    const story = getStory();
     const count = getSlidesCount();
-
-    console.info('[share] slides in story =', count);
-
+    console.info('[share] slides in store =', count);
     if (!count) {
-      tg?.showAlert?.('Добавьте текст или фотографию.');
+      tgAlert('Добавьте текст или фотографию.');
       return;
     }
 
+    const story = getStory();
     const blobs = await exportSlides(story, { count });
-    console.info('[share] blobs:', blobs.length);
-
     if (!blobs.length) {
-      tg?.showAlert?.('Не удалось подготовить слайды. Попробуйте еще раз.');
+      tgAlert('Не удалось подготовить слайды. Попробуйте ещё раз.');
       return;
     }
 
-    const files = blobs.map(
-      (b, i) =>
-        new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' }),
+    const files = blobs.map((b, i) =>
+      new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' }),
     );
 
-    // 3) iOS/Android native share — если доступен
     if (navigator.canShare?.({ files })) {
       await navigator.share({ files });
       return;
     }
 
-    // 4) Фолбэк: скачать первый файл (минимально полезно)
     const url = URL.createObjectURL(files[0]);
     const a = document.createElement('a');
     a.href = url;
@@ -71,7 +68,7 @@ async function handleShare() {
     URL.revokeObjectURL(url);
   } catch (e) {
     console.error('[share] failed', e);
-    (window as any).Telegram?.WebApp?.showAlert?.('Не удалось поделиться. Попробуйте ещё раз.');
+    tgAlert('Не удалось поделиться. Попробуйте ещё раз.');
   }
 }
 

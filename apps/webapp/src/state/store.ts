@@ -69,6 +69,9 @@ export type StoreState = {
   reorderSlides: (fromIndex: number, toIndex: number) => void;
 
   setMode: (mode: 'story' | 'carousel') => void;
+
+  setSlides: (slides: Slide[]) => void;
+  syncStory: (story: Story) => void;
 };
 
 const createStore = () => create<StoreState>((set) => ({
@@ -121,6 +124,9 @@ const createStore = () => create<StoreState>((set) => ({
       };
     }),
 
+  setSlides: (slides) => set({ slides, story: { slides } }),
+  syncStory: (story) => set({ story, slides: story?.slides ?? [] }),
+
   setMode: (mode) =>
     set(() => ({
       mode,
@@ -132,7 +138,9 @@ const createStore = () => create<StoreState>((set) => ({
 export const useCarouselStore = (window as any).__CAROUSEL_STORE__ ?? ((window as any).__CAROUSEL_STORE__ = createStore());
 
 export const useStore = useCarouselStore;
+export const getState = () => useCarouselStore.getState();
 
-export const getStory = () => useCarouselStore.getState().story;
-export const getSlidesCount = () => useCarouselStore.getState().slides.length;
+export const getSlidesCount = () => getState().slides.length;
+export const getSlides = () => getState().slides;
+export const getStory = () => getState().story;
 

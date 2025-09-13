@@ -9,7 +9,7 @@ import "./styles/tailwind.css";
 import "./styles/builder-preview.css";
 import "./styles/preview-list.css";
 import { getWelcomeText, SEED_KEY } from "./core/seed";
-import { useStore } from "@/state/store";
+import { useStore, useCarouselStore } from "@/state/store";
 import type { Slide, CanvasMode, PhotoMeta } from "./types";
 
 type SlideCount = "auto" | 1|2|3|4|5|6|7|8|9|10;
@@ -18,6 +18,7 @@ export default function App() {
   const [rawText, setRawText] = useState("");
   const [photos, setPhotos] = useState<PhotoMeta[]>([]);
   const [slides, setSlides] = useState<Slide[]>([]);
+  const syncStory = useCarouselStore.getState().syncStory;
   const [count, setCount] = useState<SlideCount>("auto");
   const [username, setUsername] = useState("@username");
   const [mode, setMode] = useState<CanvasMode>('carousel');
@@ -304,6 +305,10 @@ export default function App() {
       localStorage.setItem(SEED_KEY, "1");
     }
   }, []);
+
+  useEffect(() => {
+    syncStory({ slides });
+  }, [slides, syncStory]);
 
 
   function splitHeading(body: string) {
