@@ -1,24 +1,20 @@
 import { renderSlideToCanvas } from '@/features/carousel/lib/canvasRender';
 import type { Story } from '@/core/story';
 
-type ExportOpts = { width?: number; height?: number; indices?: number[] };
+type ExportOpts = { width?: number; height?: number };
 
 export async function exportSlides(story: Story, opts: ExportOpts = {}): Promise<Blob[]> {
-  const { indices } = opts;
   const blobs: Blob[] = [];
-
-  const slideIndexes = indices ?? story.slides.map((_, i) => i); // no filtering by content
-
-  for (const i of slideIndexes) {
+  for (let i = 0; i < story.slides.length; i++) {
     const canvas = await renderSlideToCanvas(story, i, opts);
-    const blob: Blob = await new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((b) => {
-        if (!b) return reject(new Error('canvas.toBlob returned null'));
-        resolve(b);
-      }, 'image/png', 0.92);
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('toBlob returned null'))),
+        'image/png',
+        0.95,
+      );
     });
     blobs.push(blob);
   }
-
   return blobs;
 }

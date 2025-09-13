@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
-import { useCarouselStore } from '@/state/store';
+import { useCarouselStore, getStory } from '@/state/store';
 import { exportSlides } from '@/features/carousel/utils/exportSlides';
 import '../styles/bottom-bar.css';
 
@@ -41,9 +41,44 @@ function withHaptic<T extends any[]>(fn: (...args: T) => void, style: Parameters
   };
 }
 
+async function handleShare() {
+  try {
+    const story = getStory();
+    const blobs = await exportSlides(story);
+    console.info('[share] blobs:', blobs.length);
+    if (!blobs?.length) {
+      window.Telegram?.WebApp?.showAlert?.('Не удалось подготовить слайды. Добавьте текст/фото.');
+      return;
+    }
+
+    const files = blobs.map(
+      (b, i) =>
+        new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, {
+          type: 'image/png',
+        }),
+    );
+
+    if (navigator.canShare?.({ files })) {
+      await navigator.share({ files });
+      return;
+    }
+
+    const url = URL.createObjectURL(files[0]);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = files[0].name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    console.error('[share] failed', e);
+    window.Telegram?.WebApp?.showAlert?.('Не удалось поделиться. Попробуйте ещё раз.');
+  }
+}
+
 export default function BottomBar() {
   const openSheet = useCarouselStore((s) => s.openSheet);
-  const [busy, setBusy] = useState(false);
 
   const actions = [
     { key: 'template', label: 'Template', icon: <IconTemplate /> },
@@ -52,49 +87,6 @@ export default function BottomBar() {
     { key: 'photos',   label: 'Photos',   icon: <IconPhotos /> },
     { key: 'info',     label: 'Info',     icon: <IconInfo /> },
   ];
-
-  const onShare = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const { story } = useCarouselStore.getState();
-      const blobs = await exportSlides(story);
-      console.info('[share] blobs:', blobs.length);
-      if (!blobs.length) return;
-
-      const files = blobs.map((b, i) =>
-        new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' })
-      );
-
-      const canShare = !!navigator.canShare?.({ files }) && typeof navigator.share === 'function';
-      if (canShare) {
-        try {
-          await navigator.share({ files });
-          return;
-        } catch (e: any) {
-          if (e?.name === 'AbortError') return;
-          console.warn('[share] share failed, fallback to download', e);
-        }
-      }
-
-      const first = files[0];
-      const url = URL.createObjectURL(first);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = first.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error('[share] failed', e);
-      try {
-        (window as any).Telegram?.WebApp?.showAlert?.('Не удалось поделиться…');
-      } catch {}
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <nav className="toolbar" role="toolbar">
@@ -110,7 +102,7 @@ export default function BottomBar() {
       ))}
       <button
         className="toolbar__btn"
-        onClick={withHaptic(onShare, 'medium')}
+        onClick={withHaptic(handleShare, 'medium')}
         aria-label="Share"
       >
         <span className="toolbar__icon">
