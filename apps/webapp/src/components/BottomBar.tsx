@@ -32,30 +32,56 @@ function withHaptic<T extends any[]>(fn: (...args: T) => void, style: Parameters
 
 async function handleShare() {
   try {
-    // 1) берем актуальный state в момент клика
-    const state = useCarouselStore.getState();
-    const story = state.story;
-    const slidesCount = story?.slides?.length ?? 0;
+    // Берём СФОРМИРОВАННУЮ историю (со слайдами) — это важно!
+    const story = getStory();
+    const slidesCount = Array.isArray(story?.slides) ? story.slides.length : 0;
 
     console.info('[share] slides in story =', slidesCount);
 
     if (!slidesCount) {
-      (window as any).Telegram?.WebApp?.showAlert?.('Добавьте текст или фотографию.');
+      const msg = 'Не удалось подготовить слайды. Добавьте текст/фото.';
+      (window as any).Telegram?.WebApp?.showAlert?.(msg) ?? alert(msg);
       return;
     }
 
-    // 2) на всякий случай дождёмся шрифтов
+    // На всякий случай ждём шрифты (частая причина пустых канвасов)
     try { await (document as any).fonts?.ready; } catch {}
 
-    // 3) рендерим
     const blobs = await exportSlides(story);
     console.info('[share] produced blobs =', blobs.length);
 
     if (!blobs.length) {
-      (window as any).Telegram?.WebApp?.showAlert?.('Не удалось подготовить слайды. Добавьте текст/фото.');
+      const msg = 'Не удалось подготовить слайды. Добавьте текст/фото.';
+      (window as any).Telegram?.WebApp?.showAlert?.(msg) ?? alert(msg);
       return;
     }
 
+    const files = blobs.map(
+      (b, i) => new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' }),
+    );
+
+    // Web Share API
+    const canShareFiles = (navigator as any).canShare?.({ files });
+    if (canShareFiles && (navigator as any).share) {
+      await (navigator as any).share({ files });
+      return;
+    }
+
+    // Фолбэк: скачиваем первый файл
+    const url = URL.createObjectURL(files[0]);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = files[0].name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    console.error('[share] failed:', e);
+    const msg = 'Не удалось поделиться. Попробуйте ещё раз.';
+    (window as any).Telegram?.WebApp?.showAlert?.(msg) ?? alert(msg);
+  }
+}
     // 4) собираем File[] для Web Share API
     const files = blobs.map(
       (b, i) => new File([b], `slide-${String(i + 1).padStart(2, '0')}.png`, { type: 'image/png' })
