@@ -2,3 +2,12 @@
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
 body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background: #0d0d0f; color: #fff; }
+
+/* iOS зумит инпуты < 16px — не даём повода */
+input, textarea, select, button { font-size: 16px; }
+
+/* не увеличивай текст «по своему» */
+html { -webkit-text-size-adjust: 100%; }
+
+/* кликабельным элементам отключаем double-tap zoom */
+a, button, [role="button"], .btn-soft { touch-action: manipulation; }

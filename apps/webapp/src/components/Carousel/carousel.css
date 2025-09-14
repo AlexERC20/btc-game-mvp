@@ -1,12 +1,12 @@
 /* Трек карусели */
 .carousel{
-  --side-pad: 10px;   /* можно 8px, если хочешь ещё больше */
-  --gap: 10px;
-  --peek: 0px;        /* 0 = не «подглядываем» соседний слайд */
+    --side-pad: 10px;   /* можно 8px, если хочешь ещё больше */
+    --gap: 10px;
+    --peek: 0px;        /* 0 = не «подглядываем» соседний слайд */
 
-  margin-top: 8px;
-  padding-inline: var(--side-pad);
-  display: flex;
+    margin-top: 10px;
+    padding-inline: var(--side-pad);
+    display: flex;
   gap: var(--gap);
   overflow-x: auto;
   scroll-snap-type: x mandatory;
