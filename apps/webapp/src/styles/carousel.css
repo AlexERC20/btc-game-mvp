@@ -1,0 +1,38 @@
+.carousel {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 160px);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.carousel__track {
+  display: flex;
+  gap: 18px;
+  overflow-x: auto;
+  padding: 0 24px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.carousel__item {
+  position: relative;
+  width: min(86vw, 360px);
+  height: min(86vh, 580px);
+  border-radius: 26px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0,0,0,.35);
+  background: #111;
+  scroll-snap-align: center;
+  transition: transform .24s ease, opacity .24s ease, filter .24s ease;
+}
+.carousel__item.is-side {
+  transform: scale(.94);
+  opacity: .65;
+  filter: saturate(.9) brightness(.9);
+}
+.carousel__item.is-active {
+  transform: scale(1);
+  opacity: 1;
+  filter: none;
+}
+

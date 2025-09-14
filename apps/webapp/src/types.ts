@@ -6,6 +6,7 @@ export type Slide = {
   title?: string;               // заголовок (опционально)
   image?: string;               // dataURL/URL выбранной фотки
   imageId?: string | null;
+  nickname?: string;
 
   // визуальные пер-слайд настройки (если не задано — берём из defaults)
   overrides?: {

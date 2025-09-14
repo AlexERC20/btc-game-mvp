@@ -1,8 +1,7 @@
 import React from 'react';
-import { IconTemplate, IconLayout, IconPhotos, IconText } from '../ui/icons';
+import { IconTemplate, IconPhotos } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
-import { useCarouselStore } from '@/state/store';
-import { buildCurrentStory, getSlidesCount } from '@/state/store';
+import { useCarouselStore, buildCurrentStory, getSlidesCount } from '@/state/store';
 import { exportSlides } from '@/features/carousel/utils/exportSlides';
 import { haptic, showAlertSafe } from '@/lib/tg';
 import '../styles/bottom-bar.css';
@@ -90,24 +89,24 @@ async function handleShare() {
 export default function BottomBar() {
   const openSheet = useCarouselStore((s) => s.openSheet);
 
-  const actions = [
-    { key: 'share',    label: 'Export',  icon: <ShareIcon />, onClick: handleShare },
-    { key: 'text',     label: 'Text',    icon: <IconText />,  onClick: () => openSheet('text') },
-    { key: 'template', label: 'Template',icon: <IconTemplate />, onClick: () => openSheet('template') },
-    { key: 'photos',   label: 'Photos',  icon: <IconPhotos />, onClick: () => openSheet('photos') },
-    { key: 'layout',   label: 'Layout',  icon: <IconLayout />, onClick: () => openSheet('layout') },
+  const items = [
+    { key: 'export',   label: 'Export',   icon: <ShareIcon />,                  onClick: handleShare },
+    { key: 'text',     label: 'Text',     icon: <span className="icon-aa">Aa</span>, onClick: () => openSheet('text') },
+    { key: 'template', label: 'Template', icon: <IconTemplate />,               onClick: () => openSheet('template') },
+    { key: 'photos',   label: 'Photos',   icon: <IconPhotos />,                 onClick: () => openSheet('photos') },
+    { key: 'layout',   label: 'Layout',   icon: <span className="icon-layout"/>, onClick: () => openSheet('layout') },
   ] as const;
 
   return (
     <nav className="toolbar" role="toolbar">
-      {actions.map(a => (
+      {items.map((i) => (
         <button
-          key={a.key}
+          key={i.key}
           className="toolbar__btn"
-          onClick={withHaptic(a.onClick, a.key === 'share' ? 'medium' : 'light')}
+          onClick={withHaptic(i.onClick, i.key === 'export' ? 'medium' : 'light')}
         >
-          <span className="toolbar__icon">{a.icon}</span>
-          <span className="toolbar__label">{a.label}</span>
+          <span className="toolbar__icon">{i.icon}</span>
+          <span className="toolbar__label">{i.label}</span>
         </button>
       ))}
     </nav>

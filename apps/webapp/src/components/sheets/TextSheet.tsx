@@ -1,39 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import BottomSheet from '../BottomSheet';
-import { useStore } from '@/state/store';
-import type { SlideId } from '../../types';
+import React from 'react';
+import { useCarouselStore } from '@/state/store';
+import '../../styles/bottom-sheet.css';
 
-export default function TextSheet({ open, onClose, currentSlideId }: { open: boolean; onClose: () => void; currentSlideId?: SlideId }) {
-  const slide = useStore(s => s.slides.find(x => x.id === currentSlideId));
-  const updateSlide = useStore(s => s.updateSlide);
-  const [value, setValue] = useState('');
+export default function TextSheet() {
+  const slides = useCarouselStore((s) => s.slides);
+  const active = useCarouselStore((s) => s.activeIndex);
+  const update = useCarouselStore((s) => s.updateSlide);
 
-  useEffect(() => {
-    if (open) setValue(slide?.body ?? '');
-  }, [open, slide?.id]);
+  const slide = slides[active];
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Text">
+    <div className="sheet">
+      <div className="sheet__title">Text</div>
       <textarea
-        className="w-full h-48 p-3 rounded-lg bg-neutral-900 border border-neutral-800 resize-none"
-        placeholder="Вставьте или напишите текст…"
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value);
-          slide && updateSlide(slide.id, { body: e.target.value });
-        }}
+        className="sheet__textarea"
+        value={slide?.body ?? ''}
+        placeholder="Вставь текст сюда…"
+        onChange={(e) => slide && update(slide.id, { body: e.target.value })}
+        rows={8}
       />
-      <div className="mt-3 flex justify-end">
-        <button
-          className="px-4 py-2 rounded-lg bg-neutral-800"
-          onClick={() => {
-            setValue('');
-            slide && updateSlide(slide.id, { body: '' });
-          }}
-        >
-          Очистить
-        </button>
-      </div>
-    </BottomSheet>
+      <label className="sheet__field">
+        <span>@username</span>
+        <input
+          value={slide?.nickname ?? ''}
+          onChange={(e) => slide && update(slide.id, { nickname: e.target.value })}
+        />
+      </label>
+    </div>
   );
 }
+
