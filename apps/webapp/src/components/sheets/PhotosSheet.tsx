@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ChangeEvent } from 'react';
 import {
   photosActions,
   usePhotos,
@@ -20,17 +20,18 @@ const impact = (style: 'light' | 'medium' = 'light') => {
 export default function PhotosSheet() {
   const { items } = usePhotos();
   const [selected, setSelected] = useState<PhotoId[]>([]);
-  const close = useCarouselStore((s) => s.closeSheet);
+  const onClose = useCarouselStore((s) => s.closeSheet);
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close();
+      if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onEsc);
     return () => window.removeEventListener('keydown', onEsc);
-  }, [close]);
+  }, [onClose]);
 
-  const onAdd = (files: FileList | null) => {
+  const onAdd = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
     if (!files) return;
     photosActions.addFiles(Array.from(files));
   };
@@ -47,64 +48,34 @@ export default function PhotosSheet() {
 
   const removeOne = (id: PhotoId) => photosActions.remove(id);
 
-  const onDone = () => {
-    if (!selected.length) return;
-    impact('medium');
-    const { slides, activeIndex, updateSlide, addSlide, closeSheet } = useCarouselStore.getState();
-    const photos = selected
-      .map((id) => items.find((p) => p.id === id))
-      .filter(Boolean) as typeof items;
-    let idx = activeIndex;
-    for (const p of photos) {
-      if (idx >= slides.length) {
-        addSlide({ image: p.src });
-      } else {
-        updateSlide(slides[idx].id, { image: p.src });
-      }
-      idx++;
-    }
-    setSelected([]);
-    closeSheet();
-  };
-
   return (
-    <div className="sheet" aria-open="true" onClick={close}>
+    <div className="sheet" aria-open="true" onClick={onClose}>
       <div className="sheet__overlay" />
       <div className="sheet__panel" onClick={(e) => e.stopPropagation()}>
-        <header className="sheet-header">
-          <div className="title">Photos</div>
-          <button
-            className="btn-primary"
-            disabled={!selected.length}
-            onClick={onDone}
-          >
-            Done
-          </button>
-        </header>
+        <div className="actions-row">
+          <label className="btn-soft add-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24">
+              <path
+                d="M12 5v14M5 12h14"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span>Add photo</span>
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={onAdd}
+            />
+          </label>
+
+          <button className="btn-soft" onClick={onClose}>Done</button>
+        </div>
         <div className="sheet__content">
           <div className="photos-sheet">
-            <label className="btn-soft add-btn">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  d="M12 5v14M5 12h14"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
-              <span>Add photo</span>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                hidden
-                onChange={(e) => onAdd(e.target.files)}
-              />
-            </label>
             {items.length === 0 ? (
               <div className="empty">Добавьте фото, чтобы собрать карусель</div>
             ) : (

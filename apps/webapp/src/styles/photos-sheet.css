@@ -7,20 +7,13 @@
   margin-top:12px;
 }
 
-/* верхняя панель */
-.sheet-header{
-  display:flex; align-items:center; justify-content:space-between;
-  padding:8px 12px 4px;
-}
-.sheet-header .title{
-  font-weight:600; opacity:.9;
-}
-.btn-primary{
-  padding:8px 12px; border-radius:12px; border:none;
-  background:#2d6cff; color:#fff; font-weight:600;
+/* ряд с кнопками наверху шита */
+.actions-row{
+  display:flex; align-items:center; gap:10px;
+  padding: 8px 12px 4px;
 }
 
-/* мягкая «призрачная» кнопка */
+/* мягкая кнопка — используется и для Add photo, и для Done */
 .btn-soft{
   display:inline-flex; align-items:center; gap:8px;
   padding:10px 14px;
@@ -30,14 +23,18 @@
   backdrop-filter:blur(6px);
   box-shadow:0 2px 12px rgba(0,0,0,.18);
   color:rgba(255,255,255,.92);
+  font-weight:600;
 }
 .btn-soft:hover{ background:color-mix(in srgb, #ffffff 18%, transparent); }
 .btn-soft:active{ transform:translateY(1px); }
 
-/* круглая мягкая кнопка (на карточках) */
+/* ↓ Уменьшаем круглые кнопки на миниатюрах на ~15% */
 .btn-circle-soft{
   display:inline-grid; place-items:center;
-  width:36px; height:36px; border-radius:999px; border:1px solid rgba(255,255,255,.35);
+  width:30px;
+  height:30px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.35);
   background:color-mix(in srgb, #ffffff 12%, transparent);
   backdrop-filter:blur(6px);
   box-shadow:0 2px 10px rgba(0,0,0,.25);
@@ -45,9 +42,11 @@
 }
 .btn-circle-soft:hover{ background:color-mix(in srgb, #ffffff 18%, transparent); }
 .btn-circle-soft:disabled{ opacity:.45; box-shadow:none; }
+/* если внутри SVG, слегка уменьшим и его */
+.btn-circle-soft svg{ width:16px; height:16px; }
 
 /* блок «Add photo» */
-.add-btn{ margin:8px 12px; }
+.add-btn{ margin-left: 0; }
 
 /* миниатюры */
 .thumb{ position:relative; border-radius:14px; overflow:hidden; }
