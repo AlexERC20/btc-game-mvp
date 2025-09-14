@@ -38,14 +38,7 @@ const FRAME_SPECS: Record<'story' | 'carousel', FrameSpec> = {
   },
 };
 
-export type UISheet =
-  | null
-  | 'export'
-  | 'text'
-  | 'template'
-  | 'layout'
-  | 'photos'
-  | 'slideActions';
+export type UISheet = null | 'template' | 'layout' | 'photos' | 'text';
 
 export type StoreState = {
   /** Сырые слайды — ИСТИНА для UI и экспорта */

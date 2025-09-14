@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import BottomSheet from '../BottomSheet';
+import Sheet from '../Sheet';
 import { useStore } from '@/state/store';
 import type { SlideId } from '../../types';
 
@@ -63,7 +63,7 @@ export default function LayoutSheet({ open, onClose, currentSlideId }: { open: b
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Layout">
+    <Sheet title="Layout" onClose={onClose}>
       {/* scope */}
       <div className="flex gap-2 mb-3">
         <button className={btn(scope==='slide')} onClick={()=>setScope('slide')}>This slide</button>
@@ -119,7 +119,7 @@ export default function LayoutSheet({ open, onClose, currentSlideId }: { open: b
       <div className="mt-4 flex justify-end">
         <button className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-900" onClick={apply}>Apply</button>
       </div>
-    </BottomSheet>
+    </Sheet>
   );
 }
 

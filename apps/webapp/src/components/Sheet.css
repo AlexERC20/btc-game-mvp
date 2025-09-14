@@ -1,0 +1,14 @@
+.sheet{ position:fixed; inset:0; z-index:80; }
+.sheet__overlay{ position:absolute; inset:0; background:rgba(0,0,0,.35); }
+.sheet__panel{
+  position:absolute; left:0; right:0; bottom:0; z-index:81;
+  border-radius:20px 20px 0 0; background:#1b1b1d; color:#fff;
+  padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+  max-height:80vh; overflow:auto;
+  transform:translateY(100%); transition:transform .35s cubic-bezier(.2,.8,.2,1);
+}
+.sheet[aria-open="true"] .sheet__panel{ transform:translateY(0); }
+.sheet__title{ font-size:20px; font-weight:600; margin-bottom:12px; }
+.sheet__footer{ margin-top:16px; display:flex; justify-content:flex-end; }
+.field textarea{ width:100%; min-height:200px; border-radius:8px; padding:12px; background:#111; color:#fff; }
+.btn{ padding:6px 12px; border-radius:8px; background:#fff; color:#000; }
