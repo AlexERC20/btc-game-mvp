@@ -1,5 +1,5 @@
 import React from 'react';
-import { IconTemplate, IconPhotos } from '../ui/icons';
+import { IconTemplate, IconLayout, IconPhotos, IconFonts } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
 import { useCarouselStore, buildCurrentStory, getSlidesCount } from '@/state/store';
 import { exportSlides } from '@/features/carousel/utils/exportSlides';
@@ -90,16 +90,12 @@ export default function BottomBar() {
   const openSheet = useCarouselStore((s) => s.openSheet);
 
   const items = [
-    { key: 'export',   label: 'Export',   icon: <ShareIcon />,                  onClick: handleShare },
-    {
-      key: 'text',
-      label: 'Text',
-      icon: <span className="icon-aa">Aa</span>,
-      onClick: () => openSheet('template'), // временно используем template, пока TextSheet не подключён
-    },
-    { key: 'template', label: 'Template', icon: <IconTemplate />,               onClick: () => openSheet('template') },
-    { key: 'photos',   label: 'Photos',   icon: <IconPhotos />,                 onClick: () => openSheet('photos') },
-    { key: 'layout',   label: 'Layout',   icon: <span className="icon-layout"/>, onClick: () => openSheet('layout') },
+    { key: 'export',   label: 'Export',   icon: <ShareIcon />,    onClick: () => handleShare() },
+    // Пока отдельного TextSheet нет — открываем старый лист, где вводится текст.
+    { key: 'text',     label: 'Text',     icon: <IconFonts />,    onClick: () => openSheet('template') },
+    { key: 'template', label: 'Template', icon: <IconTemplate />, onClick: () => openSheet('template') },
+    { key: 'photos',   label: 'Photos',   icon: <IconPhotos />,   onClick: () => openSheet('photos') },
+    { key: 'layout',   label: 'Layout',   icon: <IconLayout />,   onClick: () => openSheet('layout') },
   ] as const;
 
   return (
