@@ -1,5 +1,5 @@
 import React from 'react';
-import { IconTemplate, IconLayout, IconFonts, IconPhotos, IconInfo } from '../ui/icons';
+import { IconTemplate, IconLayout, IconPhotos, IconText } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
 import { useCarouselStore } from '@/state/store';
 import { buildCurrentStory, getSlidesCount } from '@/state/store';
@@ -91,11 +91,11 @@ export default function BottomBar() {
   const openSheet = useCarouselStore((s) => s.openSheet);
 
   const actions = [
-    { key: 'template', label: 'Template', icon: <IconTemplate /> },
-    { key: 'layout',   label: 'Layout',   icon: <IconLayout /> },
-    { key: 'fonts',    label: 'Fonts',    icon: <IconFonts /> },
-    { key: 'photos',   label: 'Photos',   icon: <IconPhotos /> },
-    { key: 'info',     label: 'Info',     icon: <IconInfo /> },
+    { key: 'share',    label: 'Export',  icon: <ShareIcon />, onClick: handleShare },
+    { key: 'text',     label: 'Text',    icon: <IconText />,  onClick: () => openSheet('text') },
+    { key: 'template', label: 'Template',icon: <IconTemplate />, onClick: () => openSheet('template') },
+    { key: 'photos',   label: 'Photos',  icon: <IconPhotos />, onClick: () => openSheet('photos') },
+    { key: 'layout',   label: 'Layout',  icon: <IconLayout />, onClick: () => openSheet('layout') },
   ] as const;
 
   return (
@@ -104,20 +104,12 @@ export default function BottomBar() {
         <button
           key={a.key}
           className="toolbar__btn"
-          onClick={withHaptic(() => openSheet(a.key), 'light')}
+          onClick={withHaptic(a.onClick, a.key === 'share' ? 'medium' : 'light')}
         >
           <span className="toolbar__icon">{a.icon}</span>
           <span className="toolbar__label">{a.label}</span>
         </button>
       ))}
-      <button
-        className="toolbar__btn"
-        onClick={withHaptic(handleShare, 'medium')}
-        aria-label="Share"
-      >
-        <span className="toolbar__icon"><ShareIcon /></span>
-        <span className="toolbar__label">Share</span>
-      </button>
     </nav>
   );
 }

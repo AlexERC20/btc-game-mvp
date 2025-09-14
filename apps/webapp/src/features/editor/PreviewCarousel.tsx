@@ -1,197 +1,112 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { renderSlideToCanvas, Slide } from '../carousel/lib/canvasRender';
+import React, { useState, useRef } from 'react';
+import { useStore, useCarouselStore } from '@/state/store';
 import BottomBar from '../../components/BottomBar';
 import LayoutSheet from '../../components/sheets/LayoutSheet';
-import BottomSheet from '../../components/BottomSheet';
 import PhotosSheet from '../../components/PhotosSheet';
-import { useStore, useCarouselStore } from '@/state/store';
+import TextSheet from '../../components/sheets/TextSheet';
+import SlideQuickActions from '../../components/SlideQuickActions';
+import BottomSheet from '../../components/BottomSheet';
+import '../../styles/preview-carousel.css';
 
 export default function PreviewCarousel() {
-    const [slides, setSlides] = useState<Slide[]>([]);
-    const [mode] = useState<'story' | 'carousel'>('carousel');
-    const activeSheet = useStore(s => s.activeSheet);
-    const closeSheet = useStore(s => s.closeSheet);
-    const syncStory = useCarouselStore.getState().syncStory;
+  const slides = useCarouselStore(s => s.slides);
+  const activeSheet = useStore(s => s.activeSheet);
+  const closeSheet = useStore(s => s.closeSheet);
+  const reorderSlides = useStore(s => s.reorderSlides);
+  const setSlides = useStore(s => s.setSlides);
 
-  const username = 'user';
-  const overlayEnabled = true;
-  const overlayHeightPct = 40;
-  const overlayIntensity = 2;
-  const font = 'sans-serif';
-  const size = 32;
-  const lineHeight = 1.2;
-  const align: CanvasTextAlign = 'center';
-  const color = '#fff';
-  const titleColor = '#fff';
-  const titleEnabled = true;
+  const [index, setIndex] = useState(0);
+  const [qaOpen, setQaOpen] = useState(false);
+  const startX = useRef<number | null>(null);
+  const startY = useRef<number | null>(null);
 
-  const appendPhotos = (urls: string[]) => {
-    const next = urls.map((url) => ({
-      id: Math.random().toString(36).slice(2),
-      image: url,
-      thumb: url,
-    }));
-    setSlides(prev => [...prev, ...next]);
+  const onPointerDown = (e: React.PointerEvent) => {
+    startX.current = e.clientX;
+    startY.current = e.clientY;
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (startX.current == null || startY.current == null) return;
+    const dx = e.clientX - startX.current;
+    const dy = e.clientY - startY.current;
+    if (!qaOpen && dy > 22 && Math.abs(dx) < 18) {
+      setQaOpen(true);
+    }
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (startX.current == null) return;
+    const dx = e.clientX - startX.current;
+    if (Math.abs(dx) > 40) {
+      setIndex(i => Math.min(slides.length - 1, Math.max(0, i + (dx < 0 ? 1 : -1))));
+    }
+    startX.current = startY.current = null;
   };
 
-  const moveSlide = (from: number, to: number) => {
-    setSlides((prev) => {
-      const arr = [...prev];
-      if (to < 0 || to >= arr.length) return arr;
-      const [sp] = arr.splice(from, 1);
-      arr.splice(to, 0, sp);
-      return arr;
-    });
+  const onMoveLeft = () => {
+    reorderSlides(index, index - 1);
+    setIndex(i => Math.max(0, i - 1));
+    setQaOpen(false);
   };
-
-  const removeSlide = (index: number) => {
-    setSlides((prev) => prev.filter((_, i) => i !== index));
+  const onMoveRight = () => {
+    reorderSlides(index, index + 1);
+    setIndex(i => Math.min(slides.length - 1, i + 1));
+    setQaOpen(false);
   };
-
-  const removeSlideById = (id: string) => {
-    setSlides(prev => prev.filter(s => s.id !== id));
-  };
-
-  const moveSlideById = (id: string, dir: -1 | 1) => {
-    setSlides(prev => {
-      const arr = [...prev];
-      const index = arr.findIndex(s => s.id === id);
-      if (index === -1) return arr;
-      const newIndex = index + dir;
-      if (newIndex < 0 || newIndex >= arr.length) return arr;
-      const [sp] = arr.splice(index, 1);
-      arr.splice(newIndex, 0, sp);
-      return arr;
-    });
-  };
-
-  useEffect(() => {
-    if (slides.length) syncStory({ slides });
-  }, [slides, syncStory]);
-
-
-  const SlideCard: React.FC<{ slide: Slide; index: number }> = ({ slide, index }) => {
-    const [open, setOpen] = useState(false);
-    const startX = useRef<number | null>(null);
-    const ref = useRef<HTMLDivElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-
-    useEffect(() => {
-      (async () => {
-        if (!canvasRef.current) return;
-        const c = await renderSlideToCanvas({ ...slide, index }, {
-          w: 300,
-          h: 300,
-          overlay: { enabled: overlayEnabled, heightPct: overlayHeightPct, intensity: overlayIntensity },
-          text: { font, size, lineHeight, align, color, titleColor, titleEnabled, content: '' },
-          username,
-          total: slides.length,
-        });
-        const ctx = canvasRef.current.getContext('2d');
-        ctx?.drawImage(c, 0, 0);
-      })();
-    }, [
-      slide,
-      index,
-      overlayEnabled,
-      overlayHeightPct,
-      overlayIntensity,
-      font,
-      size,
-      lineHeight,
-      align,
-      color,
-      titleColor,
-      titleEnabled,
-      username,
-      slides.length,
-    ]);
-
-    const onTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-      startX.current = e.touches[0].clientX;
-    };
-    const onTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-      if (startX.current === null) return;
-      const dx = e.touches[0].clientX - startX.current;
-      const width = ref.current?.offsetWidth || 0;
-      if (dx < -width * 0.15) setOpen(true);
-      if (dx > width * 0.15) setOpen(false);
-    };
-    const onTouchEnd = () => {
-      startX.current = null;
-    };
-
-    useEffect(() => {
-      if (!open) return;
-      const handler = (e: TouchEvent) => {
-        if (!ref.current?.contains(e.target as Node)) setOpen(false);
-      };
-      document.addEventListener('touchstart', handler);
-      return () => document.removeEventListener('touchstart', handler);
-    }, [open]);
-
-    return (
-      <div
-        className="slide"
-        ref={ref}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-      >
-        <canvas ref={canvasRef} width={300} height={300} />
-        {open && (
-          <div className="slide__menu">
-            <button>⋮</button>
-            <button onClick={() => moveSlide(index, index - 1)}>↑</button>
-            <button onClick={() => moveSlide(index, index + 1)}>↓</button>
-            <button onClick={() => removeSlide(index)}>🗑</button>
-          </div>
-        )}
-      </div>
-    );
+  const onDelete = () => {
+    const arr = slides.filter((_, i) => i !== index);
+    setSlides(arr);
+    setIndex(i => Math.max(0, Math.min(i, arr.length - 1)));
+    setQaOpen(false);
   };
 
   return (
-    <div
-      className="carousel-page"
-      style={{
-        height: '100%',
-        overflowY: 'auto',
-        WebkitOverflowScrolling: 'touch',
-        overscrollBehavior: 'contain',
-        touchAction: 'pan-y',
-      }}
-    >
-      <div className="slidesScroll">
-        {slides.map((s, i) => (
-          <SlideCard key={s.id} slide={s} index={i} />
-        ))}
+    <div>
+      <div className="carousel" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}>
+        {slides.map((s, i) => {
+          const d = i - index;
+          return (
+            <div key={s.id} className="carousel__card" style={{ '--shift': d } as React.CSSProperties}>
+              <div className="carousel__content">
+                {s.image ? (
+                  <img src={s.image} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="p-4 text-white text-center">{s.body}</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {qaOpen && (
+          <SlideQuickActions
+            onMoveLeft={onMoveLeft}
+            onDelete={onDelete}
+            onMoveRight={onMoveRight}
+            onClose={() => setQaOpen(false)}
+          />
+        )}
       </div>
-        <BottomBar />
+      <BottomBar />
       <TemplateSheet open={activeSheet === 'template'} onClose={closeSheet} />
-      <LayoutSheet open={activeSheet === 'layout'} onClose={closeSheet} />
-      <FontsSheet open={activeSheet === 'fonts'} onClose={closeSheet} />
+      <LayoutSheet open={activeSheet === 'layout'} onClose={closeSheet} currentSlideId={slides[index]?.id} />
       <PhotosSheet
         open={activeSheet === 'photos'}
         onClose={closeSheet}
-        photos={slides.map(s => ({ id: s.id, url: s.image ?? s.thumb }))}
-        onAdd={appendPhotos}
-        onDelete={removeSlideById}
-        onMove={moveSlideById}
+        onDone={closeSheet}
+        photos={slides.filter(s => s.image).map(s => ({ id: s.id, url: s.image! }))}
+        onAdd={(urls) => {
+          const next = urls.map(url => ({ id: Math.random().toString(36).slice(2), body: '', image: url }));
+          setSlides([...slides, ...next]);
+        }}
+        onDelete={(id) => setSlides(slides.filter(s => s.id !== id))}
+        onMove={(id, dir) => {
+          const idx = slides.findIndex(s => s.id === id);
+          if (idx !== -1) reorderSlides(idx, idx + dir);
+        }}
       />
-      <InfoSheet open={activeSheet === 'info'} onClose={closeSheet} />
+      <TextSheet open={activeSheet === 'text'} onClose={closeSheet} currentSlideId={slides[index]?.id} />
     </div>
   );
 }
 
 function TemplateSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   return <BottomSheet open={open} onClose={onClose} title="Template" />;
-}
-
-function FontsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return <BottomSheet open={open} onClose={onClose} title="Fonts" />;
-}
-
-function InfoSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return <BottomSheet open={open} onClose={onClose} title="Info" />;
 }

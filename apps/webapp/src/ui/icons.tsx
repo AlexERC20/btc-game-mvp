@@ -54,6 +54,12 @@ export const IconInfo    = (p:IconProps) => (
   </Base>
 );
 
+export const IconText    = (p:IconProps) => (
+  <Base {...p}>
+    <text x="4" y="17" fontSize="14" stroke="none" fill="currentColor">Aa</text>
+  </Base>
+);
+
 export const PlusIcon = (p:IconProps) => (
   <Base {...p}>
     <path d="M12 5v14"/>
@@ -114,6 +120,7 @@ export default {
   IconFonts,
   IconPhotos,
   IconInfo,
+  IconText,
   PlusIcon,
   CheckIcon,
   IconTrash,

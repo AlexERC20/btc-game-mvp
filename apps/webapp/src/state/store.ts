@@ -38,7 +38,7 @@ const FRAME_SPECS: Record<'story' | 'carousel', FrameSpec> = {
   },
 };
 
-export type UISheet = null | 'template' | 'layout' | 'fonts' | 'photos' | 'info';
+export type UISheet = null | 'text' | 'template' | 'layout' | 'photos';
 
 export type StoreState = {
   /** Сырые слайды — ИСТИНА для UI и экспорта */
@@ -74,9 +74,23 @@ export type StoreState = {
   syncStory: (story: Story) => void;
 };
 
+const DEFAULT_TEXTS = [
+  'Текст 1 ...',
+  'Текст 2 ...',
+  'Текст 3 ...',
+  'Текст 4 ...',
+  'Текст 5 ...',
+];
+
+function makeDefaultSlides(): Slide[] {
+  return DEFAULT_TEXTS.map((t, i) => ({ id: `def-${i + 1}`, body: t }));
+}
+
+const initialSlides: Slide[] = makeDefaultSlides();
+
 const createStore = () => create<StoreState>((set) => ({
-  slides: [],
-  story: { slides: [] }, // не используется для экспорта; поддерживается для совместимости
+  slides: initialSlides,
+  story: { slides: initialSlides }, // не используется для экспорта; поддерживается для совместимости
   defaults: {
     fontSize: 44,
     lineHeight: 1.28,
@@ -84,6 +98,11 @@ const createStore = () => create<StoreState>((set) => ({
     bodyColor: '#FFFFFF',
     titleColor: '#FFFFFF',
     matchTitleToBody: true,
+    fontFamily: 'Inter',
+    fontWeight: 600,
+    fontItalic: false,
+    fontApplyHeading: true,
+    fontApplyBody: true,
   },
   mode: 'story',
   frame: FRAME_SPECS.story,
