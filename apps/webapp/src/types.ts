@@ -24,6 +24,11 @@ export type Defaults = {
   bodyColor: string;            // цвет основного текста
   titleColor: string;           // дефолтный цвет заголовка
   matchTitleToBody: boolean;    // если true — заголовок = bodyColor
+  fontFamily: string;
+  fontWeight: number;
+  fontItalic: boolean;
+  fontApplyHeading: boolean;
+  fontApplyBody: boolean;
 };
 
 export type PhotoMeta = {

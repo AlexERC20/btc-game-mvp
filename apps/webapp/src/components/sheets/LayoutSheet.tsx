@@ -12,6 +12,11 @@ export default function LayoutSheet({ open, onClose, currentSlideId }: { open: b
   const [fontSize, setFontSize] = useState<number>(defaults.fontSize);
   const [lineHeight, setLineHeight] = useState<number>(defaults.lineHeight);
   const [textPosition, setTextPosition] = useState<'top'|'bottom'>(defaults.textPosition);
+  const [fontFamily, setFontFamily] = useState(defaults.fontFamily);
+  const [fontWeight, setFontWeight] = useState(defaults.fontWeight);
+  const [fontItalic, setFontItalic] = useState(defaults.fontItalic);
+  const [fontApplyHeading, setFontApplyHeading] = useState(defaults.fontApplyHeading);
+  const [fontApplyBody, setFontApplyBody] = useState(defaults.fontApplyBody);
 
   useEffect(() => {
     if (!open) return;
@@ -21,21 +26,36 @@ export default function LayoutSheet({ open, onClose, currentSlideId }: { open: b
         setFontSize(slide.overrides.fontSize ?? defaults.fontSize);
         setLineHeight(slide.overrides.lineHeight ?? defaults.lineHeight);
         setTextPosition(slide.overrides.textPosition ?? defaults.textPosition);
+        setFontFamily(defaults.fontFamily);
+        setFontWeight(defaults.fontWeight);
+        setFontItalic(defaults.fontItalic);
+        setFontApplyHeading(defaults.fontApplyHeading);
+        setFontApplyBody(defaults.fontApplyBody);
       } else {
         setFontSize(defaults.fontSize);
         setLineHeight(defaults.lineHeight);
         setTextPosition(defaults.textPosition);
+        setFontFamily(defaults.fontFamily);
+        setFontWeight(defaults.fontWeight);
+        setFontItalic(defaults.fontItalic);
+        setFontApplyHeading(defaults.fontApplyHeading);
+        setFontApplyBody(defaults.fontApplyBody);
       }
     } else {
       setFontSize(defaults.fontSize);
       setLineHeight(defaults.lineHeight);
       setTextPosition(defaults.textPosition);
+      setFontFamily(defaults.fontFamily);
+      setFontWeight(defaults.fontWeight);
+      setFontItalic(defaults.fontItalic);
+      setFontApplyHeading(defaults.fontApplyHeading);
+      setFontApplyBody(defaults.fontApplyBody);
     }
   }, [open, scope, currentSlideId, defaults]);
 
   const apply = () => {
     if (scope === 'all') {
-      updateDefaults({ fontSize, lineHeight, textPosition });
+      updateDefaults({ fontSize, lineHeight, textPosition, fontFamily, fontWeight, fontItalic, fontApplyHeading, fontApplyBody });
     } else if (currentSlideId) {
       updateSlide(currentSlideId, { overrides: { fontSize, lineHeight, textPosition } });
     }
@@ -61,6 +81,39 @@ export default function LayoutSheet({ open, onClose, currentSlideId }: { open: b
       <div className="flex gap-2">
         <button className={btn(textPosition==='bottom')} onClick={()=>setTextPosition('bottom')}>Bottom</button>
         <button className={btn(textPosition==='top')} onClick={()=>setTextPosition('top')}>Top</button>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-neutral-700">
+        <Label>Font family</Label>
+        <select
+          className="w-full px-3 py-2 rounded-lg bg-neutral-900 border border-neutral-800"
+          value={fontFamily}
+          onChange={e=>setFontFamily(e.target.value)}
+        >
+          <option value="Inter">Inter</option>
+          <option value="Manrope">Manrope</option>
+          <option value="Montserrat">Montserrat</option>
+          <option value="SF Pro">SF Pro</option>
+        </select>
+
+        <Label>Weight</Label>
+        <input type="range" min={300} max={900} step={50} value={fontWeight} onChange={e=>setFontWeight(+e.target.value)} />
+
+        <div className="mt-2 flex items-center gap-2">
+          <input type="checkbox" checked={fontItalic} onChange={e=>setFontItalic(e.target.checked)} />
+          <span className="text-sm text-neutral-300">Italic</span>
+        </div>
+
+        <div className="mt-2 space-y-1">
+          <div className="flex items-center gap-2">
+            <input type="checkbox" checked={fontApplyHeading} onChange={e=>setFontApplyHeading(e.target.checked)} />
+            <span className="text-sm text-neutral-300">Heading</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="checkbox" checked={fontApplyBody} onChange={e=>setFontApplyBody(e.target.checked)} />
+            <span className="text-sm text-neutral-300">Body</span>
+          </div>
+        </div>
       </div>
 
       <div className="mt-4 flex justify-end">
