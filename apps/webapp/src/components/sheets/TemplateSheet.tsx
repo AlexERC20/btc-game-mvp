@@ -18,6 +18,7 @@ export default function TemplateSheet() {
   };
 
   const presetItems: { key: Exclude<typeof template.preset, 'custom'>; label: string }[] = [
+    { key: 'editorial', label: 'Editorial' },
     { key: 'minimal', label: 'Minimal' },
     { key: 'light', label: 'Light' },
     { key: 'focus', label: 'Focus' },
@@ -141,7 +142,7 @@ export default function TemplateSheet() {
 
         <div className="section">
           Font:
-          {['system', 'sf', 'inter'].map((f) => (
+          {['system', 'inter', 'playfair', 'bodoni', 'dmsans'].map((f) => (
             <label key={f}>
               <input
                 type="radio"
@@ -150,7 +151,17 @@ export default function TemplateSheet() {
                 checked={template.font === f}
                 onChange={() => setTemplate({ font: f as any })}
               />
-              {f === 'sf' ? 'SF Display' : f === 'inter' ? 'Inter' : 'System'}
+              {
+                f === 'inter'
+                  ? 'Inter'
+                  : f === 'playfair'
+                  ? 'Playfair'
+                  : f === 'bodoni'
+                  ? 'Bodoni'
+                  : f === 'dmsans'
+                  ? 'DM Sans'
+                  : 'System'
+              }
             </label>
           ))}
         </div>

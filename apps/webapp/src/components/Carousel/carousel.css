@@ -66,3 +66,51 @@
   border:1px solid rgba(255,255,255,.18);
   backdrop-filter: blur(6px);
 }
+
+/* Editorial preset */
+.overlay.editorial{
+  position:absolute; inset:auto 12px 12px 12px; display:flex; flex-direction:column; gap:8px;
+}
+
+.overlay.editorial .text{
+  max-width: 88%;
+}
+
+.overlay.editorial .title{
+  font-family: var(--font-inter, var(--font-system));
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: 0;
+  color:#fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.48);
+}
+
+.overlay.editorial .body{
+  margin-top: 6px;
+  font-family: var(--font-inter, var(--font-system));
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.35;
+  color:#fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.48);
+}
+
+.overlay .nickname{
+  align-self:flex-start;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #000 45%, transparent);
+  border: 1px solid rgba(255,255,255,.18);
+  color:#fff;
+  font-size: 12px;
+  font-weight: 600;
+  backdrop-filter: blur(4px);
+}
+
+.overlay.editorial .title, .overlay.editorial .body{
+  display:-webkit-box; -webkit-box-orient: vertical; overflow:hidden;
+}
+.overlay.editorial .title{ -webkit-line-clamp: 3; }
+.overlay.editorial .body { -webkit-line-clamp: 4; }
