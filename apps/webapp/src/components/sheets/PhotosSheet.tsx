@@ -1,4 +1,4 @@
-import { useState, useEffect, ChangeEvent } from 'react';
+import { useState, useEffect, MouseEvent } from 'react';
 import {
   photosActions,
   usePhotos,
@@ -30,8 +30,7 @@ export default function PhotosSheet() {
     return () => window.removeEventListener('keydown', onEsc);
   }, [onClose]);
 
-  const onAdd = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const onAdd = (files: FileList | null) => {
     if (!files) return;
     photosActions.addFiles(Array.from(files));
   };
@@ -48,17 +47,29 @@ export default function PhotosSheet() {
 
   const removeOne = (id: PhotoId) => photosActions.remove(id);
 
-  const onDone = () => {
+  const onDone = (e: MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
     // slidesActions.commitFromPhotos(items); // опционально, если нужен «коммит»
     onClose(); // закрыть щит
   };
+
+  const inputId = 'photos-file-input';
 
   return (
     <div className="sheet" aria-open="true" onClick={onClose}>
       <div className="sheet__overlay" />
       <div className="sheet__panel" onClick={(e) => e.stopPropagation()}>
         <div className="actions-row">
-          <label className="btn-soft add-btn">
+          <input
+            id={inputId}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={(e) => onAdd(e.target.files)}
+          />
+          <label className="btn-soft add-btn" htmlFor={inputId}>
             <svg width="18" height="18" viewBox="0 0 24 24">
               <path
                 d="M12 5v14M5 12h14"
@@ -68,16 +79,11 @@ export default function PhotosSheet() {
               />
             </svg>
             <span>Add photo</span>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              hidden
-              onChange={onAdd}
-            />
           </label>
 
-          <button className="btn-soft" onClick={onDone}>Done</button>
+          <button type="button" className="btn-soft" onClick={onDone}>
+            Done
+          </button>
         </div>
         <div className="sheet__content">
           <div className="photos-sheet">
