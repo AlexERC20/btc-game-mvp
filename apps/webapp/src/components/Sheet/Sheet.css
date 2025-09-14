@@ -1,0 +1,26 @@
+.sheet{ position:fixed; inset:0; z-index:80; }
+.sheet__overlay{ position:absolute; inset:0; background:rgba(0,0,0,.35); }
+.sheet__panel{
+  position:absolute; left:0; right:0; bottom:0; z-index:81;
+  background:#141418; color:#fff; border-radius:20px 20px 0 0;
+  padding:16px 16px calc(16px + env(safe-area-inset-bottom));
+  max-height:80vh; overflow:auto;
+  transform:translateY(0); animation:sheet-in .28s ease-out;
+}
+@keyframes sheet-in { from{ transform:translateY(12%); opacity:.8 } to{ transform:translateY(0); opacity:1 } }
+.sheet__header{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.sheet__header h3{ margin:0; font-size:18px; }
+.sheet__close{ background:none; border:0; color:#fff; font-size:22px; line-height:1; }
+.sheet__content{ margin-top:12px; }
+.sheet__footer{ margin-top:16px; display:flex; justify-content:flex-end; gap:8px; }
+.btn{ appearance:none; background:#2a2a2f; border:1px solid #3a3a40; border-radius:10px; color:#fff; padding:10px 14px; }
+.field textarea{
+  width:100%;
+  min-height:180px;
+  background:#0f0f12;
+  color:#fff;
+  border:1px solid #2a2a2f;
+  border-radius:12px;
+  padding:12px;
+  resize:vertical;
+}

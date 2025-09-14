@@ -1,41 +1,33 @@
-import React, { useRef, useState } from 'react';
-import Sheet from '../Sheet';
+import { useRef, useState } from 'react';
 import { useCarouselStore } from '@/state/store';
-import '../../styles/photos-sheet.css';
+import Sheet from '../Sheet/Sheet';
 
 export default function PhotosSheet(){
-  const closeSheet = useCarouselStore(s=>s.closeSheet);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [images, setImages] = useState<string[]>([]);
+  const fileInput = useRef<HTMLInputElement|null>(null);
+  const { slides, activeIndex, updateSlide, closeSheet } = useCarouselStore();
+  const active = slides[activeIndex];
+  const [preview, setPreview] = useState<string|null>(active?.image ?? null);
 
-  const onFiles: React.ChangeEventHandler<HTMLInputElement> = e => {
-    const files = Array.from(e.target.files ?? []);
-    const readers = files.map(f => new Promise<string>(res => {
-      const r = new FileReader(); r.onload = () => res(String(r.result)); r.readAsDataURL(f);
-    }));
-    Promise.all(readers).then(urls => setImages(prev => [...prev, ...urls]));
-    e.currentTarget.value = '';
+  const onPick = (e: React.ChangeEvent<HTMLInputElement>)=>{
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const url = URL.createObjectURL(f);
+    setPreview(url);
   };
 
-  const select = (src: string) => {
-    const { slides, activeIndex, updateSlide } = useCarouselStore.getState();
-    const active = slides[activeIndex];
-    if (!active) return;
-    updateSlide(active.id, { image: src });
+  const apply = ()=>{
+    if (active && preview) updateSlide(active.id, { image: preview });
     closeSheet();
   };
 
   return (
-    <Sheet title="Photos" onClose={closeSheet}>
-      <div className="photos-grid">
-        {images.map((src,i)=>(
-          <img key={i} src={src} onClick={()=>select(src)} />
-        ))}
+    <Sheet title="Photos">
+      <input ref={fileInput} type="file" accept="image/*" style={{display:'none'}} onChange={onPick}/>
+      <div style={{display:'flex', gap:8, marginBottom:12}}>
+        <button className="btn" onClick={()=>fileInput.current?.click()}>Add photo</button>
+        <button className="btn" onClick={apply}>Done</button>
       </div>
-      <div className="sheet__footer">
-        <button className="btn" onClick={()=>fileRef.current?.click()}>Add</button>
-      </div>
-      <input ref={fileRef} type="file" accept="image/*" multiple className="sr-only" onChange={onFiles} />
+      {preview && <img src={preview} alt="" style={{width:'100%', borderRadius:12}}/>}
     </Sheet>
   );
 }

@@ -1,11 +1,17 @@
 .toolbar{
   position:fixed; left:0; right:0; bottom:0;
-  z-index:60; /* меньше, чем у sheet overlay */
+  z-index:60;
   display:flex; justify-content:space-around; gap:4px;
-  padding:10px max(env(safe-area-inset-left),12px) calc(10px + env(safe-area-inset-bottom)) max(env(safe-area-inset-right),12px);
-  background:rgba(18,18,18,.98); backdrop-filter:saturate(180%) blur(20px);
+  padding:10px max(env(safe-area-inset-left),12px)
+    calc(10px + env(safe-area-inset-bottom))
+    max(env(safe-area-inset-right),12px);
+  background:rgba(18,18,20,.96); backdrop-filter:saturate(180%) blur(18px);
   border-top:1px solid rgba(255,255,255,.06);
 }
-.toolbar__btn{ display:flex; flex-direction:column; align-items:center; gap:4px; min-width:64px; }
-.toolbar__icon{ width:26px; height:26px; }
-.toolbar__label{ font-size:12px; opacity:.9; }
+.toolbar__btn{
+  appearance:none; background:none; border:0; color:#fff; opacity:.9;
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+  min-width:66px; padding:6px 2px;
+}
+.toolbar__icon{ width:26px; height:26px; display:grid; place-items:center; }
+.toolbar__label{ font-size:12px; }

@@ -1,6 +1,22 @@
-import React from 'react';
-import PreviewCarousel from './features/editor/PreviewCarousel';
+import { useCarouselStore } from './state/store';
+import PreviewCarousel from './components/Carousel/PreviewCarousel';
+import BottomBar from './components/BottomBar';
+import TextSheet from './components/sheets/TextSheet';
+import PhotosSheet from './components/sheets/PhotosSheet';
+import TemplateSheet from './components/sheets/TemplateSheet';
+import LayoutSheet from './components/sheets/LayoutSheet';
 
 export default function App() {
-  return <PreviewCarousel />;
+  const sheet = useCarouselStore(s => s.activeSheet);
+
+  return (
+    <>
+      <PreviewCarousel />
+      <BottomBar />
+      {sheet === 'text' && <TextSheet />}
+      {sheet === 'photos' && <PhotosSheet />}
+      {sheet === 'template' && <TemplateSheet />}
+      {sheet === 'layout' && <LayoutSheet />}
+    </>
+  );
 }
