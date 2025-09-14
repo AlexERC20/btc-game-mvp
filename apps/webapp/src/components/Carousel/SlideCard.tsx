@@ -14,12 +14,15 @@ export function SlideCard({
       ) : (
         <div className="ig-placeholder" />
       )}
-      {(slide.body || slide.nickname) && (
-        <div className="overlay">
-          {slide.body && <div className="caption">{slide.body}</div>}
-          {slide.nickname && <div className="nick">{slide.nickname}</div>}
-        </div>
-      )}
-    </div>
-  );
-}
+        {(slide.body || slide.nickname) && (
+          <div className="overlay">
+            {slide.body && <div className="caption">{slide.body}</div>}
+            {slide.nickname &&
+              (slide.overrides?.template?.showNickname ?? true) && (
+                <div className="nick">{slide.nickname}</div>
+              )}
+          </div>
+        )}
+      </div>
+    );
+  }

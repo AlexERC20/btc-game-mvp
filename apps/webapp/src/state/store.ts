@@ -94,6 +94,10 @@ export type Slide = {
   image?: string; // objectURL или http url
   photoId?: PhotoId;
   nickname?: string;
+  overrides?: {
+    template?: TemplateStyle;
+    layout?: LayoutStyle;
+  };
 };
 
 export type UISheet = null | 'template' | 'layout' | 'photos' | 'text';
@@ -103,11 +107,53 @@ export interface TextState {
   bulkText: string;
 }
 
+export type TemplatePreset = 'minimal' | 'light' | 'focus' | 'quote' | 'custom';
+
+export interface TemplateStyle {
+  preset: TemplatePreset;
+  textColorMode: 'auto' | 'white' | 'black';
+  accent: string;
+  gradient: number;
+  dim: number;
+  textShadow: 0 | 1 | 2 | 3;
+  showNickname: boolean;
+  nicknameStyle: 'pill' | 'tag';
+  font: 'system' | 'sf' | 'inter';
+}
+
+export interface LayoutStyle {
+  vPos: 'top' | 'middle' | 'bottom';
+  vOffset: number;
+  hAlign: 'left' | 'center' | 'right';
+  fontSize: number;
+  lineHeight: number;
+  blockWidth: number;
+  padding: number;
+  maxLines: number;
+  paraGap: number;
+  overflow: 'wrap' | 'fade';
+  nickPos: 'left' | 'center' | 'right';
+  nickOffset: number;
+  nickSize: 's' | 'm' | 'l';
+  nickOpacity: number;
+  nickRadius: number;
+  textShadow: 0 | 1 | 2 | 3;
+  gradient: number;
+}
+
+type ApplyScope = 'all' | 'current';
+
 type State = {
   slides: Slide[];
   activeIndex: number;
   activeSheet: UISheet;
   text: TextState;
+  style: {
+    template: TemplateStyle;
+    layout: LayoutStyle;
+    templateScope: ApplyScope;
+    layoutScope: ApplyScope;
+  };
 
   openSheet: (s: Exclude<UISheet, null>) => void;
   closeSheet: () => void;
@@ -120,6 +166,56 @@ type State = {
 
   setTextField: (patch: Partial<TextState>) => void;
   applyTextToSlides: (opts?: { bulkText?: string; nickname?: string }) => void;
+
+  setTemplatePreset: (p: Exclude<TemplatePreset, 'custom'>) => void;
+  setTemplate: (patch: Partial<TemplateStyle>) => void;
+  resetTemplate: () => void;
+  setTemplateScope: (s: ApplyScope) => void;
+  applyTemplate: () => void;
+
+  setLayout: (patch: Partial<LayoutStyle>) => void;
+  resetLayout: () => void;
+  setLayoutScope: (s: ApplyScope) => void;
+  applyLayout: () => void;
+};
+
+const defaultTemplate: TemplateStyle = {
+  preset: 'minimal',
+  textColorMode: 'auto',
+  accent: '#FFFFFF',
+  gradient: 0,
+  dim: 0,
+  textShadow: 0,
+  showNickname: true,
+  nicknameStyle: 'pill',
+  font: 'system',
+};
+
+const templatePresets: Record<Exclude<TemplatePreset, 'custom'>, TemplateStyle> = {
+  minimal: defaultTemplate,
+  light: { ...defaultTemplate, preset: 'light', gradient: 30, textShadow: 1, textColorMode: 'white' },
+  focus: { ...defaultTemplate, preset: 'focus', gradient: 20, dim: 15, textShadow: 2, textColorMode: 'white' },
+  quote: { ...defaultTemplate, preset: 'quote', gradient: 35, dim: 10, textShadow: 2, textColorMode: 'white' },
+};
+
+const defaultLayout: LayoutStyle = {
+  vPos: 'bottom',
+  vOffset: 0,
+  hAlign: 'left',
+  fontSize: 20,
+  lineHeight: 1.25,
+  blockWidth: 90,
+  padding: 8,
+  maxLines: 5,
+  paraGap: 6,
+  overflow: 'wrap',
+  nickPos: 'left',
+  nickOffset: 6,
+  nickSize: 'm',
+  nickOpacity: 80,
+  nickRadius: 999,
+  textShadow: 0,
+  gradient: 0,
 };
 
 // дефолтный сет мотивации (5 слайдов)
@@ -133,6 +229,12 @@ export const useCarouselStore = create<State>((set, get) => ({
   activeIndex: 0,
   activeSheet: null,
   text: { nickname: '', bulkText: '' },
+  style: {
+    template: defaultTemplate,
+    layout: defaultLayout,
+    templateScope: 'all',
+    layoutScope: 'all',
+  },
 
   openSheet: (s) => set({ activeSheet: s }),
   closeSheet: () => set({ activeSheet: null }),
@@ -182,6 +284,60 @@ export const useCarouselStore = create<State>((set, get) => ({
         slides,
         text: { nickname, bulkText: raw },
       };
+    }),
+
+  setTemplatePreset: (p) =>
+    set((s) => ({ style: { ...s.style, template: templatePresets[p] } })),
+
+  setTemplate: (patch) =>
+    set((s) => ({
+      style: {
+        ...s.style,
+        template: { ...s.style.template, ...patch, preset: 'custom' },
+      },
+    })),
+
+  resetTemplate: () => set((s) => ({ style: { ...s.style, template: defaultTemplate } })),
+
+  setTemplateScope: (sc) =>
+    set((s) => ({ style: { ...s.style, templateScope: sc } })),
+
+  applyTemplate: () =>
+    set((state) => {
+      const { template, templateScope } = state.style;
+      const slides = state.slides.map((sl, i) => {
+        if (templateScope === 'all' || i === state.activeIndex) {
+          return {
+            ...sl,
+            overrides: { ...sl.overrides, template },
+          };
+        }
+        return sl;
+      });
+      return { slides };
+    }),
+
+  setLayout: (patch) =>
+    set((s) => ({ style: { ...s.style, layout: { ...s.style.layout, ...patch } } })),
+
+  resetLayout: () => set((s) => ({ style: { ...s.style, layout: defaultLayout } })),
+
+  setLayoutScope: (sc) =>
+    set((s) => ({ style: { ...s.style, layoutScope: sc } })),
+
+  applyLayout: () =>
+    set((state) => {
+      const { layout, layoutScope } = state.style;
+      const slides = state.slides.map((sl, i) => {
+        if (layoutScope === 'all' || i === state.activeIndex) {
+          return {
+            ...sl,
+            overrides: { ...sl.overrides, layout },
+          };
+        }
+        return sl;
+      });
+      return { slides };
     }),
 }));
 
