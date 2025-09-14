@@ -1,4 +1,25 @@
-import { Slide } from '@/state/store';
+import { Slide, TemplateStyle, LayoutStyle, useCarouselStore } from '@/state/store';
+
+function splitTextEditorial(text: string): { title: string; body: string } {
+  const trimmed = text.trim();
+  if (!trimmed) return { title: '', body: '' };
+  const match = trimmed.match(/[.!?…](?:\s|\n)/);
+  if (match && match.index !== undefined) {
+    const idx = match.index + 1;
+    return {
+      title: trimmed.slice(0, idx).trim(),
+      body: trimmed.slice(idx).trim(),
+    };
+  }
+  const nl = trimmed.indexOf('\n');
+  if (nl !== -1) {
+    return {
+      title: trimmed.slice(0, nl).trim(),
+      body: trimmed.slice(nl + 1).trim(),
+    };
+  }
+  return { title: trimmed, body: '' };
+}
 
 export function SlideCard({
   slide,
@@ -7,6 +28,24 @@ export function SlideCard({
   slide: Slide;
   aspect: number;
 }) {
+  const globalTemplate = useCarouselStore((s) => s.style.template);
+  const globalLayout = useCarouselStore((s) => s.style.layout);
+  const template: TemplateStyle = slide.overrides?.template || globalTemplate;
+  const layout: LayoutStyle = slide.overrides?.layout || globalLayout;
+
+  const { title, body } = splitTextEditorial(slide.body || '');
+  const titleSize = Math.round(layout.fontSize * 1.35);
+  const bodySize = Math.round(layout.fontSize * 0.9);
+  const titleLine = (layout.lineHeight * 1.2) / 1.3;
+  const bodyLine = (layout.lineHeight * 1.35) / 1.3;
+  const fontMap: Record<TemplateStyle['font'], string> = {
+    system: 'var(--font-system)',
+    inter: 'var(--font-inter, var(--font-system))',
+    playfair: 'var(--font-playfair, var(--font-system))',
+    bodoni: 'var(--font-bodoni, var(--font-system))',
+    dmsans: 'var(--font-dmsans, var(--font-system))',
+  };
+  const color = template.textColorMode === 'black' ? '#000' : '#fff';
   return (
     <div className="ig-frame" style={{ aspectRatio: aspect }}>
       {slide.image ? (
@@ -14,15 +53,49 @@ export function SlideCard({
       ) : (
         <div className="ig-placeholder" />
       )}
-        {(slide.body || slide.nickname) && (
-          <div className="overlay">
-            {slide.body && <div className="caption">{slide.body}</div>}
-            {slide.nickname &&
-              (slide.overrides?.template?.showNickname ?? true) && (
-                <div className="nick">{slide.nickname}</div>
+      {(title || body || slide.nickname) && (
+        <div className="overlay editorial">
+          {(title || body) && (
+            <div
+              className="text"
+              style={{ maxWidth: `${layout.blockWidth}%`, padding: layout.padding }}
+            >
+              {title && (
+                <div
+                  className="title"
+                  style={{
+                    fontSize: titleSize,
+                    lineHeight: titleLine,
+                    fontFamily: fontMap[template.font],
+                    color,
+                  }}
+                >
+                  {title}
+                </div>
               )}
-          </div>
-        )}
-      </div>
-    );
-  }
+              {body && (
+                <div
+                  className="body"
+                  style={{
+                    marginTop: layout.paraGap,
+                    fontSize: bodySize,
+                    lineHeight: bodyLine,
+                    fontFamily: fontMap[template.font],
+                    color,
+                  }}
+                >
+                  {body}
+                </div>
+              )}
+            </div>
+          )}
+          {slide.nickname && template.showNickname && (
+            <div className="nickname" style={{ marginTop: layout.nickOffset }}>
+              {slide.nickname}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

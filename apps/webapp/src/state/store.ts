@@ -109,7 +109,13 @@ export interface TextState {
   bulkText: string;
 }
 
-export type TemplatePreset = 'minimal' | 'light' | 'focus' | 'quote' | 'custom';
+export type TemplatePreset =
+  | 'editorial'
+  | 'minimal'
+  | 'light'
+  | 'focus'
+  | 'quote'
+  | 'custom';
 
 export interface TemplateStyle {
   preset: TemplatePreset;
@@ -120,7 +126,7 @@ export interface TemplateStyle {
   textShadow: 0 | 1 | 2 | 3;
   showNickname: boolean;
   nicknameStyle: 'pill' | 'tag';
-  font: 'system' | 'sf' | 'inter';
+  font: 'system' | 'inter' | 'playfair' | 'bodoni' | 'dmsans';
 }
 
 export interface LayoutStyle {
@@ -181,7 +187,19 @@ type State = {
   applyLayout: () => void;
 };
 
-const defaultTemplate: TemplateStyle = {
+const editorialTemplate: TemplateStyle = {
+  preset: 'editorial',
+  textColorMode: 'white',
+  accent: '#FFFFFF',
+  gradient: 28,
+  dim: 6,
+  textShadow: 1,
+  showNickname: true,
+  nicknameStyle: 'pill',
+  font: 'inter',
+};
+
+const minimalTemplate: TemplateStyle = {
   preset: 'minimal',
   textColorMode: 'auto',
   accent: '#FFFFFF',
@@ -194,26 +212,29 @@ const defaultTemplate: TemplateStyle = {
 };
 
 const templatePresets: Record<Exclude<TemplatePreset, 'custom'>, TemplateStyle> = {
-  minimal: defaultTemplate,
-  light: { ...defaultTemplate, preset: 'light', gradient: 30, textShadow: 1, textColorMode: 'white' },
-  focus: { ...defaultTemplate, preset: 'focus', gradient: 20, dim: 15, textShadow: 2, textColorMode: 'white' },
-  quote: { ...defaultTemplate, preset: 'quote', gradient: 35, dim: 10, textShadow: 2, textColorMode: 'white' },
+  editorial: editorialTemplate,
+  minimal: minimalTemplate,
+  light: { ...minimalTemplate, preset: 'light', gradient: 30, textShadow: 1, textColorMode: 'white' },
+  focus: { ...minimalTemplate, preset: 'focus', gradient: 20, dim: 15, textShadow: 2, textColorMode: 'white' },
+  quote: { ...minimalTemplate, preset: 'quote', gradient: 35, dim: 10, textShadow: 2, textColorMode: 'white' },
 };
+
+const defaultTemplate = editorialTemplate;
 
 const defaultLayout: LayoutStyle = {
   vPos: 'bottom',
   vOffset: 0,
   hAlign: 'left',
-  fontSize: 20,
-  lineHeight: 1.25,
-  blockWidth: 90,
-  padding: 8,
+  fontSize: 18,
+  lineHeight: 1.3,
+  blockWidth: 88,
+  padding: 10,
   maxLines: 5,
   paraGap: 6,
   overflow: 'wrap',
   nickPos: 'left',
-  nickOffset: 6,
-  nickSize: 'm',
+  nickOffset: 8,
+  nickSize: 's',
   nickOpacity: 80,
   nickRadius: 999,
   textShadow: 0,
