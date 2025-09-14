@@ -1,5 +1,5 @@
 import React from 'react';
-import { IconTemplate, IconLayout, IconPhotos, IconFonts } from '../ui/icons';
+import { IconTemplate, IconLayout, IconPhotos, IconText } from '../ui/icons';
 import ShareIcon from '../icons/ShareIcon';
 import { useCarouselStore, buildCurrentStory, getSlidesCount } from '@/state/store';
 import { exportSlides } from '@/features/carousel/utils/exportSlides';
@@ -88,24 +88,18 @@ async function handleShare() {
 
 export default function BottomBar() {
   const openSheet = useCarouselStore((s) => s.openSheet);
-
-  const items = [
-    { key: 'export',   label: 'Export',   icon: <ShareIcon />,    onClick: () => handleShare() },
-    // Пока отдельного TextSheet нет — открываем старый лист, где вводится текст.
-    { key: 'text',     label: 'Text',     icon: <IconFonts />,    onClick: () => openSheet('template') },
-    { key: 'template', label: 'Template', icon: <IconTemplate />, onClick: () => openSheet('template') },
-    { key: 'photos',   label: 'Photos',   icon: <IconPhotos />,   onClick: () => openSheet('photos') },
-    { key: 'layout',   label: 'Layout',   icon: <IconLayout />,   onClick: () => openSheet('layout') },
+  const actions = [
+    { key: 'export',  label: 'Export',  icon: <ShareIcon/>,  onClick: withHaptic(handleShare,'medium') },
+    { key: 'text',    label: 'Text',    icon: <IconText/>,    onClick: withHaptic(() => openSheet('text'),'light') },
+    { key: 'template',label: 'Template',icon: <IconTemplate/>,onClick: withHaptic(() => openSheet('template'),'light') },
+    { key: 'photos',  label: 'Photos',  icon: <IconPhotos/>, onClick: withHaptic(() => openSheet('photos'),'light') },
+    { key: 'layout',  label: 'Layout',  icon: <IconLayout/>, onClick: withHaptic(() => openSheet('layout'),'light') },
   ] as const;
 
   return (
     <nav className="toolbar" role="toolbar">
-      {items.map((i) => (
-        <button
-          key={i.key}
-          className="toolbar__btn"
-          onClick={withHaptic(i.onClick, i.key === 'export' ? 'medium' : 'light')}
-        >
+      {actions.map((i) => (
+        <button key={i.key} className="toolbar__btn" onClick={i.onClick}>
           <span className="toolbar__icon">{i.icon}</span>
           <span className="toolbar__label">{i.label}</span>
         </button>

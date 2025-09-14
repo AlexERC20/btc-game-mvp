@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import BottomSheet from '../BottomSheet';
+import Sheet from '../Sheet';
 import { useStore } from '@/state/store';
 import type { SlideId } from '../../types';
 
@@ -23,7 +23,7 @@ export default function ColorSheet({ open, onClose, currentSlideId }: { open: bo
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Title & Color">
+    <Sheet title="Title & Color" onClose={onClose}>
       <Label>Title</Label>
       <input value={title} onChange={e=>setTitle(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-neutral-900 border border-neutral-800" placeholder="Введите заголовок" />
 
@@ -46,7 +46,7 @@ export default function ColorSheet({ open, onClose, currentSlideId }: { open: bo
       <div className="mt-4 flex justify-end">
         <button className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-900" onClick={apply}>Apply</button>
       </div>
-    </BottomSheet>
+    </Sheet>
   )
 }
 const Label=({children}:{children:React.ReactNode})=>(<div className="text-sm text-neutral-400 mt-3 mb-1">{children}</div>);

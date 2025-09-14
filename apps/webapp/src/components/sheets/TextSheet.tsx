@@ -1,32 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useCarouselStore } from '@/state/store';
-import '../../styles/bottom-sheet.css';
+import Sheet from '../Sheet';
 
-export default function TextSheet() {
-  const slides = useCarouselStore((s) => s.slides);
-  const active = useCarouselStore((s) => s.activeIndex);
-  const update = useCarouselStore((s) => s.updateSlide);
-
-  const slide = slides[active];
+export default function TextSheet(){
+  const { slides, activeIndex, updateSlide, closeSheet } = useCarouselStore();
+  const active = slides[activeIndex];
+  const [value,setValue] = useState(active?.body ?? '');
 
   return (
-    <div className="sheet">
-      <div className="sheet__title">Text</div>
-      <textarea
-        className="sheet__textarea"
-        value={slide?.body ?? ''}
-        placeholder="Вставь текст сюда…"
-        onChange={(e) => slide && update(slide.id, { body: e.target.value })}
-        rows={8}
-      />
-      <label className="sheet__field">
-        <span>@username</span>
-        <input
-          value={slide?.nickname ?? ''}
-          onChange={(e) => slide && update(slide.id, { nickname: e.target.value })}
-        />
-      </label>
-    </div>
+    <Sheet title="Text" onClose={closeSheet}>
+      <div className="field">
+        <textarea value={value} onChange={e=>setValue(e.target.value)} placeholder="Вставь текст сюда…" />
+      </div>
+      <div className="sheet__footer">
+        <button className="btn" onClick={()=>{ if(active) updateSlide(active.id,{ body:value }); closeSheet(); }}>Done</button>
+      </div>
+    </Sheet>
   );
 }
-

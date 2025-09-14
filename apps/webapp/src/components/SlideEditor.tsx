@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import BottomSheet from './BottomSheet';
+import Sheet from './Sheet';
 import { useStore } from '@/state/store';
 import type { SlideId } from '../types';
 
@@ -42,7 +42,7 @@ export default function SlideEditor({ open, onClose, currentSlideId }: { open: b
   };
 
   return (
-    <BottomSheet open={open} onClose={onClose} title="Edit slide">
+    <Sheet title="Edit slide" onClose={onClose}>
       <Label>Title</Label>
       <input value={title} onChange={e=>setTitle(e.target.value)} className="w-full px-3 py-2 rounded-lg bg-neutral-900 border border-neutral-800" placeholder="Введите заголовок" />
 
@@ -78,7 +78,7 @@ export default function SlideEditor({ open, onClose, currentSlideId }: { open: b
         <button className="px-4 py-2 rounded-lg bg-neutral-800 text-neutral-100" onClick={onClose}>Cancel</button>
         <button className="px-4 py-2 rounded-lg bg-neutral-100 text-neutral-900" onClick={apply}>Apply</button>
       </div>
-    </BottomSheet>
+    </Sheet>
   );
 }
 
