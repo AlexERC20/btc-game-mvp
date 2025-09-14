@@ -98,6 +98,8 @@ export type Slide = {
     template?: TemplateStyle;
     layout?: LayoutStyle;
   };
+  kind?: 'demo' | 'photo';
+  isDemo?: boolean;
 };
 
 export type UISheet = null | 'template' | 'layout' | 'photos' | 'text';
@@ -220,8 +222,10 @@ const defaultLayout: LayoutStyle = {
 
 // дефолтный сет мотивации (5 слайдов)
 const initial: Slide[] = Array.from({ length: 5 }).map((_, i) => ({
-  id: `s${i + 1}`,
+  id: `demo-${i + 1}`,
   body: `Текст ${i + 1} ...`,
+  kind: 'demo',
+  isDemo: true,
 }));
 
 export const useCarouselStore = create<State>((set, get) => ({
@@ -344,21 +348,18 @@ export const useCarouselStore = create<State>((set, get) => ({
 const uid = () => crypto.randomUUID();
 
 export const slidesActions = {
-  syncWithPhotos(photos: Photo[]) {
+  replaceWithPhotos(photos: Photo[]) {
     useCarouselStore.setState((state) => {
-      const prev = state.slides;
-      const photoSlides = prev.filter((s) => s.photoId);
-      const otherSlides = prev.filter((s) => !s.photoId);
-      const byPhotoId = new Map(photoSlides.map((s) => [s.photoId!, s]));
+      const next: Slide[] = photos.map((p) => ({
+        id: uid(),
+        image: p.src,
+        photoId: p.id,
+        body: '',
+        nickname: state.text?.nickname ?? '',
+        kind: 'photo',
+      }));
 
-      const nextPhotoSlides: Slide[] = photos.map((p) => {
-        const keep = byPhotoId.get(p.id);
-        return keep
-          ? { ...keep, image: p.src }
-          : { id: uid(), image: p.src, photoId: p.id };
-      });
-
-      return { slides: [...nextPhotoSlides, ...otherSlides] };
+      return { slides: next, activeIndex: 0 };
     });
   },
 };

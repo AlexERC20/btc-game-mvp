@@ -51,7 +51,7 @@ export default function PhotosSheet() {
   const onDone = (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    slidesActions.syncWithPhotos(items);
+    slidesActions.replaceWithPhotos(items);
     onClose(); // закрыть щит
   };
 
