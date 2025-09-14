@@ -8,7 +8,7 @@ import LayoutSheet from './components/sheets/LayoutSheet';
 
 export default function App() {
   const sheet = useCarouselStore(s => s.activeSheet);
-  const slides = useCarouselStore(s => s.slides.map(sl => ({ imageUrl: sl.image })));
+  const slides = useCarouselStore(s => s.slides);
 
   return (
     <>

@@ -93,14 +93,21 @@ export type Slide = {
   body?: string;
   image?: string; // objectURL или http url
   photoId?: PhotoId;
+  nickname?: string;
 };
 
 export type UISheet = null | 'template' | 'layout' | 'photos' | 'text';
+
+export interface TextState {
+  nickname: string;
+  bulkText: string;
+}
 
 type State = {
   slides: Slide[];
   activeIndex: number;
   activeSheet: UISheet;
+  text: TextState;
 
   openSheet: (s: Exclude<UISheet, null>) => void;
   closeSheet: () => void;
@@ -110,6 +117,9 @@ type State = {
   updateSlide: (id: string, patch: Partial<Slide>) => void;
   reorderSlides: (from: number, to: number) => void;
   setActiveIndex: (i: number) => void;
+
+  setTextField: (patch: Partial<TextState>) => void;
+  applyTextToSlides: (opts?: { bulkText?: string; nickname?: string }) => void;
 };
 
 // дефолтный сет мотивации (5 слайдов)
@@ -122,6 +132,7 @@ export const useCarouselStore = create<State>((set, get) => ({
   slides: initial,
   activeIndex: 0,
   activeSheet: null,
+  text: { nickname: '', bulkText: '' },
 
   openSheet: (s) => set({ activeSheet: s }),
   closeSheet: () => set({ activeSheet: null }),
@@ -147,6 +158,31 @@ export const useCarouselStore = create<State>((set, get) => ({
     }),
 
   setActiveIndex: (i) => set({ activeIndex: i }),
+
+  setTextField: (patch) =>
+    set((s) => ({ text: { ...s.text, ...patch } })),
+
+  applyTextToSlides: (opts) =>
+    set((state) => {
+      const nickname = (opts?.nickname ?? state.text.nickname).trim();
+      const raw = (opts?.bulkText ?? state.text.bulkText) ?? '';
+
+      const parts = raw
+        .split(/\n{2,}/)
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+
+      const slides = state.slides.map((s, i) => ({
+        ...s,
+        body: parts[i] ?? '',
+        nickname,
+      }));
+
+      return {
+        slides,
+        text: { nickname, bulkText: raw },
+      };
+    }),
 }));
 
 const uid = () => crypto.randomUUID();
