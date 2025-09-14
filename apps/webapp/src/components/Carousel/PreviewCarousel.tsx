@@ -1,10 +1,27 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCarouselStore } from '@/state/store';
-import SlideCard from './SlideCard';
+import { SlideCard } from './SlideCard';
+
+const MIN_AR = 0.8; // 4:5
+const MAX_AR = 1.91; // 1.91:1
 
 export default function PreviewCarousel(){
   const { slides, activeIndex, setActiveIndex } = useCarouselStore();
   const root = useRef<HTMLDivElement|null>(null);
+  const [targetAR, setTargetAR] = useState<number>(1);
+
+  useEffect(() => {
+    const url = slides?.[0]?.image;
+    if (!url) return;
+
+    const img = new Image();
+    img.onload = () => {
+      const r = img.naturalWidth / img.naturalHeight;
+      const clamped = Math.max(MIN_AR, Math.min(MAX_AR, r));
+      setTargetAR(clamped);
+    };
+    img.src = url;
+  }, [slides?.[0]?.image]);
 
   useEffect(() => {
     const el = root.current!;
@@ -28,7 +45,7 @@ export default function PreviewCarousel(){
     <div ref={root} className="carousel">
       {slides.map((s, i)=>(
         <div key={s.id} className="slide" data-active={i===activeIndex}>
-          <SlideCard slide={s} index={i} active={i===activeIndex}/>
+          <SlideCard slide={s} aspect={targetAR}/>
         </div>
       ))}
     </div>
