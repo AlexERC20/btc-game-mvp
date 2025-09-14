@@ -1,0 +1,24 @@
+.text-sheet .field{ margin:10px 12px; display:flex; flex-direction:column; gap:6px; }
+.text-sheet .label{ opacity:.7; font-size:13px; }
+.text-sheet .input, .text-sheet .textarea{
+  width:100%; padding:12px 14px; border-radius:12px; border:1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.06); color:#fff; outline:none;
+}
+.text-sheet .textarea{ resize:vertical; min-height:140px; }
+
+.btn-soft{
+  position:relative; z-index:1;
+  display:inline-flex; align-items:center; gap:8px;
+  padding:10px 14px;
+  border-radius:14px;
+  background:color-mix(in srgb, #ffffff 12%, transparent);
+  border:1px solid color-mix(in srgb, #ffffff 35%, transparent);
+  backdrop-filter:blur(6px);
+  box-shadow:0 2px 12px rgba(0,0,0,.18);
+  color:rgba(255,255,255,.92);
+  font-weight:600;
+  font-size:15px;
+  line-height:1;
+}
+.btn-soft:hover{ background:color-mix(in srgb, #ffffff 18%, transparent); }
+.btn-soft:active{ transform:translateY(1px); }

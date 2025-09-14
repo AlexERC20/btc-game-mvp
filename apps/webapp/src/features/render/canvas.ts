@@ -42,6 +42,14 @@ export async function renderSlideToPNG(slide: Slide): Promise<Blob> {
     lines.forEach(l => { ctx.fillText(l, 64, y); y += 56; });
   }
 
+  if (slide.nickname) {
+    ctx.font = '32px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+    ctx.fillStyle = 'rgba(255,255,255,.8)';
+    ctx.shadowColor = 'rgba(0,0,0,.6)';
+    ctx.shadowBlur = 8;
+    ctx.fillText(slide.nickname, 64, CANVAS_H - 32);
+  }
+
   return await new Promise<Blob>((resolve, reject)=>{
     canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')),'image/png');
   });
