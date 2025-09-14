@@ -4,6 +4,7 @@ import {
   usePhotos,
   PhotoId,
   useCarouselStore,
+  slidesActions,
 } from '@/state/store';
 import { ArrowLeftIcon, ArrowRightIcon, TrashIcon } from '@/ui/icons';
 import '@/styles/photos-sheet.css';
@@ -50,7 +51,7 @@ export default function PhotosSheet() {
   const onDone = (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    // slidesActions.commitFromPhotos(items); // опционально, если нужен «коммит»
+    slidesActions.syncWithPhotos(items);
     onClose(); // закрыть щит
   };
 
