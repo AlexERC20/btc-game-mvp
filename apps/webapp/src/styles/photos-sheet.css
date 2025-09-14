@@ -24,6 +24,8 @@
   box-shadow:0 2px 12px rgba(0,0,0,.18);
   color:rgba(255,255,255,.92);
   font-weight:600;
+  font-size:15px;
+  line-height:1;
 }
 .btn-soft:hover{ background:color-mix(in srgb, #ffffff 18%, transparent); }
 .btn-soft:active{ transform:translateY(1px); }

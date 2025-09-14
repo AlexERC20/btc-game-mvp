@@ -48,6 +48,11 @@ export default function PhotosSheet() {
 
   const removeOne = (id: PhotoId) => photosActions.remove(id);
 
+  const onDone = () => {
+    // slidesActions.commitFromPhotos(items); // опционально, если нужен «коммит»
+    onClose(); // закрыть щит
+  };
+
   return (
     <div className="sheet" aria-open="true" onClick={onClose}>
       <div className="sheet__overlay" />
@@ -72,7 +77,7 @@ export default function PhotosSheet() {
             />
           </label>
 
-          <button className="btn-soft" onClick={onClose}>Done</button>
+          <button className="btn-soft" onClick={onDone}>Done</button>
         </div>
         <div className="sheet__content">
           <div className="photos-sheet">
