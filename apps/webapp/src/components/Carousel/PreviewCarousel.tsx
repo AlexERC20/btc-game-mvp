@@ -6,7 +6,7 @@ const MIN_AR = 0.8; // 4:5
 const MAX_AR = 1.91; // 1.91:1
 
 export default function PreviewCarousel(){
-  const { slides, activeIndex, setActiveIndex } = useCarouselStore();
+  const { slides, setActiveIndex } = useCarouselStore();
   const root = useRef<HTMLDivElement|null>(null);
   const [targetAR, setTargetAR] = useState<number>(1);
 
@@ -43,9 +43,9 @@ export default function PreviewCarousel(){
 
   return (
     <div ref={root} className="carousel">
-      {slides.map((s, i)=>(
-        <div key={s.id} className="slide" data-active={i===activeIndex}>
-          <SlideCard slide={s} aspect={targetAR}/>
+      {slides.map((s) => (
+        <div key={s.id} className="slide">
+          <SlideCard slide={s} aspect={targetAR} />
         </div>
       ))}
     </div>
