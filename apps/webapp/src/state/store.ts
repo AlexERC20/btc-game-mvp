@@ -38,7 +38,14 @@ const FRAME_SPECS: Record<'story' | 'carousel', FrameSpec> = {
   },
 };
 
-export type UISheet = null | 'text' | 'template' | 'layout' | 'photos';
+export type UISheet =
+  | null
+  | 'export'
+  | 'text'
+  | 'template'
+  | 'layout'
+  | 'photos'
+  | 'slideActions';
 
 export type StoreState = {
   /** Сырые слайды — ИСТИНА для UI и экспорта */
@@ -56,8 +63,10 @@ export type StoreState = {
   frame: FrameSpec;
 
   activeSheet: UISheet;
+  activeIndex: number;
   openSheet: (s: Exclude<UISheet, null>) => void;
   closeSheet: () => void;
+  setActiveIndex: (i: number) => void;
 
   updateDefaults: (partial: Partial<Defaults>) => void;
 
@@ -83,7 +92,7 @@ const DEFAULT_TEXTS = [
 ];
 
 function makeDefaultSlides(): Slide[] {
-  return DEFAULT_TEXTS.map((t, i) => ({ id: `def-${i + 1}`, body: t }));
+  return DEFAULT_TEXTS.map((t, i) => ({ id: `def-${i + 1}`, body: t, nickname: '' }));
 }
 
 const initialSlides: Slide[] = makeDefaultSlides();
@@ -108,8 +117,10 @@ const createStore = () => create<StoreState>((set) => ({
   frame: FRAME_SPECS.story,
 
   activeSheet: null,
+  activeIndex: 0,
   openSheet: (s) => set({ activeSheet: s }),
   closeSheet: () => set({ activeSheet: null }),
+  setActiveIndex: (i) => set({ activeIndex: i }),
 
   updateDefaults: (partial) =>
     set((state) => ({
