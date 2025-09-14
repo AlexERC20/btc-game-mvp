@@ -2,19 +2,27 @@
   --toolbar-h: calc(64px + env(safe-area-inset-bottom));
 }
 .sheet__overlay{
-  position: fixed; inset: 0;
-  z-index: 30;
+  position: fixed;
+  inset: 0;
+  z-index: 999;
   background: rgba(0,0,0,.0);
 }
 .sheet{
-  position: absolute; left: 0; right: 0;
+  position: fixed;
+  left: 0;
+  right: 0;
   bottom: 0;
+  z-index: 1000;
+  transform: translateY(100%);
+  transition: transform .28s ease;
+  will-change: transform;
   max-height: min(70vh, 560px);
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   border-radius: 16px 16px 0 0;
   background: #1c1c1e;
   overflow: auto;
 }
+.sheet.is-open{ transform: translateY(0); }
 .sheet__header{
   position: sticky; top: 0;
   z-index: 1;

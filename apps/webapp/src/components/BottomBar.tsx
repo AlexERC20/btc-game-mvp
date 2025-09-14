@@ -91,7 +91,12 @@ export default function BottomBar() {
 
   const items = [
     { key: 'export',   label: 'Export',   icon: <ShareIcon />,                  onClick: handleShare },
-    { key: 'text',     label: 'Text',     icon: <span className="icon-aa">Aa</span>, onClick: () => openSheet('text') },
+    {
+      key: 'text',
+      label: 'Text',
+      icon: <span className="icon-aa">Aa</span>,
+      onClick: () => openSheet('template'), // временно используем template, пока TextSheet не подключён
+    },
     { key: 'template', label: 'Template', icon: <IconTemplate />,               onClick: () => openSheet('template') },
     { key: 'photos',   label: 'Photos',   icon: <IconPhotos />,                 onClick: () => openSheet('photos') },
     { key: 'layout',   label: 'Layout',   icon: <span className="icon-layout"/>, onClick: () => openSheet('layout') },
