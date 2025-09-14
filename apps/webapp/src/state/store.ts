@@ -1,5 +1,93 @@
 import { create } from 'zustand';
 
+export type PhotoId = string;
+
+export interface Photo {
+  id: PhotoId;
+  src: string;
+  fileName?: string;
+  width?: number;
+  height?: number;
+  createdAt: number;
+}
+
+export interface PhotosState {
+  items: Photo[];
+  selectedId?: PhotoId;
+}
+
+const MAX_PHOTOS = 100;
+const MAX_SIZE = 30 * 1024 * 1024;
+
+export const usePhotos = create<PhotosState>(() => ({ items: [], selectedId: undefined }));
+
+type MoveDirection = 'left' | 'right';
+
+export const photosActions = {
+  addFiles(files: File[]) {
+    const state = usePhotos.getState();
+    const items = [...state.items];
+    const space = MAX_PHOTOS - items.length;
+    const slice = files.slice(0, space);
+    if (files.length > space) console.warn('лимит 100 фото');
+    for (const f of slice) {
+      if (!f.type.startsWith('image/')) {
+        console.warn('не изображение');
+        continue;
+      }
+      if (f.size > MAX_SIZE) {
+        console.warn('слишком большой файл');
+        continue;
+      }
+      const id = crypto.randomUUID();
+      const src = URL.createObjectURL(f);
+      items.push({
+        id,
+        src,
+        fileName: f.name,
+        width: undefined,
+        height: undefined,
+        createdAt: Date.now(),
+      });
+    }
+    usePhotos.setState({ items });
+  },
+
+  remove(id: PhotoId) {
+    const { items, selectedId } = usePhotos.getState();
+    const idx = items.findIndex((p) => p.id === id);
+    if (idx === -1) return;
+    URL.revokeObjectURL(items[idx].src);
+    const newItems = items.filter((p) => p.id !== id);
+    usePhotos.setState({ items: newItems, selectedId: selectedId === id ? undefined : selectedId });
+  },
+
+  move(id: PhotoId, dir: MoveDirection) {
+    const { items } = usePhotos.getState();
+    const idx = items.findIndex((p) => p.id === id);
+    if (idx === -1) return;
+    const target = dir === 'left' ? idx - 1 : idx + 1;
+    if (target < 0 || target >= items.length) return;
+    const newItems = [...items];
+    [newItems[idx], newItems[target]] = [newItems[target], newItems[idx]];
+    usePhotos.setState({ items: newItems });
+  },
+
+  setSelected(id?: PhotoId) {
+    usePhotos.setState({ selectedId: id });
+  },
+
+  clear() {
+    const { items } = usePhotos.getState();
+    items.forEach((p) => URL.revokeObjectURL(p.src));
+    usePhotos.setState({ items: [], selectedId: undefined });
+  },
+};
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => photosActions.clear());
+}
+
 export type Slide = {
   id: string;
   body?: string;
