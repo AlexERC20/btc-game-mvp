@@ -92,6 +92,7 @@ export type Slide = {
   id: string;
   body?: string;
   image?: string; // objectURL или http url
+  photoId?: PhotoId;
 };
 
 export type UISheet = null | 'template' | 'layout' | 'photos' | 'text';
@@ -147,3 +148,25 @@ export const useCarouselStore = create<State>((set, get) => ({
 
   setActiveIndex: (i) => set({ activeIndex: i }),
 }));
+
+const uid = () => crypto.randomUUID();
+
+export const slidesActions = {
+  syncWithPhotos(photos: Photo[]) {
+    useCarouselStore.setState((state) => {
+      const prev = state.slides;
+      const photoSlides = prev.filter((s) => s.photoId);
+      const otherSlides = prev.filter((s) => !s.photoId);
+      const byPhotoId = new Map(photoSlides.map((s) => [s.photoId!, s]));
+
+      const nextPhotoSlides: Slide[] = photos.map((p) => {
+        const keep = byPhotoId.get(p.id);
+        return keep
+          ? { ...keep, image: p.src }
+          : { id: uid(), image: p.src, photoId: p.id };
+      });
+
+      return { slides: [...nextPhotoSlides, ...otherSlides] };
+    });
+  },
+};
