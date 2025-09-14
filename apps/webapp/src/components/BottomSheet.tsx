@@ -15,7 +15,7 @@ export default function BottomSheet({ open, onClose, title, children }: Props) {
 
   const sheet = (
     <div className="sheet__overlay" onClick={onClose}>
-      <div className="sheet" onClick={e => e.stopPropagation()}>
+      <div className="sheet is-open" onClick={e => e.stopPropagation()}>
         {title !== null ? (
           <>
             {title && <div className="sheet__title">{title}</div>}

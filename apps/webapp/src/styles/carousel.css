@@ -1,38 +1,49 @@
-.carousel {
-  position: relative;
-  width: 100%;
-  height: calc(100vh - 160px);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-.carousel__track {
-  display: flex;
-  gap: 18px;
-  overflow-x: auto;
-  padding: 0 24px;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-}
-.carousel__item {
-  position: relative;
-  width: min(86vw, 360px);
-  height: min(86vh, 580px);
-  border-radius: 26px;
-  overflow: hidden;
-  box-shadow: 0 24px 64px rgba(0,0,0,.35);
-  background: #111;
-  scroll-snap-align: center;
-  transition: transform .24s ease, opacity .24s ease, filter .24s ease;
-}
-.carousel__item.is-side {
-  transform: scale(.94);
-  opacity: .65;
-  filter: saturate(.9) brightness(.9);
-}
-.carousel__item.is-active {
-  transform: scale(1);
-  opacity: 1;
-  filter: none;
+:root { --card-r: 26px; }
+
+.stage{
+  position:relative;
+  z-index:0;             /* ниже шитов/тулбара */
+  width:100%;
+  height:calc(100vh - 160px); /* запас под тулбар */
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  isolation:isolate;     /* собственный контекст, но без transform */
 }
 
+.track{
+  display:flex;
+  gap:18px;
+  overflow-x:auto;
+  padding:0 24px;
+  scroll-snap-type:x mandatory;
+  -webkit-overflow-scrolling:touch;
+}
+
+.card{
+  width:min(86vw, 360px);
+  height:min(86vh, 580px);
+  border-radius:var(--card-r);
+  overflow:hidden;
+  box-shadow:0 24px 64px rgba(0,0,0,.35);
+  background:#111;
+  scroll-snap-align:center;
+  transition:transform .2s ease, opacity .2s ease, filter .2s ease;
+  will-change:transform, opacity;
+}
+.card.is-side{
+  transform:scale(.94);
+  opacity:.65;
+  filter:saturate(.9) brightness(.9);
+}
+.card.is-active{
+  transform:scale(1);
+  opacity:1;
+  filter:none;
+}
+
+/* если превью — <img>, страхуем: */
+.card img{
+  width:100%; height:100%; object-fit:cover; display:block;
+  border-radius:var(--card-r);
+}

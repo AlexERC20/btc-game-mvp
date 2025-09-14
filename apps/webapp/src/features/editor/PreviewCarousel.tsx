@@ -3,7 +3,6 @@ import { useCarouselStore } from '@/state/store';
 import BottomBar from '@/components/BottomBar';
 import LayoutSheet from '@/components/sheets/LayoutSheet';
 import PhotosSheet from '@/components/PhotosSheet';
-import TextSheet from '@/components/sheets/TextSheet';
 import SlideActionsSheet from '@/components/sheets/SlideActionsSheet';
 import BottomSheet from '@/components/BottomSheet';
 import '@/styles/carousel.css';
@@ -24,24 +23,22 @@ export default function PreviewCarousel() {
     const root = trackRef.current;
     if (!root) return;
     const cards = Array.from(root.children) as HTMLElement[];
-    const io = new IntersectionObserver(
-      (entries) => {
-        let bestIdx = activeIndex;
-        let bestRatio = 0;
-        entries.forEach((e) => {
-          const idx = cards.indexOf(e.target as HTMLElement);
-          if (e.intersectionRatio > bestRatio) {
-            bestIdx = idx;
-            bestRatio = e.intersectionRatio;
-          }
-        });
-        if (bestRatio > 0.6) setActiveIndex(bestIdx);
-      },
-      { root, threshold: [0.1, 0.3, 0.6, 0.9] }
-    );
+    const io = new IntersectionObserver((entries) => {
+      let bestIdx = activeIndex,
+        best = 0;
+      entries.forEach((e) => {
+        const idx = cards.indexOf(e.target as HTMLElement);
+        if (e.intersectionRatio > best) {
+          best = e.intersectionRatio;
+          bestIdx = idx;
+        }
+      });
+      if (best > 0.6) setActiveIndex(bestIdx);
+    }, { root, threshold: [0.3, 0.6, 0.9] });
+
     cards.forEach((c) => io.observe(c));
     return () => io.disconnect();
-  }, [trackRef.current, slides.length]);
+  }, [slides.length]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     setDragStart({ x: e.clientX, y: e.clientY });
@@ -58,12 +55,14 @@ export default function PreviewCarousel() {
 
   return (
     <div>
-      <div className="carousel">
-        <div className="carousel__track" ref={trackRef}>
+      <div className="stage">
+        <div ref={trackRef} className="track" role="listbox" aria-label="Slides">
           {slides.map((s, i) => (
             <div
               key={s.id}
-              className={`carousel__item ${i === activeIndex ? 'is-active' : 'is-side'}`}
+              className={`card ${i === activeIndex ? 'is-active' : 'is-side'}`}
+              role="option"
+              aria-selected={i === activeIndex}
               onPointerDown={onPointerDown}
               onPointerUp={onPointerUp}
             >
@@ -99,7 +98,6 @@ export default function PreviewCarousel() {
           }}
         />
       )}
-      {activeSheet === 'text' && <TextSheet />}
       {activeSheet === 'slideActions' && <SlideActionsSheet />}
     </div>
   );
