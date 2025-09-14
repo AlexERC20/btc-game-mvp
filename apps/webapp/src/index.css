@@ -1,4 +1,46 @@
-:root { color-scheme: dark; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300..800&family=Playfair+Display:opsz,wght@12..144,400..800&family=Bodoni+Moda:wght@400..800&family=DM+Sans:wght@400..700&display=swap');
+
+:root{
+  color-scheme: dark;
+  /* Цвета */
+  --bg-sheet: rgba(22,22,24,.82);
+  --bg-section: rgba(255,255,255,.04);
+  --bg-soft: rgba(255,255,255,.12);
+  --border: rgba(255,255,255,.08);
+  --outline: rgba(255,255,255,.18);
+  --text-primary: rgba(255,255,255,.92);
+  --text-muted: rgba(255,255,255,.62);
+  --accent: #2D6CFF; /* системный акцент */
+  --danger: #E11D48;
+
+  /* Радиусы */
+  --radius-sheet: 18px;
+  --radius-section: 14px;
+  --radius-control: 12px;
+  --radius-pill: 999px;
+
+  /* Тени/стёкла */
+  --blur: 10px;
+  --shadow-1: 0 4px 18px rgba(0,0,0,.25);
+
+  /* Отступы */
+  --gap-1: 6px;
+  --gap-2: 10px;
+  --gap-3: 12px;
+
+  /* Слайдеры/сегменты */
+  --slider-track-h: 4px;
+  --slider-thumb: 14px;
+  --seg-gap: 6px;
+
+  /* Шрифты */
+  --font-system: -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,Roboto,Arial,sans-serif;
+  --font-inter: "Inter", var(--font-system);
+  --font-playfair: "Playfair Display", Georgia, "Times New Roman", serif;
+  --font-bodoni: "Bodoni Moda", "Didot", "Bodoni 72", serif;
+  --font-dmsans: "DM Sans", var(--font-system);
+}
+
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; }
 body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background: #0d0d0f; color: #fff; }
@@ -11,3 +53,66 @@ html { -webkit-text-size-adjust: 100%; }
 
 /* кликабельным элементам отключаем double-tap zoom */
 a, button, [role="button"], .btn-soft { touch-action: manipulation; }
+
+/* Контейнер шита */
+.sheet{
+  background: var(--bg-sheet);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sheet);
+  backdrop-filter: blur(var(--blur));
+  color: var(--text-primary);
+  box-shadow: var(--shadow-1);
+  padding: 16px;
+}
+
+/* Секции */
+.section{
+  background: var(--bg-section);
+  border-radius: var(--radius-section);
+  padding: 12px;
+  margin-bottom: var(--gap-3);
+}
+.section > .title{
+  font-weight: 700;
+  opacity: .9;
+  margin-bottom: 8px;
+}
+
+/* Segmented */
+.segmented{
+  display:flex; gap: var(--seg-gap);
+}
+.segmented > button{
+  border-radius: var(--radius-control);
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+.segmented > button.is-active{
+  background: var(--bg-soft);
+  border-color: var(--outline);
+}
+
+/* Slider row */
+.slider-row{
+  display:grid; grid-template-columns: 1fr auto; align-items:center; gap: 10px;
+}
+.slider-row .value{
+  padding: 2px 8px; border-radius: 10px; background: var(--bg-soft);
+}
+
+/* Swatches */
+.swatches{ display:flex; gap: 8px; align-items:center; }
+.swatch{
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid var(--outline);
+}
+.swatch.is-active{ outline: 2px solid #fff; outline-offset: 2px; }
+
+/* Нижняя панель действий */
+.sheet-actions{
+  position: sticky; bottom: 0; left: 0; right: 0;
+  display:flex; justify-content: space-between; align-items:center;
+  padding-top: 10px; background: linear-gradient(transparent, rgba(0,0,0,.25) 60%);
+}
