@@ -1,31 +1,30 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useCarouselStore } from '@/state/store';
 import BottomBar from '@/components/BottomBar';
 import LayoutSheet from '@/components/sheets/LayoutSheet';
 import PhotosSheet from '@/components/PhotosSheet';
 import SlideActionsSheet from '@/components/sheets/SlideActionsSheet';
 import BottomSheet from '@/components/BottomSheet';
+import SlidePreview from '@/components/SlidePreview';
 import '@/styles/carousel.css';
 
 export default function PreviewCarousel() {
   const slides = useCarouselStore((s) => s.slides);
-  const activeIndex = useCarouselStore((s) => s.activeIndex);
-  const setActiveIndex = useCarouselStore((s) => s.setActiveIndex);
+  const active = useCarouselStore((s) => s.activeIndex);
+  const setActive = useCarouselStore((s) => s.setActiveIndex);
   const activeSheet = useCarouselStore((s) => s.activeSheet);
   const closeSheet = useCarouselStore((s) => s.closeSheet);
   const reorderSlides = useCarouselStore((s) => s.reorderSlides);
   const setSlides = useCarouselStore((s) => s.setSlides);
 
   const trackRef = useRef<HTMLDivElement>(null);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     const root = trackRef.current;
     if (!root) return;
     const cards = Array.from(root.children) as HTMLElement[];
     const io = new IntersectionObserver((entries) => {
-      let bestIdx = activeIndex,
-        best = 0;
+      let bestIdx = active, best = 0;
       entries.forEach((e) => {
         const idx = cards.indexOf(e.target as HTMLElement);
         if (e.intersectionRatio > best) {
@@ -33,44 +32,25 @@ export default function PreviewCarousel() {
           bestIdx = idx;
         }
       });
-      if (best > 0.6) setActiveIndex(bestIdx);
+      if (best > 0.6) setActive(bestIdx);
     }, { root, threshold: [0.3, 0.6, 0.9] });
 
     cards.forEach((c) => io.observe(c));
     return () => io.disconnect();
   }, [slides.length]);
 
-  const onPointerDown = (e: React.PointerEvent) => {
-    setDragStart({ x: e.clientX, y: e.clientY });
-  };
-  const onPointerUp = (e: React.PointerEvent) => {
-    if (!dragStart) return;
-    const dx = e.clientX - dragStart.x;
-    const dy = e.clientY - dragStart.y;
-    setDragStart(null);
-    if (Math.abs(dx) < 28 && dy > 56) {
-      useCarouselStore.getState().openSheet('slideActions');
-    }
-  };
-
   return (
-    <div>
+    <>
       <div className="stage">
         <div ref={trackRef} className="track" role="listbox" aria-label="Slides">
           {slides.map((s, i) => (
             <div
               key={s.id}
-              className={`card ${i === activeIndex ? 'is-active' : 'is-side'}`}
+              className={`card ${i === active ? 'is-active' : 'is-side'}`}
               role="option"
-              aria-selected={i === activeIndex}
-              onPointerDown={onPointerDown}
-              onPointerUp={onPointerUp}
+              aria-selected={i === active}
             >
-              {s.image ? (
-                <img src={s.image} className="w-full h-full object-cover" />
-              ) : (
-                <div className="p-4 text-white text-center">{s.body}</div>
-              )}
+              <SlidePreview slide={s} />
             </div>
           ))}
         </div>
@@ -79,7 +59,7 @@ export default function PreviewCarousel() {
 
       {activeSheet === 'template' && <TemplateSheet open={true} onClose={closeSheet} />}
       {activeSheet === 'layout' && (
-        <LayoutSheet open={true} onClose={closeSheet} currentSlideId={slides[activeIndex]?.id} />
+        <LayoutSheet open={true} onClose={closeSheet} currentSlideId={slides[active]?.id} />
       )}
       {activeSheet === 'photos' && (
         <PhotosSheet
@@ -99,7 +79,7 @@ export default function PreviewCarousel() {
         />
       )}
       {activeSheet === 'slideActions' && <SlideActionsSheet />}
-    </div>
+    </>
   );
 }
 
