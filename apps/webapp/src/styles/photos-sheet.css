@@ -9,12 +9,14 @@
 
 /* ряд с кнопками наверху шита */
 .actions-row{
+  position:relative; z-index:2;
   display:flex; align-items:center; gap:10px;
-  padding: 8px 12px 4px;
+  padding:8px 12px 4px;
 }
 
 /* мягкая кнопка — используется и для Add photo, и для Done */
 .btn-soft{
+  position:relative; z-index:1;
   display:inline-flex; align-items:center; gap:8px;
   padding:10px 14px;
   border-radius:14px;
@@ -48,7 +50,7 @@
 .btn-circle-soft svg{ width:16px; height:16px; }
 
 /* блок «Add photo» */
-.add-btn{ margin-left: 0; }
+.add-btn{ margin-left: 0; pointer-events:auto; }
 
 /* миниатюры */
 .thumb{ position:relative; border-radius:14px; overflow:hidden; }
