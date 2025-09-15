@@ -40,6 +40,12 @@
   background: #000;
 }
 
+.footer-gradient{
+  position:absolute; left:0; right:0; bottom:0;
+  height:60%;
+  pointer-events:none;
+}
+
 /* Фото внутри — как в IG */
 .ig-frame > img{
   width: 100%;

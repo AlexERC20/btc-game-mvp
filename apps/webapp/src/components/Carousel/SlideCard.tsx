@@ -32,6 +32,8 @@ export function SlideCard({
   const globalLayout = useCarouselStore((s) => s.style.layout);
   const template: TemplateStyle = slide.overrides?.template || globalTemplate;
   const layout: LayoutStyle = slide.overrides?.layout || globalLayout;
+  const h = Math.min(Math.max(template.bottomGradient, 0), 60);
+  const tone = template.footerStyle;
 
   const { title, body } = splitTextEditorial(slide.body || '');
   const titleSize = Math.round(layout.fontSize * 1.35);
@@ -52,6 +54,17 @@ export function SlideCard({
         <img src={slide.image} alt="" draggable={false} />
       ) : (
         <div className="ig-placeholder" />
+      )}
+      {tone !== 'none' && (
+        <div
+          className="footer-gradient"
+          style={{
+            background:
+              tone === 'dark'
+                ? `linear-gradient(to top, rgba(0,0,0,.68) 0%, rgba(0,0,0,0) ${h}%)`
+                : `linear-gradient(to top, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) ${h}%)`,
+          }}
+        />
       )}
       {(title || body || slide.nickname) && (
         <div className="overlay editorial">
