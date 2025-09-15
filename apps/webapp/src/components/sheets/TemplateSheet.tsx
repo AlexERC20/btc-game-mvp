@@ -8,6 +8,7 @@ export default function TemplateSheet() {
   const setScope = useCarouselStore((s) => s.setTemplateScope);
   const setPreset = useCarouselStore((s) => s.setTemplatePreset);
   const setTemplate = useCarouselStore((s) => s.setTemplate);
+  const setFooterStyle = useCarouselStore((s) => s.setFooterStyle);
   const reset = useCarouselStore((s) => s.resetTemplate);
   const apply = useCarouselStore((s) => s.applyTemplate);
   const close = useCarouselStore((s) => s.closeSheet);
@@ -28,6 +29,27 @@ export default function TemplateSheet() {
   return (
     <Sheet title="Template">
       <div className="template-sheet">
+        <div className="actions-row">
+          <button
+            className={`btn-soft${template.footerStyle === 'none' ? ' is-active' : ''}`}
+            onClick={() => setFooterStyle('none', scope)}
+          >
+            Original
+          </button>
+          <button
+            className={`btn-soft${template.footerStyle === 'dark' ? ' is-active' : ''}`}
+            onClick={() => setFooterStyle('dark', scope)}
+          >
+            Dark footer
+          </button>
+          <button
+            className={`btn-soft${template.footerStyle === 'light' ? ' is-active' : ''}`}
+            onClick={() => setFooterStyle('light', scope)}
+          >
+            Light footer
+          </button>
+        </div>
+
         <div className="section presets">
           {presetItems.map((p) => (
             <button
@@ -80,11 +102,13 @@ export default function TemplateSheet() {
             <input
               type="range"
               min={0}
-              max={100}
+              max={60}
               step={1}
-              value={template.gradient}
-              onChange={(e) => setTemplate({ gradient: Number(e.target.value) })}
+              value={template.bottomGradient}
+              onChange={(e) => setTemplate({ bottomGradient: Number(e.target.value) })}
+              disabled={template.footerStyle === 'none'}
             />
+            <small>Height</small>
           </label>
           <label>
             Dim photo
@@ -93,8 +117,8 @@ export default function TemplateSheet() {
               min={0}
               max={30}
               step={1}
-              value={template.dim}
-              onChange={(e) => setTemplate({ dim: Number(e.target.value) })}
+              value={template.dimPhoto}
+              onChange={(e) => setTemplate({ dimPhoto: Number(e.target.value) })}
             />
           </label>
         </div>

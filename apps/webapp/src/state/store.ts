@@ -121,12 +121,13 @@ export interface TemplateStyle {
   preset: TemplatePreset;
   textColorMode: 'auto' | 'white' | 'black';
   accent: string;
-  gradient: number;
-  dim: number;
+  bottomGradient: number;
+  dimPhoto: number;
   textShadow: 0 | 1 | 2 | 3;
   showNickname: boolean;
   nicknameStyle: 'pill' | 'tag';
   font: 'system' | 'inter' | 'playfair' | 'bodoni' | 'dmsans';
+  footerStyle: 'none' | 'dark' | 'light';
 }
 
 export interface LayoutStyle {
@@ -177,6 +178,7 @@ type State = {
 
   setTemplatePreset: (p: Exclude<TemplatePreset, 'custom'>) => void;
   setTemplate: (patch: Partial<TemplateStyle>) => void;
+  setFooterStyle: (mode: 'none' | 'dark' | 'light', scope?: ApplyScope) => void;
   resetTemplate: () => void;
   setTemplateScope: (s: ApplyScope) => void;
   applyTemplate: () => void;
@@ -191,32 +193,57 @@ const editorialTemplate: TemplateStyle = {
   preset: 'editorial',
   textColorMode: 'white',
   accent: '#FFFFFF',
-  gradient: 28,
-  dim: 6,
+  bottomGradient: 38,
+  dimPhoto: 6,
   textShadow: 1,
   showNickname: true,
   nicknameStyle: 'pill',
   font: 'inter',
+  footerStyle: 'dark',
 };
 
 const minimalTemplate: TemplateStyle = {
   preset: 'minimal',
   textColorMode: 'auto',
   accent: '#FFFFFF',
-  gradient: 0,
-  dim: 0,
+  bottomGradient: 0,
+  dimPhoto: 0,
   textShadow: 0,
   showNickname: true,
   nicknameStyle: 'pill',
   font: 'system',
+  footerStyle: 'none',
 };
 
 const templatePresets: Record<Exclude<TemplatePreset, 'custom'>, TemplateStyle> = {
   editorial: editorialTemplate,
   minimal: minimalTemplate,
-  light: { ...minimalTemplate, preset: 'light', gradient: 30, textShadow: 1, textColorMode: 'white' },
-  focus: { ...minimalTemplate, preset: 'focus', gradient: 20, dim: 15, textShadow: 2, textColorMode: 'white' },
-  quote: { ...minimalTemplate, preset: 'quote', gradient: 35, dim: 10, textShadow: 2, textColorMode: 'white' },
+  light: {
+    ...minimalTemplate,
+    preset: 'light',
+    bottomGradient: 30,
+    textShadow: 1,
+    textColorMode: 'white',
+    footerStyle: 'dark',
+  },
+  focus: {
+    ...minimalTemplate,
+    preset: 'focus',
+    bottomGradient: 20,
+    dimPhoto: 15,
+    textShadow: 2,
+    textColorMode: 'white',
+    footerStyle: 'dark',
+  },
+  quote: {
+    ...minimalTemplate,
+    preset: 'quote',
+    bottomGradient: 35,
+    dimPhoto: 10,
+    textShadow: 2,
+    textColorMode: 'white',
+    footerStyle: 'dark',
+  },
 };
 
 const defaultTemplate = editorialTemplate;
@@ -407,7 +434,50 @@ export const useCarouselStore = create<State>((set, get) => ({
         ...s.style,
         template: { ...s.style.template, ...patch, preset: 'custom' },
       },
+      slides: s.slides.map((sl, i) => {
+        if (s.style.templateScope === 'all' || i === s.activeIndex) {
+          return {
+            ...sl,
+            overrides: {
+              ...sl.overrides,
+              template: { ...(sl.overrides?.template || {}), ...patch },
+            },
+          };
+        }
+        return sl;
+      }),
     })),
+
+  setFooterStyle: (mode, scope = get().style.templateScope) =>
+    set((state) => {
+      const patch: Partial<TemplateStyle> =
+        mode === 'none'
+          ? { footerStyle: 'none', bottomGradient: 0 }
+          : mode === 'dark'
+          ? { footerStyle: 'dark', bottomGradient: 38, textColorMode: 'white' }
+          : { footerStyle: 'light', bottomGradient: 40, textColorMode: 'black' };
+
+      const slides = state.slides.map((sl, i) => {
+        if (scope === 'all' || i === state.activeIndex) {
+          return {
+            ...sl,
+            overrides: {
+              ...sl.overrides,
+              template: { ...(sl.overrides?.template || {}), ...patch },
+            },
+          };
+        }
+        return sl;
+      });
+
+      return {
+        slides,
+        style: {
+          ...state.style,
+          template: { ...state.style.template, ...patch, preset: 'custom' },
+        },
+      };
+    }),
 
   resetTemplate: () => set((s) => ({ style: { ...s.style, template: defaultTemplate } })),
 
