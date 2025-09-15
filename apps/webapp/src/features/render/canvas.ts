@@ -1,3 +1,4 @@
+import { BASE_FRAME } from './constants';
 import type { LayoutStyle, TemplateConfig } from '@/state/store';
 import { Slide, useCarouselStore } from '@/state/store';
 import { resolveSlideDesign, Theme } from '@/styles/theme';
@@ -5,8 +6,8 @@ import { Typography, typographyToCanvasFont } from '@/styles/typography';
 import { splitEditorialText } from '@/utils/text';
 import { applyEllipsis, layoutParagraph } from '@/utils/textLayout';
 
-export const CANVAS_W = 1080;
-export const CANVAS_H = 1350;
+export const CANVAS_W = BASE_FRAME.width;
+export const CANVAS_H = BASE_FRAME.height;
 
 type TextLine = {
   text: string;
@@ -130,6 +131,38 @@ function trimLinesToHeight(
   }
 }
 
+type LineMetrics = {
+  ascent: number;
+  descent: number;
+  lineHeight: number;
+  baselineOffset: number;
+};
+
+const METRIC_SAMPLE = 'Mg';
+
+const metricsCache = new WeakMap<Typography['title'] | Typography['body'], LineMetrics>();
+
+function getLineMetrics(ctx: CanvasRenderingContext2D, style: Typography['title'] | Typography['body']) {
+  const cached = metricsCache.get(style);
+  if (cached) return cached;
+
+  const previousFont = ctx.font;
+  ctx.font = typographyToCanvasFont(style);
+  const measurement = ctx.measureText(METRIC_SAMPLE);
+  ctx.font = previousFont;
+
+  const ascent = measurement.actualBoundingBoxAscent ?? style.fontSize * 0.8;
+  const descent = measurement.actualBoundingBoxDescent ?? style.fontSize * 0.2;
+  const naturalHeight = ascent + descent;
+  const lineHeight = lineHeightPx(style);
+  const leading = Math.max(0, lineHeight - naturalHeight);
+  const baselineOffset = leading / 2 + ascent;
+
+  const metrics: LineMetrics = { ascent, descent, lineHeight, baselineOffset };
+  metricsCache.set(style, metrics);
+  return metrics;
+}
+
 async function ensureFontsLoaded(typography: Typography) {
   if (typeof document === 'undefined' || !document.fonts) return;
   const toLoad = new Set<string>([
@@ -225,7 +258,7 @@ function drawOverlay(
 
     ctx.save();
     ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
+    ctx.textBaseline = 'alphabetic';
     if (theme.shadow) {
       ctx.shadowColor = theme.shadow.color;
       ctx.shadowBlur = theme.shadow.blur;
@@ -240,10 +273,12 @@ function drawOverlay(
 
     for (const line of lines) {
       cursorY += line.gapBefore;
+      const metrics = getLineMetrics(ctx, line.style);
+      const baselineY = cursorY + metrics.baselineOffset;
       ctx.font = typographyToCanvasFont(line.style);
       ctx.fillStyle = line.color;
-      drawLine(ctx, line.text, textX, cursorY, line.letterSpacing);
-      cursorY += lineHeightPx(line.style);
+      drawLine(ctx, line.text, textX, baselineY, line.letterSpacing);
+      cursorY += metrics.lineHeight;
     }
 
     ctx.restore();
@@ -344,7 +379,7 @@ function drawNickname(
   ctx.restore();
 }
 
-export async function renderSlideToPNG(slide: Slide): Promise<Blob> {
+export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<Blob> {
   const state = useCarouselStore.getState();
   const design = resolveSlideDesign({
     slide,
@@ -354,8 +389,10 @@ export async function renderSlideToPNG(slide: Slide): Promise<Blob> {
   });
 
   const canvas = document.createElement('canvas');
-  canvas.width = CANVAS_W;
-  canvas.height = CANVAS_H;
+  const pixelWidth = CANVAS_W * exportScale;
+  const pixelHeight = CANVAS_H * exportScale;
+  canvas.width = pixelWidth;
+  canvas.height = pixelHeight;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas 2D context not available');
 
@@ -363,7 +400,8 @@ export async function renderSlideToPNG(slide: Slide): Promise<Blob> {
   await ensureFontsLoaded(design.typography);
   const image = await imagePromise;
 
-  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.clearRect(0, 0, pixelWidth, pixelHeight);
+  ctx.scale(exportScale, exportScale);
   ctx.save();
   roundedRectPath(ctx, 0, 0, CANVAS_W, CANVAS_H, design.theme.radius);
   ctx.clip();

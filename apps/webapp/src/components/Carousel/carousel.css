@@ -31,10 +31,23 @@
 }
 
 /* Кадр Instagram 4:5 */
+.slide-card{
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+}
+
+.slide-card__content{
+  position: absolute;
+  inset: 0;
+  transform-origin: top left;
+  will-change: transform;
+}
+
 .ig-frame{
   position: relative;
   width: 100%;
-  aspect-ratio: 0.8;     /* единый аспект */
+  height: 100%;
   border-radius: 16px;   /* можно 14–16 как нравится */
   overflow: hidden;
   background: #000;
