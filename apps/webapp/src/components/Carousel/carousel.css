@@ -109,8 +109,7 @@
   backdrop-filter: blur(4px);
 }
 
-.overlay.editorial .title, .overlay.editorial .body{
-  display:-webkit-box; -webkit-box-orient: vertical; overflow:hidden;
+.overlay.editorial .title,
+.overlay.editorial .body {
+  display: block;
 }
-.overlay.editorial .title{ -webkit-line-clamp: 3; }
-.overlay.editorial .body { -webkit-line-clamp: 4; }
