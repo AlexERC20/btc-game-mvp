@@ -1,85 +1,47 @@
-import {
-  Slide,
-  TemplateConfig,
-  LayoutStyle,
-  useCarouselStore,
-  getBaseTextColor,
-  getHeadingColor,
-} from '@/state/store';
+import { Slide } from '@/state/store';
+import type { SlideDesign } from '@/styles/theme';
+import { splitEditorialText } from '@/utils/text';
 
-function splitTextEditorial(text: string): { title: string; body: string } {
-  const trimmed = text.trim();
-  if (!trimmed) return { title: '', body: '' };
-  const match = trimmed.match(/[.!?…](?:\s|\n)/);
-  if (match && match.index !== undefined) {
-    const idx = match.index + 1;
-    return {
-      title: trimmed.slice(0, idx).trim(),
-      body: trimmed.slice(idx).trim(),
-    };
-  }
-  const nl = trimmed.indexOf('\n');
-  if (nl !== -1) {
-    return {
-      title: trimmed.slice(0, nl).trim(),
-      body: trimmed.slice(nl + 1).trim(),
-    };
-  }
-  return { title: trimmed, body: '' };
-}
-
-export function SlideCard({
-  slide,
-  aspect,
-}: {
+type Props = {
   slide: Slide;
   aspect: number;
-}) {
-  const globalTemplate = useCarouselStore((s) => s.style.template);
-  const globalLayout = useCarouselStore((s) => s.style.layout);
-  const { textColorMode, headingAccent } = useCarouselStore((s) => s.typography);
-  const template: TemplateConfig = slide.overrides?.template || globalTemplate;
-  const layout: LayoutStyle = slide.overrides?.layout || globalLayout;
-  const h = Math.min(Math.max(template.bottomGradient, 0), 60);
-  const tone = template.footerStyle;
+  design: SlideDesign;
+};
 
-  const bgTone: 'dark' | 'light' =
-    slide.runtime?.bgTone ?? (textColorMode === 'black' ? 'light' : 'dark');
-  const baseTextColor = getBaseTextColor(bgTone, textColorMode);
-  const titleColor = getHeadingColor(bgTone, textColorMode, headingAccent);
+export function SlideCard({ slide, aspect, design }: Props) {
+  const { theme, typography, layout, template } = design;
+  const { title, body } = splitEditorialText(slide.body || '');
+  const gradientHeight = Math.max(0, Math.min(theme.gradientStops.heightPct, 1));
+  const gradientPercent = Number((gradientHeight * 100).toFixed(2));
+  const overlayOffset = Math.max(theme.padding.x - layout.padding, 0);
+  const overlayBottom = Math.max(theme.padding.y - layout.padding, 0);
+  const textShadow = theme.shadow
+    ? `0 ${theme.shadow.y}px ${theme.shadow.blur}px ${theme.shadow.color}`
+    : undefined;
 
-  const { title, body } = splitTextEditorial(slide.body || '');
-  const titleSize = Math.round(layout.fontSize * 1.35);
-  const bodySize = Math.round(layout.fontSize * 0.9);
-  const titleLine = (layout.lineHeight * 1.2) / 1.3;
-  const bodyLine = (layout.lineHeight * 1.35) / 1.3;
-  const fontMap: Record<TemplateConfig['font'], string> = {
-    system: 'var(--font-system)',
-    inter: 'var(--font-inter, var(--font-system))',
-    playfair: 'var(--font-playfair, var(--font-system))',
-    bodoni: 'var(--font-bodoni, var(--font-system))',
-    dmsans: 'var(--font-dmsans, var(--font-system))',
-  };
   return (
-    <div className="ig-frame" style={{ aspectRatio: aspect }}>
+    <div className="ig-frame" style={{ aspectRatio: aspect, borderRadius: theme.radius }}>
       {slide.image ? (
         <img src={slide.image} alt="" draggable={false} />
       ) : (
         <div className="ig-placeholder" />
       )}
-      {tone !== 'none' && (
+      {theme.gradient !== 'original' && gradientHeight > 0 && (
         <div
           className="footer-gradient"
           style={{
-            background:
-              tone === 'dark'
-                ? `linear-gradient(to top, rgba(0,0,0,.68) 0%, rgba(0,0,0,0) ${h}%)`
-                : `linear-gradient(to top, rgba(255,255,255,.85) 0%, rgba(255,255,255,0) ${h}%)`,
+            background: `linear-gradient(to top, ${theme.gradientStops.to} 0%, ${
+              theme.gradientStops.from
+            } ${gradientPercent}%)`,
+            height: `${gradientPercent}%`,
           }}
         />
       )}
       {(title || body || slide.nickname) && (
-        <div className="overlay editorial">
+        <div
+          className="overlay editorial"
+          style={{ left: overlayOffset, right: overlayOffset, bottom: overlayBottom }}
+        >
           {(title || body) && (
             <div
               className="text"
@@ -89,10 +51,13 @@ export function SlideCard({
                 <div
                   className="title"
                   style={{
-                    fontSize: titleSize,
-                    lineHeight: titleLine,
-                    fontFamily: fontMap[template.font],
-                    color: titleColor,
+                    fontSize: typography.title.fontSize,
+                    lineHeight: typography.title.lineHeight,
+                    fontFamily: typography.title.fontFamily,
+                    fontWeight: typography.title.fontWeight,
+                    letterSpacing: typography.title.letterSpacing,
+                    color: theme.titleColor ?? theme.textColor,
+                    textShadow,
                   }}
                 >
                   {title}
@@ -103,11 +68,14 @@ export function SlideCard({
                   className="body"
                   style={{
                     marginTop: layout.paraGap,
-                    fontSize: bodySize,
-                    lineHeight: bodyLine,
-                    fontFamily: fontMap[template.font],
-                    color: baseTextColor,
+                    fontSize: typography.body.fontSize,
+                    lineHeight: typography.body.lineHeight,
+                    fontFamily: typography.body.fontFamily,
+                    fontWeight: typography.body.fontWeight,
+                    letterSpacing: typography.body.letterSpacing,
+                    color: theme.textColor,
                     opacity: 0.92,
+                    textShadow,
                   }}
                 >
                   {body}
@@ -116,7 +84,10 @@ export function SlideCard({
             </div>
           )}
           {slide.nickname && template.showNickname && (
-            <div className="nickname" style={{ marginTop: layout.nickOffset }}>
+            <div
+              className="nickname"
+              style={{ marginTop: layout.nickOffset, color: theme.textColor }}
+            >
               {slide.nickname}
             </div>
           )}
