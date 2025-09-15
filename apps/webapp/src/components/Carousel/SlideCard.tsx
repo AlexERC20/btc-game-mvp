@@ -1,4 +1,11 @@
-import { Slide, TemplateStyle, LayoutStyle, useCarouselStore } from '@/state/store';
+import {
+  Slide,
+  TemplateConfig,
+  LayoutStyle,
+  useCarouselStore,
+  getBaseTextColor,
+  getHeadingColor,
+} from '@/state/store';
 
 function splitTextEditorial(text: string): { title: string; body: string } {
   const trimmed = text.trim();
@@ -30,24 +37,29 @@ export function SlideCard({
 }) {
   const globalTemplate = useCarouselStore((s) => s.style.template);
   const globalLayout = useCarouselStore((s) => s.style.layout);
-  const template: TemplateStyle = slide.overrides?.template || globalTemplate;
+  const { textColorMode, headingAccent } = useCarouselStore((s) => s.typography);
+  const template: TemplateConfig = slide.overrides?.template || globalTemplate;
   const layout: LayoutStyle = slide.overrides?.layout || globalLayout;
   const h = Math.min(Math.max(template.bottomGradient, 0), 60);
   const tone = template.footerStyle;
+
+  const bgTone: 'dark' | 'light' =
+    slide.runtime?.bgTone ?? (textColorMode === 'black' ? 'light' : 'dark');
+  const baseTextColor = getBaseTextColor(bgTone, textColorMode);
+  const titleColor = getHeadingColor(bgTone, textColorMode, headingAccent);
 
   const { title, body } = splitTextEditorial(slide.body || '');
   const titleSize = Math.round(layout.fontSize * 1.35);
   const bodySize = Math.round(layout.fontSize * 0.9);
   const titleLine = (layout.lineHeight * 1.2) / 1.3;
   const bodyLine = (layout.lineHeight * 1.35) / 1.3;
-  const fontMap: Record<TemplateStyle['font'], string> = {
+  const fontMap: Record<TemplateConfig['font'], string> = {
     system: 'var(--font-system)',
     inter: 'var(--font-inter, var(--font-system))',
     playfair: 'var(--font-playfair, var(--font-system))',
     bodoni: 'var(--font-bodoni, var(--font-system))',
     dmsans: 'var(--font-dmsans, var(--font-system))',
   };
-  const color = template.textColorMode === 'black' ? '#000' : '#fff';
   return (
     <div className="ig-frame" style={{ aspectRatio: aspect }}>
       {slide.image ? (
@@ -80,7 +92,7 @@ export function SlideCard({
                     fontSize: titleSize,
                     lineHeight: titleLine,
                     fontFamily: fontMap[template.font],
-                    color,
+                    color: titleColor,
                   }}
                 >
                   {title}
@@ -94,7 +106,8 @@ export function SlideCard({
                     fontSize: bodySize,
                     lineHeight: bodyLine,
                     fontFamily: fontMap[template.font],
-                    color,
+                    color: baseTextColor,
+                    opacity: 0.92,
                   }}
                 >
                   {body}

@@ -1,14 +1,36 @@
 import Sheet from '../Sheet/Sheet';
 import { useCarouselStore } from '@/state/store';
+import type { TemplateStyle } from '@/state/store';
 import '@/styles/photos-sheet.css';
+
+const SOFT_CLASSES = 'soft-pill';
+const ACCENTS = ['#FFFFFF', '#000000', '#3B82F6', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6', '#F97316'];
+const QUICK_STYLE_GROUPS: [TemplateStyle, string][][] = [
+  [
+    ['original', 'Original'],
+    ['darkFooter', 'Dark footer'],
+    ['lightFooter', 'Light footer'],
+  ],
+  [
+    ['editorial', 'Editorial'],
+    ['minimal', 'Minimal'],
+    ['light', 'Light'],
+    ['focus', 'Focus'],
+    ['quote', 'Quote'],
+  ],
+];
 
 export default function TemplateSheet() {
   const template = useCarouselStore((s) => s.style.template);
+  const templateStyle = useCarouselStore((s) => s.templateStyle);
   const scope = useCarouselStore((s) => s.style.templateScope);
   const setScope = useCarouselStore((s) => s.setTemplateScope);
-  const setPreset = useCarouselStore((s) => s.setTemplatePreset);
+  const setTemplateStyle = useCarouselStore((s) => s.setTemplateStyle);
   const setTemplate = useCarouselStore((s) => s.setTemplate);
-  const setFooterStyle = useCarouselStore((s) => s.setFooterStyle);
+  const textColorMode = useCarouselStore((s) => s.typography.textColorMode);
+  const headingAccent = useCarouselStore((s) => s.typography.headingAccent);
+  const setHeadingAccent = useCarouselStore((s) => s.setHeadingAccent);
+  const setTextColorMode = useCarouselStore((s) => s.setTextColorMode);
   const reset = useCarouselStore((s) => s.resetTemplate);
   const apply = useCarouselStore((s) => s.applyTemplate);
   const close = useCarouselStore((s) => s.closeSheet);
@@ -18,47 +40,23 @@ export default function TemplateSheet() {
     close();
   };
 
-  const presetItems: { key: Exclude<typeof template.preset, 'custom'>; label: string }[] = [
-    { key: 'editorial', label: 'Editorial' },
-    { key: 'minimal', label: 'Minimal' },
-    { key: 'light', label: 'Light' },
-    { key: 'focus', label: 'Focus' },
-    { key: 'quote', label: 'Quote' },
-  ];
-
   return (
     <Sheet title="Template">
       <div className="template-sheet">
-        <div className="actions-row">
-          <button
-            className={`btn-soft${template.footerStyle === 'none' ? ' is-active' : ''}`}
-            onClick={() => setFooterStyle('none', scope)}
-          >
-            Original
-          </button>
-          <button
-            className={`btn-soft${template.footerStyle === 'dark' ? ' is-active' : ''}`}
-            onClick={() => setFooterStyle('dark', scope)}
-          >
-            Dark footer
-          </button>
-          <button
-            className={`btn-soft${template.footerStyle === 'light' ? ' is-active' : ''}`}
-            onClick={() => setFooterStyle('light', scope)}
-          >
-            Light footer
-          </button>
-        </div>
-
-        <div className="section presets">
-          {presetItems.map((p) => (
-            <button
-              key={p.key}
-              className={`preset${template.preset === p.key ? ' is-active' : ''}`}
-              onClick={() => setPreset(p.key)}
-            >
-              {p.label}
-            </button>
+        <div className="template-sheet__quick">
+          {QUICK_STYLE_GROUPS.map((group, idx) => (
+            <div key={idx} className="template-sheet__quick-row">
+              {group.map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`${SOFT_CLASSES}${templateStyle === key ? ' is-active' : ''}`}
+                  onClick={() => setTemplateStyle(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           ))}
         </div>
 
@@ -70,8 +68,8 @@ export default function TemplateSheet() {
                 type="radio"
                 name="textColorMode"
                 value={c}
-                checked={template.textColorMode === c}
-                onChange={() => setTemplate({ textColorMode: c as any })}
+                checked={textColorMode === c}
+                onChange={() => setTextColorMode(c as 'auto' | 'white' | 'black')}
               />
               {c.charAt(0).toUpperCase() + c.slice(1)}
             </label>
@@ -79,20 +77,24 @@ export default function TemplateSheet() {
         </div>
 
         <div className="section">
-          <div>Accent color:</div>
-          <div className="palette">
-            {['#FFFFFF', '#000000', '#2D6CFF', '#FF6B00', '#22C55E', '#E11D48'].map((color) => (
+          <div>Heading color:</div>
+          <div className="swatches">
+            {ACCENTS.map((hex) => (
               <button
-                key={color}
-                style={{ background: color, width: 24, height: 24, borderRadius: 4, marginRight: 4 }}
-                onClick={() => setTemplate({ accent: color })}
+                key={hex}
+                type="button"
+                className={`swatch${headingAccent === hex ? ' is-active' : ''}`}
+                style={{ background: hex }}
+                onClick={() => setHeadingAccent(hex)}
+                aria-label={`Accent ${hex}`}
               />
             ))}
-            <input
-              type="color"
-              value={template.accent}
-              onChange={(e) => setTemplate({ accent: e.target.value })}
-            />
+            <button type="button" className="swatch reset" onClick={() => setHeadingAccent(null)}>
+              Auto
+            </button>
+          </div>
+          <div className="hint">
+            По умолчанию заголовок = цвету текста. Выбор акцента меняет только заголовок.
           </div>
         </div>
 
