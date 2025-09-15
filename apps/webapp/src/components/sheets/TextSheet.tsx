@@ -23,7 +23,7 @@ export default function TextSheet() {
           <input
             className="input"
             type="text"
-            placeholder="@alexvoit"
+            placeholder="@ownagez"
             value={nickname}
             onChange={(e) => setTextField({ nickname: e.target.value })}
           />
