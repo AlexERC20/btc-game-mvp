@@ -95,11 +95,14 @@ export type Slide = {
   photoId?: PhotoId;
   nickname?: string;
   overrides?: {
-    template?: TemplateStyle;
+    template?: TemplateConfig;
     layout?: LayoutStyle;
   };
   kind?: 'demo' | 'photo';
   isDemo?: boolean;
+  runtime?: {
+    bgTone: 'dark' | 'light';
+  };
 };
 
 export type UISheet = null | 'template' | 'layout' | 'photos' | 'text';
@@ -117,7 +120,17 @@ export type TemplatePreset =
   | 'quote'
   | 'custom';
 
-export interface TemplateStyle {
+export type TemplateStyle =
+  | 'original'
+  | 'darkFooter'
+  | 'lightFooter'
+  | 'editorial'
+  | 'minimal'
+  | 'light'
+  | 'focus'
+  | 'quote';
+
+export interface TemplateConfig {
   preset: TemplatePreset;
   textColorMode: 'auto' | 'white' | 'black';
   accent: string;
@@ -129,6 +142,26 @@ export interface TemplateStyle {
   font: 'system' | 'inter' | 'playfair' | 'bodoni' | 'dmsans';
   footerStyle: 'none' | 'dark' | 'light';
 }
+
+export interface TypographySettings {
+  textColorMode: 'auto' | 'white' | 'black';
+  headingAccent: string | null;
+}
+
+export const getBaseTextColor = (
+  bg: 'dark' | 'light',
+  mode: 'auto' | 'white' | 'black',
+) => {
+  if (mode === 'white') return '#FFFFFF';
+  if (mode === 'black') return '#000000';
+  return bg === 'dark' ? '#FFFFFF' : '#000000';
+};
+
+export const getHeadingColor = (
+  bg: 'dark' | 'light',
+  mode: 'auto' | 'white' | 'black',
+  accent: string | null,
+) => accent ?? getBaseTextColor(bg, mode);
 
 export interface LayoutStyle {
   vPos: 'top' | 'middle' | 'bottom';
@@ -157,8 +190,10 @@ type State = {
   activeIndex: number;
   activeSheet: UISheet;
   text: TextState;
+  templateStyle: TemplateStyle;
+  typography: TypographySettings;
   style: {
-    template: TemplateStyle;
+    template: TemplateConfig;
     layout: LayoutStyle;
     templateScope: ApplyScope;
     layoutScope: ApplyScope;
@@ -176,12 +211,15 @@ type State = {
   setTextField: (patch: Partial<TextState>) => void;
   applyTextToSlides: (opts?: { bulkText?: string; nickname?: string }) => void;
 
+  setTemplateStyle: (style: TemplateStyle) => void;
   setTemplatePreset: (p: Exclude<TemplatePreset, 'custom'>) => void;
-  setTemplate: (patch: Partial<TemplateStyle>) => void;
+  setTemplate: (patch: Partial<TemplateConfig>) => void;
   setFooterStyle: (mode: 'none' | 'dark' | 'light', scope?: ApplyScope) => void;
   resetTemplate: () => void;
   setTemplateScope: (s: ApplyScope) => void;
   applyTemplate: () => void;
+  setHeadingAccent: (hex: string | null) => void;
+  setTextColorMode: (mode: 'auto' | 'white' | 'black') => void;
 
   setLayout: (patch: Partial<LayoutStyle>) => void;
   resetLayout: () => void;
@@ -189,7 +227,7 @@ type State = {
   applyLayout: () => void;
 };
 
-const editorialTemplate: TemplateStyle = {
+const editorialTemplate: TemplateConfig = {
   preset: 'editorial',
   textColorMode: 'white',
   accent: '#FFFFFF',
@@ -202,7 +240,7 @@ const editorialTemplate: TemplateStyle = {
   footerStyle: 'dark',
 };
 
-const minimalTemplate: TemplateStyle = {
+const minimalTemplate: TemplateConfig = {
   preset: 'minimal',
   textColorMode: 'auto',
   accent: '#FFFFFF',
@@ -215,7 +253,7 @@ const minimalTemplate: TemplateStyle = {
   footerStyle: 'none',
 };
 
-const templatePresets: Record<Exclude<TemplatePreset, 'custom'>, TemplateStyle> = {
+const templatePresets: Record<Exclude<TemplatePreset, 'custom'>, TemplateConfig> = {
   editorial: editorialTemplate,
   minimal: minimalTemplate,
   light: {
@@ -246,7 +284,15 @@ const templatePresets: Record<Exclude<TemplatePreset, 'custom'>, TemplateStyle> 
   },
 };
 
-const defaultTemplate = editorialTemplate;
+const originalTemplate: TemplateConfig = {
+  ...editorialTemplate,
+  preset: 'custom',
+  footerStyle: 'none',
+  bottomGradient: 0,
+  textColorMode: 'auto',
+};
+
+const defaultTemplate = originalTemplate;
 
 const defaultLayout: LayoutStyle = {
   vPos: 'bottom',
@@ -368,6 +414,8 @@ export const useCarouselStore = create<State>((set, get) => ({
   activeIndex: 0,
   activeSheet: null,
   text: { nickname: '', bulkText: '' },
+  templateStyle: 'original',
+  typography: { textColorMode: 'auto', headingAccent: null },
   style: {
     template: defaultTemplate,
     layout: defaultLayout,
@@ -425,16 +473,36 @@ export const useCarouselStore = create<State>((set, get) => ({
       };
     }),
 
+  setTemplateStyle: (styleName) => {
+    if (styleName === 'original') {
+      get().setFooterStyle('none');
+      return;
+    }
+    if (styleName === 'darkFooter') {
+      get().setFooterStyle('dark');
+      return;
+    }
+    if (styleName === 'lightFooter') {
+      get().setFooterStyle('light');
+      return;
+    }
+    get().setTemplatePreset(styleName as Exclude<TemplateStyle, 'original' | 'darkFooter' | 'lightFooter'>);
+  },
+
   setTemplatePreset: (p) =>
-    set((s) => ({ style: { ...s.style, template: templatePresets[p] } })),
+    set((s) => {
+      const preset = templatePresets[p];
+      return {
+        style: { ...s.style, template: preset },
+        templateStyle: p,
+        typography: { ...s.typography, textColorMode: preset.textColorMode },
+      };
+    }),
 
   setTemplate: (patch) =>
-    set((s) => ({
-      style: {
-        ...s.style,
-        template: { ...s.style.template, ...patch, preset: 'custom' },
-      },
-      slides: s.slides.map((sl, i) => {
+    set((s) => {
+      const template = { ...s.style.template, ...patch, preset: 'custom' } as TemplateConfig;
+      const slides = s.slides.map((sl, i) => {
         if (s.style.templateScope === 'all' || i === s.activeIndex) {
           return {
             ...sl,
@@ -445,17 +513,43 @@ export const useCarouselStore = create<State>((set, get) => ({
           };
         }
         return sl;
-      }),
-    })),
+      });
+
+      const nextState: Partial<State> = {
+        style: { ...s.style, template },
+        slides,
+      };
+
+      if ('textColorMode' in patch && patch.textColorMode) {
+        nextState.typography = {
+          ...s.typography,
+          textColorMode: patch.textColorMode,
+        };
+      }
+
+      if ('footerStyle' in patch && patch.footerStyle) {
+        nextState.templateStyle =
+          patch.footerStyle === 'none'
+            ? 'original'
+            : patch.footerStyle === 'dark'
+            ? 'darkFooter'
+            : 'lightFooter';
+      }
+
+      return nextState;
+    }),
 
   setFooterStyle: (mode, scope = get().style.templateScope) =>
     set((state) => {
-      const patch: Partial<TemplateStyle> =
+      const patch: Partial<TemplateConfig> =
         mode === 'none'
           ? { footerStyle: 'none', bottomGradient: 0 }
           : mode === 'dark'
           ? { footerStyle: 'dark', bottomGradient: 38, textColorMode: 'white' }
           : { footerStyle: 'light', bottomGradient: 40, textColorMode: 'black' };
+
+      const styleName: TemplateStyle =
+        mode === 'none' ? 'original' : mode === 'dark' ? 'darkFooter' : 'lightFooter';
 
       const slides = state.slides.map((sl, i) => {
         if (scope === 'all' || i === state.activeIndex) {
@@ -470,16 +564,35 @@ export const useCarouselStore = create<State>((set, get) => ({
         return sl;
       });
 
-      return {
+      const nextState: Partial<State> = {
         slides,
         style: {
           ...state.style,
           template: { ...state.style.template, ...patch, preset: 'custom' },
         },
+        templateStyle: styleName,
       };
+
+      if (patch.textColorMode) {
+        nextState.typography = {
+          ...state.typography,
+          textColorMode: patch.textColorMode,
+        };
+      }
+
+      return nextState;
     }),
 
-  resetTemplate: () => set((s) => ({ style: { ...s.style, template: defaultTemplate } })),
+  resetTemplate: () =>
+    set((s) => ({
+      style: { ...s.style, template: defaultTemplate },
+      templateStyle: 'original',
+      typography: {
+        ...s.typography,
+        textColorMode: defaultTemplate.textColorMode,
+        headingAccent: null,
+      },
+    })),
 
   setTemplateScope: (sc) =>
     set((s) => ({ style: { ...s.style, templateScope: sc } })),
@@ -497,6 +610,34 @@ export const useCarouselStore = create<State>((set, get) => ({
         return sl;
       });
       return { slides };
+    }),
+
+  setHeadingAccent: (hex) =>
+    set((s) => ({ typography: { ...s.typography, headingAccent: hex } })),
+
+  setTextColorMode: (mode) =>
+    set((s) => {
+      const slides = s.slides.map((sl, i) => {
+        if (s.style.templateScope === 'all' || i === s.activeIndex) {
+          return {
+            ...sl,
+            overrides: {
+              ...sl.overrides,
+              template: { ...(sl.overrides?.template || {}), textColorMode: mode },
+            },
+          };
+        }
+        return sl;
+      });
+
+      return {
+        slides,
+        typography: { ...s.typography, textColorMode: mode },
+        style: {
+          ...s.style,
+          template: { ...s.style.template, textColorMode: mode, preset: 'custom' },
+        },
+      };
     }),
 
   setLayout: (patch) =>
