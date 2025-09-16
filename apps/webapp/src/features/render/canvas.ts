@@ -1,11 +1,14 @@
 import { BASE_FRAME } from './constants';
 import type { LayoutConfig, TemplateConfig } from '@/state/store';
-import { Slide, layoutSnapshot, useCarouselStore } from '@/state/store';
+import { DEFAULT_COLLAGE_50, Slide, layoutSnapshot, useCarouselStore } from '@/state/store';
 import { resolveSlideDesign, Theme } from '@/styles/theme';
 import { Typography, typographyToCanvasFont } from '@/styles/typography';
 import { splitEditorialText } from '@/utils/text';
 import { composeTextLines } from '@/utils/textLayout';
 import { resolveBlockPosition, resolveBlockWidth } from '@/utils/layoutGeometry';
+import { drawImageCover } from '@/utils/drawImageCover';
+import { resolvePhotoFromStore } from '@/utils/photos';
+import { applyOpacityToColor } from '@/utils/color';
 
 export const CANVAS_W = BASE_FRAME.width;
 export const CANVAS_H = BASE_FRAME.height;
@@ -32,26 +35,25 @@ function roundedRectPath(
   ctx.closePath();
 }
 
-function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
-  const imageRatio = img.naturalWidth / img.naturalHeight || 1;
-  const canvasRatio = CANVAS_W / CANVAS_H;
+type CollageBoxes = {
+  top: { x: number; y: number; width: number; height: number };
+  bottom: { x: number; y: number; width: number; height: number };
+  divider: { y: number; height: number };
+};
 
-  let drawWidth = CANVAS_W;
-  let drawHeight = CANVAS_H;
-  let offsetX = 0;
-  let offsetY = 0;
+function computeCollageBoxes(dividerPx: number): CollageBoxes {
+  const thickness = Math.max(0, dividerPx);
+  const half = Math.floor(CANVAS_H / 2);
+  const halfLine = thickness / 2;
+  const topHeight = Math.max(0, half - halfLine);
+  const bottomY = half + halfLine;
+  const bottomHeight = Math.max(0, CANVAS_H - bottomY);
 
-  if (imageRatio > canvasRatio) {
-    drawHeight = CANVAS_H;
-    drawWidth = drawHeight * imageRatio;
-    offsetX = (CANVAS_W - drawWidth) / 2;
-  } else {
-    drawWidth = CANVAS_W;
-    drawHeight = drawWidth / imageRatio;
-    offsetY = (CANVAS_H - drawHeight) / 2;
-  }
-
-  ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+  return {
+    top: { x: 0, y: 0, width: CANVAS_W, height: topHeight },
+    bottom: { x: 0, y: bottomY, width: CANVAS_W, height: bottomHeight },
+    divider: { y: half - halfLine, height: thickness },
+  };
 }
 
 function drawFooterGradient(ctx: CanvasRenderingContext2D, theme: Theme) {
@@ -314,9 +316,25 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas 2D context not available');
 
-  const imagePromise = slide.image ? loadImage(slide.image) : Promise.resolve<HTMLImageElement | null>(null);
   await ensureFontsLoaded(design.typography);
-  const image = await imagePromise;
+
+  const collageConfig = { ...DEFAULT_COLLAGE_50, ...(slide.collage50 ?? {}) };
+  const isCollage = slide.template === 'collage-50';
+  let singleImage: HTMLImageElement | null = null;
+  let topImage: HTMLImageElement | null = null;
+  let bottomImage: HTMLImageElement | null = null;
+
+  if (isCollage) {
+    const topSrc = resolvePhotoFromStore(collageConfig.topPhoto);
+    const bottomSrc = resolvePhotoFromStore(collageConfig.bottomPhoto);
+    [topImage, bottomImage] = await Promise.all([
+      topSrc ? loadImage(topSrc) : Promise.resolve(null),
+      bottomSrc ? loadImage(bottomSrc) : Promise.resolve(null),
+    ]);
+  } else {
+    const imageSrc = slide.image ?? resolvePhotoFromStore(slide.photoId);
+    singleImage = imageSrc ? await loadImage(imageSrc) : null;
+  }
 
   ctx.clearRect(0, 0, pixelWidth, pixelHeight);
   ctx.scale(exportScale, exportScale);
@@ -326,8 +344,41 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  if (image) {
-    drawCover(ctx, image);
+  if (isCollage) {
+    const boxes = computeCollageBoxes(collageConfig.dividerPx ?? DEFAULT_COLLAGE_50.dividerPx);
+    const placeholder = 'rgba(0,0,0,0.08)';
+
+    if (boxes.top.height > 0) {
+      if (topImage) {
+        drawImageCover(ctx, topImage, boxes.top);
+      } else {
+        ctx.fillStyle = placeholder;
+        ctx.fillRect(boxes.top.x, boxes.top.y, boxes.top.width, boxes.top.height);
+      }
+    }
+
+    if (boxes.bottom.height > 0) {
+      if (bottomImage) {
+        drawImageCover(ctx, bottomImage, boxes.bottom);
+      } else {
+        ctx.fillStyle = placeholder;
+        ctx.fillRect(boxes.bottom.x, boxes.bottom.y, boxes.bottom.width, boxes.bottom.height);
+      }
+    }
+
+    if (boxes.divider.height > 0) {
+      const baseColor =
+        collageConfig.dividerColor === 'auto'
+          ? design.theme.textColor
+          : collageConfig.dividerColor ?? DEFAULT_COLLAGE_50.dividerColor;
+      ctx.fillStyle = applyOpacityToColor(
+        baseColor,
+        collageConfig.dividerOpacity ?? DEFAULT_COLLAGE_50.dividerOpacity,
+      );
+      ctx.fillRect(0, boxes.divider.y, CANVAS_W, boxes.divider.height);
+    }
+  } else if (singleImage) {
+    drawImageCover(ctx, singleImage, { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H });
   }
 
   drawFooterGradient(ctx, design.theme);
