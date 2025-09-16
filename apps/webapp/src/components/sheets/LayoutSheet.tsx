@@ -75,8 +75,8 @@ export default function LayoutSheet() {
             Font size
             <input
               type="range"
-              min={14}
-              max={26}
+              min={20}
+              max={40}
               step={1}
               value={layout.fontSize}
               onChange={(e) => setLayout({ fontSize: Number(e.target.value) })}
