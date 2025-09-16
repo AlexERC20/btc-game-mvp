@@ -1,21 +1,61 @@
-import { useState } from 'react';
+import { useMemo } from 'react';
 import Sheet from '../Sheet/Sheet';
-import { useCarouselStore } from '@/state/store';
+import {
+  LayoutConfig,
+  useCarouselStore,
+  useLayoutSelector,
+  useLayoutStore,
+} from '@/state/store';
+import { debounce } from '@/utils/debounce';
 import '@/styles/photos-sheet.css';
 
+const VERTICAL_OPTIONS: LayoutConfig['vertical'][] = ['top', 'middle', 'bottom'];
+const HORIZONTAL_OPTIONS: LayoutConfig['horizontal'][] = ['left', 'center', 'right'];
+const OVERFLOW_OPTIONS: LayoutConfig['overflow'][] = ['wrap', 'fade'];
+const NICKNAME_SIZES: LayoutConfig['nickname']['size'][] = ['S', 'M', 'L'];
+const TEXT_SHADOW_OPTIONS: LayoutConfig['textShadow'][] = [0, 1, 2, 3];
+
+function formatPx(value: number) {
+  return `${Math.round(value)}px`;
+}
+
 export default function LayoutSheet() {
-  const layout = useCarouselStore((s) => s.style.layout);
-  const scope = useCarouselStore((s) => s.style.layoutScope);
-  const setScope = useCarouselStore((s) => s.setLayoutScope);
-  const setLayout = useCarouselStore((s) => s.setLayout);
-  const reset = useCarouselStore((s) => s.resetLayout);
-  const apply = useCarouselStore((s) => s.applyLayout);
+  const layout = useLayoutSelector((state) => ({
+    vertical: state.vertical,
+    vOffset: state.vOffset,
+    horizontal: state.horizontal,
+    useSafeArea: state.useSafeArea,
+    blockWidth: state.blockWidth,
+    padding: state.padding,
+    maxLines: state.maxLines,
+    overflow: state.overflow,
+    paragraphGap: state.paragraphGap,
+    cornerRadius: state.cornerRadius,
+    fontSize: state.fontSize,
+    lineHeight: state.lineHeight,
+    nickname: state.nickname,
+    textShadow: state.textShadow,
+    gradientIntensity: state.gradientIntensity,
+  }));
+  const set = useLayoutStore((state) => state.set);
+  const setNickname = useLayoutStore((state) => state.setNickname);
+  const reset = useLayoutStore((state) => state.reset);
   const close = useCarouselStore((s) => s.closeSheet);
   const showNickname = useCarouselStore((s) => s.style.template.showNickname);
-  const [safeArea, setSafeArea] = useState(false);
+
+  const setDebounced = useMemo(() => debounce(set, 16), [set]);
+  const setNicknameDebounced = useMemo(() => debounce(setNickname, 16), [setNickname]);
+
+  const blockWidthLabel = layout.blockWidth <= 0 ? 'Auto' : formatPx(layout.blockWidth);
+  const paddingLabel = formatPx(layout.padding);
+  const paragraphGapLabel = formatPx(layout.paragraphGap);
+  const cornerRadiusLabel = formatPx(layout.cornerRadius);
+  const vOffsetLabel = layout.vOffset === 0 ? '0' : formatPx(layout.vOffset);
+  const nicknameOffsetLabel = formatPx(layout.nickname.offset);
+  const nicknameOpacityValue = Math.round(layout.nickname.opacity * 100);
+  const gradientValue = Math.round(layout.gradientIntensity * 100);
 
   const onDone = () => {
-    apply();
     close();
   };
 
@@ -23,50 +63,90 @@ export default function LayoutSheet() {
     <Sheet title="Layout">
       <div className="layout-sheet">
         <div className="section">
-          <div>Vertical:</div>
-          {['top', 'middle', 'bottom'].map((p) => (
-            <label key={p}>
+          <div>Vertical</div>
+          {VERTICAL_OPTIONS.map((value) => (
+            <label key={value}>
               <input
                 type="radio"
-                name="vPos"
-                value={p}
-                checked={layout.vPos === p}
-                onChange={() => setLayout({ vPos: p as any })}
+                name="layoutVertical"
+                value={value}
+                checked={layout.vertical === value}
+                onChange={() => set('vertical', value)}
               />
-              {p.charAt(0).toUpperCase() + p.slice(1)}
+              {value.charAt(0).toUpperCase() + value.slice(1)}
             </label>
           ))}
           <label>
             Vertical offset
             <input
               type="range"
-              min={-40}
-              max={40}
-              step={1}
+              min={-400}
+              max={400}
+              step={4}
               value={layout.vOffset}
-              onChange={(e) => setLayout({ vOffset: Number(e.target.value) })}
+              onChange={(event) => setDebounced('vOffset', Number(event.target.value))}
             />
+            <small>{vOffsetLabel}</small>
           </label>
-          <div>Horizontal:</div>
-          {['left', 'center', 'right'].map((p) => (
-            <label key={p}>
+          <div>Horizontal</div>
+          {HORIZONTAL_OPTIONS.map((value) => (
+            <label key={value}>
               <input
                 type="radio"
-                name="hAlign"
-                value={p}
-                checked={layout.hAlign === p}
-                onChange={() => setLayout({ hAlign: p as any })}
+                name="layoutHorizontal"
+                value={value}
+                checked={layout.horizontal === value}
+                onChange={() => set('horizontal', value)}
               />
-              {p.charAt(0).toUpperCase() + p.slice(1)}
+              {value.charAt(0).toUpperCase() + value.slice(1)}
             </label>
           ))}
           <label>
             <input
               type="checkbox"
-              checked={safeArea}
-              onChange={(e) => setSafeArea(e.target.checked)}
+              checked={layout.useSafeArea}
+              onChange={(event) => set('useSafeArea', event.target.checked)}
             />
             Safe area guides
+          </label>
+        </div>
+
+        <div className="section">
+          <label>
+            Block width
+            <input
+              type="range"
+              min={0}
+              max={1080}
+              step={10}
+              value={layout.blockWidth}
+              onChange={(event) => setDebounced('blockWidth', Number(event.target.value))}
+            />
+            <small>{blockWidthLabel}</small>
+          </label>
+          <label>
+            Padding
+            <input
+              type="range"
+              min={0}
+              max={240}
+              step={4}
+              value={layout.padding}
+              onChange={(event) => setDebounced('padding', Number(event.target.value))}
+            />
+            <small>{paddingLabel}</small>
+          </label>
+          <label>
+            Corner radius
+            <input
+              type="range"
+              min={0}
+              max={120}
+              step={4}
+              value={layout.cornerRadius}
+              onChange={(event) => setDebounced('cornerRadius', Number(event.target.value))}
+            />
+            <small>{cornerRadiusLabel}</small>
           </label>
         </div>
 
@@ -75,102 +155,79 @@ export default function LayoutSheet() {
             Font size
             <input
               type="range"
-              min={20}
-              max={40}
+              min={16}
+              max={72}
               step={1}
               value={layout.fontSize}
-              onChange={(e) => setLayout({ fontSize: Number(e.target.value) })}
+              onChange={(event) => setDebounced('fontSize', Number(event.target.value))}
             />
+            <small>{formatPx(layout.fontSize)}</small>
           </label>
           <label>
             Line height
             <input
               type="range"
               min={1}
-              max={1.6}
+              max={1.8}
               step={0.05}
               value={layout.lineHeight}
-              onChange={(e) => setLayout({ lineHeight: Number(e.target.value) })}
+              onChange={(event) => setDebounced('lineHeight', Number(event.target.value))}
             />
-          </label>
-          <label>
-            Block width
-            <input
-              type="range"
-              min={60}
-              max={100}
-              step={1}
-              value={layout.blockWidth}
-              onChange={(e) => setLayout({ blockWidth: Number(e.target.value) })}
-            />
-          </label>
-          <label>
-            Padding
-            <input
-              type="range"
-              min={0}
-              max={16}
-              step={1}
-              value={layout.padding}
-              onChange={(e) => setLayout({ padding: Number(e.target.value) })}
-            />
-          </label>
-        </div>
-
-        <div className="section">
-          <label>
-            Max lines
-            <input
-              type="number"
-              min={1}
-              max={8}
-              value={layout.maxLines}
-              onChange={(e) => setLayout({ maxLines: Number(e.target.value) })}
-            />
+            <small>{layout.lineHeight.toFixed(2)}</small>
           </label>
           <label>
             Paragraph gap
             <input
               type="range"
               min={0}
-              max={16}
-              step={1}
-              value={layout.paraGap}
-              onChange={(e) => setLayout({ paraGap: Number(e.target.value) })}
+              max={96}
+              step={4}
+              value={layout.paragraphGap}
+              onChange={(event) => setDebounced('paragraphGap', Number(event.target.value))}
             />
+            <small>{paragraphGapLabel}</small>
           </label>
-          <div>
-            Overflow:
-            {['wrap', 'fade'].map((o) => (
-              <label key={o}>
-                <input
-                  type="radio"
-                  name="overflow"
-                  value={o}
-                  checked={layout.overflow === o}
-                  onChange={() => setLayout({ overflow: o as any })}
-                />
-                {o === 'wrap' ? 'Wrap' : 'Fade'}
-              </label>
-            ))}
-          </div>
+          <label>
+            Max lines
+            <input
+              type="number"
+              min={0}
+              max={20}
+              value={layout.maxLines}
+              onChange={(event) => set('maxLines', Number(event.target.value))}
+            />
+            <small>{layout.maxLines <= 0 ? 'Unlimited' : `${layout.maxLines} lines`}</small>
+          </label>
+          <div>Overflow</div>
+          {OVERFLOW_OPTIONS.map((value) => (
+            <label key={value}>
+              <input
+                type="radio"
+                name="layoutOverflow"
+                value={value}
+                checked={layout.overflow === value}
+                onChange={() => set('overflow', value)}
+              />
+              {value === 'wrap' ? 'Wrap' : 'Fade'}
+            </label>
+          ))}
         </div>
 
         <div className="section" aria-disabled={!showNickname}>
           <div>Nickname</div>
           <div>
-            Position:
-            {['left', 'center', 'right'].map((p) => (
-              <label key={p}>
+            Position
+            {HORIZONTAL_OPTIONS.map((value) => (
+              <label key={value}>
                 <input
                   type="radio"
-                  name="nickPos"
-                  value={p}
-                  checked={layout.nickPos === p}
-                  onChange={() => setLayout({ nickPos: p as any })}
+                  name="nicknamePosition"
+                  value={value}
+                  checked={layout.nickname.position === value}
+                  onChange={() => setNickname('position', value)}
                   disabled={!showNickname}
                 />
-                {p.charAt(0).toUpperCase() + p.slice(1)}
+                {value.charAt(0).toUpperCase() + value.slice(1)}
               </label>
             ))}
           </div>
@@ -179,26 +236,29 @@ export default function LayoutSheet() {
             <input
               type="range"
               min={0}
-              max={16}
-              step={1}
-              value={layout.nickOffset}
-              onChange={(e) => setLayout({ nickOffset: Number(e.target.value) })}
+              max={240}
+              step={4}
+              value={layout.nickname.offset}
+              onChange={(event) =>
+                setNicknameDebounced('offset', Number(event.target.value))
+              }
               disabled={!showNickname}
             />
+            <small>{nicknameOffsetLabel}</small>
           </label>
           <div>
-            Size:
-            {['s', 'm', 'l'].map((s) => (
-              <label key={s}>
+            Size
+            {NICKNAME_SIZES.map((size) => (
+              <label key={size}>
                 <input
                   type="radio"
-                  name="nickSize"
-                  value={s}
-                  checked={layout.nickSize === s}
-                  onChange={() => setLayout({ nickSize: s as any })}
+                  name="nicknameSize"
+                  value={size}
+                  checked={layout.nickname.size === size}
+                  onChange={() => setNickname('size', size)}
                   disabled={!showNickname}
                 />
-                {s.toUpperCase()}
+                {size}
               </label>
             ))}
           </div>
@@ -206,44 +266,33 @@ export default function LayoutSheet() {
             Opacity
             <input
               type="range"
-              min={30}
+              min={0}
               max={100}
               step={1}
-              value={layout.nickOpacity}
-              onChange={(e) => setLayout({ nickOpacity: Number(e.target.value) })}
+              value={nicknameOpacityValue}
+              onChange={(event) =>
+                setNicknameDebounced('opacity', Number(event.target.value) / 100)
+              }
               disabled={!showNickname}
             />
-          </label>
-          <label>
-            Corner radius
-            <input
-              type="range"
-              min={8}
-              max={999}
-              step={1}
-              value={layout.nickRadius}
-              onChange={(e) => setLayout({ nickRadius: Number(e.target.value) })}
-              disabled={!showNickname}
-            />
+            <small>{`${nicknameOpacityValue}%`}</small>
           </label>
         </div>
 
         <div className="section">
-          <div>
-            Text shadow:
-            {[0, 1, 2, 3].map((n) => (
-              <label key={n}>
-                <input
-                  type="radio"
-                  name="layoutTextShadow"
-                  value={n}
-                  checked={layout.textShadow === n}
-                  onChange={() => setLayout({ textShadow: n as any })}
-                />
-                {n}
-              </label>
-            ))}
-          </div>
+          <div>Text shadow</div>
+          {TEXT_SHADOW_OPTIONS.map((value) => (
+            <label key={value}>
+              <input
+                type="radio"
+                name="layoutTextShadow"
+                value={value}
+                checked={layout.textShadow === value}
+                onChange={() => set('textShadow', value)}
+              />
+              {value}
+            </label>
+          ))}
           <label>
             Gradient intensity
             <input
@@ -251,33 +300,23 @@ export default function LayoutSheet() {
               min={0}
               max={100}
               step={1}
-              value={layout.gradient}
-              onChange={(e) => setLayout({ gradient: Number(e.target.value) })}
+              value={gradientValue}
+              onChange={(event) =>
+                setDebounced('gradientIntensity', Number(event.target.value) / 100)
+              }
             />
+            <small>{`${gradientValue}%`}</small>
           </label>
-        </div>
-
-        <div className="section">
-          Apply to:
-          {['all', 'current'].map((sc) => (
-            <label key={sc}>
-              <input
-                type="radio"
-                name="applyScopeLayout"
-                value={sc}
-                checked={scope === sc}
-                onChange={() => setScope(sc as any)}
-              />
-              {sc === 'all' ? 'All slides' : 'Current slide'}
-            </label>
-          ))}
         </div>
       </div>
       <div className="sheet__footer">
-        <button className="btn" onClick={reset}>Reset layout</button>
-        <button className="btn-soft" onClick={onDone}>Done</button>
+        <button className="btn" onClick={reset} type="button">
+          Reset layout
+        </button>
+        <button className="btn-soft" onClick={onDone} type="button">
+          Done
+        </button>
       </div>
     </Sheet>
   );
 }
-

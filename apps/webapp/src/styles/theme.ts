@@ -1,5 +1,5 @@
 import type {
-  LayoutStyle,
+  LayoutConfig,
   Slide,
   TemplateConfig,
   TypographySettings,
@@ -10,7 +10,6 @@ import { createTypography, Typography } from './typography';
 export type Theme = {
   textColor: string;
   titleColor?: string | null;
-  padding: { x: number; y: number };
   radius: number;
   gradient: 'original' | 'darkFooter' | 'lightFooter';
   gradientStops: { from: string; to: string; heightPct: number };
@@ -19,13 +18,10 @@ export type Theme = {
 
 export type SlideDesign = {
   template: TemplateConfig;
-  layout: LayoutStyle;
+  layout: LayoutConfig;
   typography: Typography;
   theme: Theme;
 };
-
-const DEFAULT_RADIUS = 16;
-const OVERLAY_GUTTER = 12;
 
 const TEXT_SHADOW_MAP: Record<number, Theme['shadow'] | undefined> = {
   0: undefined,
@@ -44,10 +40,18 @@ function clampHeight(value: number) {
   return Math.max(0, Math.min(value, 100)) / 100;
 }
 
+function applyIntensity(color: string, intensity: number) {
+  const match = color.match(/rgba\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\)/i);
+  if (!match) return color;
+  const [, r, g, b, a] = match;
+  const nextAlpha = Math.max(0, Math.min(Number(a) * intensity, 1));
+  return `rgba(${r},${g},${b},${nextAlpha.toFixed(3)})`;
+}
+
 export function createTheme(
   slide: Slide,
   template: TemplateConfig,
-  layout: LayoutStyle,
+  layout: LayoutConfig,
   typographySettings: TypographySettings,
 ): Theme {
   const mode = typographySettings.textColorMode ?? template.textColorMode;
@@ -63,22 +67,19 @@ export function createTheme(
       : 'original';
   const gradientStops = GRADIENT_COLORS[gradient];
   const heightPct = gradient === 'original' ? 0 : clampHeight(template.bottomGradient);
+  const intensity = gradient === 'original' ? 0 : Math.max(0, Math.min(layout.gradientIntensity, 1));
 
   return {
     textColor: baseColor,
     titleColor: headingAccent ? getHeadingColor(bgTone, mode, headingAccent) : null,
-    padding: {
-      x: OVERLAY_GUTTER + layout.padding,
-      y: OVERLAY_GUTTER + layout.padding,
-    },
-    radius: DEFAULT_RADIUS,
+    radius: Math.max(0, layout.cornerRadius),
     gradient,
     gradientStops: {
-      from: gradientStops.from,
-      to: gradientStops.to,
+      from: applyIntensity(gradientStops.from, intensity),
+      to: applyIntensity(gradientStops.to, intensity),
       heightPct,
     },
-    shadow: TEXT_SHADOW_MAP[template.textShadow] ?? undefined,
+    shadow: TEXT_SHADOW_MAP[layout.textShadow] ?? undefined,
   };
 }
 
@@ -86,14 +87,14 @@ function mergeTemplate(base: TemplateConfig, override?: TemplateConfig): Templat
   return override ? { ...base, ...override } : { ...base };
 }
 
-function mergeLayout(base: LayoutStyle, override?: LayoutStyle): LayoutStyle {
+function mergeLayout(base: LayoutConfig, override?: Partial<LayoutConfig>): LayoutConfig {
   return override ? { ...base, ...override } : { ...base };
 }
 
 export function resolveSlideDesign(params: {
   slide: Slide;
   baseTemplate: TemplateConfig;
-  baseLayout: LayoutStyle;
+  baseLayout: LayoutConfig;
   typographySettings: TypographySettings;
 }): SlideDesign {
   const template = mergeTemplate(params.baseTemplate, params.slide.overrides?.template);

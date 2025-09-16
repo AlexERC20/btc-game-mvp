@@ -1,11 +1,27 @@
-import { Slide, useCarouselStore } from '@/state/store';
+import { Slide, useCarouselStore, useLayoutSelector } from '@/state/store';
 import { resolveSlideDesign } from '@/styles/theme';
 import { SlideCard } from './SlideCard';
 
 export function PreviewCarousel({ slides }: { slides: Slide[] }) {
   const baseTemplate = useCarouselStore((s) => s.style.template);
-  const baseLayout = useCarouselStore((s) => s.style.layout);
   const typographySettings = useCarouselStore((s) => s.typography);
+  const layout = useLayoutSelector((state) => ({
+    vertical: state.vertical,
+    vOffset: state.vOffset,
+    horizontal: state.horizontal,
+    useSafeArea: state.useSafeArea,
+    blockWidth: state.blockWidth,
+    padding: state.padding,
+    maxLines: state.maxLines,
+    overflow: state.overflow,
+    paragraphGap: state.paragraphGap,
+    cornerRadius: state.cornerRadius,
+    fontSize: state.fontSize,
+    lineHeight: state.lineHeight,
+    nickname: state.nickname,
+    textShadow: state.textShadow,
+    gradientIntensity: state.gradientIntensity,
+  }));
 
   return (
     <div className="carousel">
@@ -16,9 +32,10 @@ export function PreviewCarousel({ slides }: { slides: Slide[] }) {
             design={resolveSlideDesign({
               slide: s,
               baseTemplate,
-              baseLayout,
+              baseLayout: layout,
               typographySettings,
             })}
+            safeAreaEnabled={layout.useSafeArea}
           />
         </div>
       ))}

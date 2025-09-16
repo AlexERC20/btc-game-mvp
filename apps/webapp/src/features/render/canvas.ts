@@ -1,21 +1,14 @@
 import { BASE_FRAME } from './constants';
-import type { LayoutStyle, TemplateConfig } from '@/state/store';
-import { Slide, useCarouselStore } from '@/state/store';
+import type { LayoutConfig, TemplateConfig } from '@/state/store';
+import { Slide, layoutSnapshot, useCarouselStore } from '@/state/store';
 import { resolveSlideDesign, Theme } from '@/styles/theme';
 import { Typography, typographyToCanvasFont } from '@/styles/typography';
 import { splitEditorialText } from '@/utils/text';
-import { applyEllipsis, layoutParagraph } from '@/utils/textLayout';
+import { composeTextLines } from '@/utils/textLayout';
+import { resolveBlockPosition, resolveBlockWidth } from '@/utils/layoutGeometry';
 
 export const CANVAS_W = BASE_FRAME.width;
 export const CANVAS_H = BASE_FRAME.height;
-
-type TextLine = {
-  text: string;
-  style: Typography['title'] | Typography['body'];
-  color: string;
-  letterSpacing: number;
-  gapBefore: number;
-};
 
 function roundedRectPath(
   ctx: CanvasRenderingContext2D,
@@ -100,69 +93,6 @@ function drawLine(
   }
 }
 
-function lineHeightPx(style: Typography['title'] | Typography['body']) {
-  return style.fontSize * style.lineHeight;
-}
-
-function totalHeight(lines: TextLine[]): number {
-  return lines.reduce((sum, line) => sum + line.gapBefore + lineHeightPx(line.style), 0);
-}
-
-function trimLinesToHeight(
-  ctx: CanvasRenderingContext2D,
-  lines: TextLine[],
-  availableHeight: number,
-  maxWidth: number,
-) {
-  let trimmed = false;
-  let height = totalHeight(lines);
-  while (lines.length && height > availableHeight) {
-    lines.pop();
-    trimmed = true;
-    height = totalHeight(lines);
-  }
-
-  if (!lines.length) return;
-
-  if (trimmed) {
-    const last = lines[lines.length - 1];
-    ctx.font = typographyToCanvasFont(last.style);
-    last.text = applyEllipsis(ctx, last.text, maxWidth, last.letterSpacing);
-  }
-}
-
-type LineMetrics = {
-  ascent: number;
-  descent: number;
-  lineHeight: number;
-  baselineOffset: number;
-};
-
-const METRIC_SAMPLE = 'Mg';
-
-const metricsCache = new WeakMap<Typography['title'] | Typography['body'], LineMetrics>();
-
-function getLineMetrics(ctx: CanvasRenderingContext2D, style: Typography['title'] | Typography['body']) {
-  const cached = metricsCache.get(style);
-  if (cached) return cached;
-
-  const previousFont = ctx.font;
-  ctx.font = typographyToCanvasFont(style);
-  const measurement = ctx.measureText(METRIC_SAMPLE);
-  ctx.font = previousFont;
-
-  const ascent = measurement.actualBoundingBoxAscent ?? style.fontSize * 0.8;
-  const descent = measurement.actualBoundingBoxDescent ?? style.fontSize * 0.2;
-  const naturalHeight = ascent + descent;
-  const lineHeight = lineHeightPx(style);
-  const leading = Math.max(0, lineHeight - naturalHeight);
-  const baselineOffset = leading / 2 + ascent;
-
-  const metrics: LineMetrics = { ascent, descent, lineHeight, baselineOffset };
-  metricsCache.set(style, metrics);
-  return metrics;
-}
-
 async function ensureFontsLoaded(typography: Typography) {
   if (typeof document === 'undefined' || !document.fonts) return;
   const toLoad = new Set<string>([
@@ -190,72 +120,43 @@ function drawOverlay(
   slide: Slide,
   typography: Typography,
   theme: Theme,
-  layout: LayoutStyle,
+  layout: LayoutConfig,
   template: TemplateConfig,
 ) {
   const { title, body } = splitEditorialText(slide.body ?? '');
 
-  const overlayInset = Math.max(theme.padding.x - layout.padding, 0);
-  const overlayWidth = CANVAS_W - overlayInset * 2;
-  const blockWidth = Math.max(0, Math.min(layout.blockWidth, 100));
-  const blockPx = (overlayWidth * blockWidth) / 100;
-  const maxWidth = Math.max(blockPx - layout.padding * 2, 0);
+  const containerWidth = CANVAS_W;
+  const containerHeight = CANVAS_H;
+  const { blockWidth, textWidth } = resolveBlockWidth(containerWidth, layout);
 
-  const contentTop = theme.padding.y;
-  const contentBottom = CANVAS_H - theme.padding.y;
-  const availableHeight = Math.max(contentBottom - contentTop, 0);
-  const canLayout = maxWidth > 0 && availableHeight > 0;
-  const lines: TextLine[] = [];
+  const composition = composeTextLines({
+    ctx,
+    maxWidth: textWidth,
+    title,
+    body,
+    typography,
+    colors: {
+      title: theme.titleColor ?? theme.textColor,
+      body: theme.textColor,
+    },
+    paragraphGap: layout.paragraphGap,
+    overflow: layout.overflow,
+    maxLines: layout.maxLines,
+  });
 
-  if (canLayout && title) {
-    ctx.font = typographyToCanvasFont(typography.title);
-    const titleLines = layoutParagraph(
-      ctx,
-      title,
-      maxWidth,
-      typography.title.lineHeight,
-      typography.title.letterSpacing,
-    );
-    for (const line of titleLines) {
-      lines.push({
-        text: line,
-        style: typography.title,
-        color: theme.titleColor ?? theme.textColor,
-        letterSpacing: typography.title.letterSpacing,
-        gapBefore: 0,
-      });
-    }
-  }
+  const blockHeight = composition.contentHeight + layout.padding * 2;
+  const blockPosition = resolveBlockPosition(
+    containerWidth,
+    containerHeight,
+    layout,
+    blockWidth,
+    blockHeight,
+  );
 
-  if (canLayout && body) {
-    ctx.font = typographyToCanvasFont(typography.body);
-    const bodyLines = layoutParagraph(
-      ctx,
-      body,
-      maxWidth,
-      typography.body.lineHeight,
-      typography.body.letterSpacing,
-    );
-    bodyLines.forEach((line, index) => {
-      lines.push({
-        text: line,
-        style: typography.body,
-        color: theme.textColor,
-        letterSpacing: typography.body.letterSpacing,
-        gapBefore: index === 0 && lines.length ? layout.paraGap : 0,
-      });
-    });
-  }
+  const textX = blockPosition.x + layout.padding;
+  const textY = blockPosition.y + layout.padding;
 
-  let usedHeight = 0;
-  if (canLayout && lines.length) {
-    trimLinesToHeight(ctx, lines, availableHeight, maxWidth);
-    usedHeight = totalHeight(lines);
-
-    let cursorY = contentBottom - usedHeight;
-    if (cursorY < contentTop) cursorY = contentTop;
-    const textX = theme.padding.x;
-
+  if (composition.lines.length) {
     ctx.save();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
@@ -271,17 +172,33 @@ function drawOverlay(
       ctx.shadowOffsetY = 0;
     }
 
-    for (const line of lines) {
+    let cursorY = textY;
+    for (const line of composition.lines) {
       cursorY += line.gapBefore;
-      const metrics = getLineMetrics(ctx, line.style);
-      const baselineY = cursorY + metrics.baselineOffset;
+      const baselineY = cursorY + line.metrics.baselineOffset;
       ctx.font = typographyToCanvasFont(line.style);
       ctx.fillStyle = line.color;
       drawLine(ctx, line.text, textX, baselineY, line.letterSpacing);
-      cursorY += metrics.lineHeight;
+      cursorY += line.metrics.lineHeight;
     }
 
     ctx.restore();
+
+    if (composition.fadeMaskStart !== undefined) {
+      const textHeight = composition.contentHeight;
+      const fadeStart = textY + textHeight * composition.fadeMaskStart;
+      const fadeHeight = textHeight * (1 - composition.fadeMaskStart);
+      if (fadeHeight > 0 && textWidth > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        const gradient = ctx.createLinearGradient(0, fadeStart, 0, fadeStart + fadeHeight);
+        gradient.addColorStop(0, 'rgba(0,0,0,0)');
+        gradient.addColorStop(1, 'rgba(0,0,0,1)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(textX, fadeStart, textWidth, fadeHeight);
+        ctx.restore();
+      }
+    }
   }
 
   if (slide.nickname && template.showNickname) {
@@ -291,15 +208,20 @@ function drawOverlay(
       typography,
       theme,
       layout,
-      contentBottom,
+      {
+        x: blockPosition.x,
+        y: blockPosition.y,
+        width: blockWidth,
+        height: blockHeight,
+      },
     );
   }
 }
 
-const NICK_FONT_SIZE: Record<LayoutStyle['nickSize'], number> = {
-  s: 12,
-  m: 14,
-  l: 16,
+const NICK_FONT_SIZE: Record<LayoutConfig['nickname']['size'], number> = {
+  S: 18,
+  M: 22,
+  L: 28,
 };
 
 function drawNickname(
@@ -307,14 +229,14 @@ function drawNickname(
   nickname: string,
   typography: Typography,
   theme: Theme,
-  layout: LayoutStyle,
-  textBottom: number,
+  layout: LayoutConfig,
+  block: { x: number; y: number; width: number; height: number },
 ) {
   if (!nickname) return;
 
-  const fontSize = NICK_FONT_SIZE[layout.nickSize] ?? 12;
-  const paddingX = fontSize <= 12 ? 12 : 14;
-  const paddingY = 6;
+  const fontSize = NICK_FONT_SIZE[layout.nickname.size] ?? 18;
+  const paddingX = Math.round(fontSize * 0.75);
+  const paddingY = Math.round(fontSize * 0.35);
   const font = `600 ${fontSize}px ${typography.body.fontFamily}`;
 
   ctx.save();
@@ -326,29 +248,25 @@ function drawNickname(
   const width = textWidth + paddingX * 2;
   const height = fontSize + paddingY * 2;
 
-  const overlayInset = Math.max(theme.padding.x - layout.padding, 0);
-  const overlayWidth = CANVAS_W - overlayInset * 2;
-
   let x: number;
-  switch (layout.nickPos) {
+  switch (layout.nickname.position) {
     case 'center':
-      x = overlayInset + (overlayWidth - width) / 2;
+      x = block.x + (block.width - width) / 2;
       break;
     case 'right':
-      x = CANVAS_W - overlayInset - width;
+      x = block.x + block.width - width;
       break;
     default:
-      x = theme.padding.x;
+      x = block.x;
       break;
   }
-  x = Math.max(overlayInset, Math.min(x, CANVAS_W - overlayInset - width));
+  x = Math.max(0, Math.min(x, CANVAS_W - width));
 
-  const overlayBottom = Math.max(theme.padding.y - layout.padding, 0);
-  const baseY = textBottom + layout.nickOffset;
-  const maxY = CANVAS_H - overlayBottom - height;
-  const y = Math.min(baseY, maxY);
+  const baseY = block.y + block.height + layout.nickname.offset;
+  const maxY = CANVAS_H - height;
+  const y = Math.max(0, Math.min(baseY, maxY));
 
-  const opacity = Math.max(0, Math.min(layout.nickOpacity ?? 100, 100)) / 100;
+  const opacity = Math.max(0, Math.min(layout.nickname.opacity, 1));
   const normalizedColor = theme.textColor.trim().toLowerCase();
   const isDarkText =
     normalizedColor === '#000000' ||
@@ -362,7 +280,7 @@ function drawNickname(
   const stroke = isDarkText
     ? `rgba(0,0,0,${strokeAlpha.toFixed(3)})`
     : `rgba(255,255,255,${strokeAlpha.toFixed(3)})`;
-  const radius = Math.min(layout.nickRadius ?? height / 2, height / 2);
+  const radius = height / 2;
 
   ctx.shadowColor = 'transparent';
   ctx.lineWidth = 1;
@@ -384,7 +302,7 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
   const design = resolveSlideDesign({
     slide,
     baseTemplate: state.style.template,
-    baseLayout: state.style.layout,
+    baseLayout: layoutSnapshot(),
     typographySettings: state.typography,
   });
 
