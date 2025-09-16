@@ -98,8 +98,8 @@
 .overlay.editorial .title{
   font-family: var(--font-inter, var(--font-system));
   font-weight: 700;
-  font-size: 24px;
-  line-height: 1.2;
+  font-size: 48px;
+  line-height: 1.15;
   letter-spacing: 0;
   color:#fff;
   text-shadow: 0 1px 2px rgba(0,0,0,.48);
@@ -109,8 +109,8 @@
   margin-top: 6px;
   font-family: var(--font-inter, var(--font-system));
   font-weight: 400;
-  font-size: 16px;
-  line-height: 1.35;
+  font-size: 28px;
+  line-height: 1.25;
   color:#fff;
   text-shadow: 0 1px 2px rgba(0,0,0,.48);
 }

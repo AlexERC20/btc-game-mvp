@@ -298,8 +298,8 @@ const defaultLayout: LayoutStyle = {
   vPos: 'bottom',
   vOffset: 0,
   hAlign: 'left',
-  fontSize: 18,
-  lineHeight: 1.3,
+  fontSize: 28,
+  lineHeight: 1.25,
   blockWidth: 88,
   padding: 10,
 

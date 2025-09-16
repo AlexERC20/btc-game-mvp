@@ -27,20 +27,38 @@ const FONT_STACK: Record<TemplateConfig['font'], string> = {
   dmsans: `"DM Sans", ${FALLBACK_STACK}`,
 };
 
+const BODY_FONT_SIZE_BASE = 28;
+const BODY_LINE_HEIGHT_BASE = 1.25;
+const TITLE_FONT_SIZE_BASE = 48;
+const TITLE_LINE_HEIGHT_BASE = 1.15;
+
+const TITLE_FONT_SCALE = TITLE_FONT_SIZE_BASE / BODY_FONT_SIZE_BASE;
+const TITLE_LINE_SCALE = TITLE_LINE_HEIGHT_BASE / BODY_LINE_HEIGHT_BASE;
+
 function getFontFamily(font: TemplateConfig['font']): string {
   const stack = FONT_STACK[font];
   return stack ?? FALLBACK_STACK;
 }
 
+function normalizeFontSize(value: number): number {
+  return value > 0 ? value : BODY_FONT_SIZE_BASE;
+}
+
+function normalizeLineHeight(value: number): number {
+  return value > 0 ? value : BODY_LINE_HEIGHT_BASE;
+}
+
 function computeTitleSize(layout: LayoutStyle): { fontSize: number; lineHeight: number } {
-  const fontSize = Math.round(layout.fontSize * 1.35);
-  const lineHeight = (layout.lineHeight * 1.2) / 1.3;
+  const bodyFontSize = normalizeFontSize(layout.fontSize);
+  const bodyLineHeight = normalizeLineHeight(layout.lineHeight);
+  const fontSize = Number((bodyFontSize * TITLE_FONT_SCALE).toFixed(3));
+  const lineHeight = Number((bodyLineHeight * TITLE_LINE_SCALE).toFixed(3));
   return { fontSize, lineHeight };
 }
 
 function computeBodySize(layout: LayoutStyle): { fontSize: number; lineHeight: number } {
-  const fontSize = Math.round(layout.fontSize * 0.9);
-  const lineHeight = (layout.lineHeight * 1.35) / 1.3;
+  const fontSize = Number(normalizeFontSize(layout.fontSize).toFixed(3));
+  const lineHeight = Number(normalizeLineHeight(layout.lineHeight).toFixed(3));
   return { fontSize, lineHeight };
 }
 
@@ -54,14 +72,14 @@ export function createTypography(template: TemplateConfig, layout: LayoutStyle):
       fontFamily: family,
       fontWeight: 700,
       fontSize: titleSize.fontSize,
-      lineHeight: Number(titleSize.lineHeight.toFixed(3)),
+      lineHeight: titleSize.lineHeight,
       letterSpacing: 0,
     },
     body: {
       fontFamily: family,
       fontWeight: 400,
       fontSize: bodySize.fontSize,
-      lineHeight: Number(bodySize.lineHeight.toFixed(3)),
+      lineHeight: bodySize.lineHeight,
       letterSpacing: 0,
     },
   };
