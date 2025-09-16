@@ -22,6 +22,14 @@ const MAX_SIZE = 30 * 1024 * 1024;
 
 export const usePhotos = create<PhotosState>(() => ({ items: [], selectedId: undefined }));
 
+export type Collage50 = {
+  topPhoto?: string;
+  bottomPhoto?: string;
+  dividerPx: number;
+  dividerColor: string;
+  dividerOpacity: number;
+};
+
 type MoveDirection = 'left' | 'right';
 
 export const photosActions = {
@@ -220,6 +228,8 @@ export type Slide = {
   body?: string;
   image?: string; // objectURL или http url
   photoId?: PhotoId;
+  template: 'single' | 'collage-50';
+  collage50?: Collage50;
   nickname?: string;
   overrides?: {
     template?: TemplateConfig;
@@ -231,6 +241,18 @@ export type Slide = {
     bgTone: 'dark' | 'light';
   };
 };
+
+export const DEFAULT_COLLAGE_50: Collage50 = {
+  topPhoto: undefined,
+  bottomPhoto: undefined,
+  dividerPx: 2,
+  dividerColor: '#FFFFFF',
+  dividerOpacity: 0.32,
+};
+
+export function createDefaultCollage50(): Collage50 {
+  return { ...DEFAULT_COLLAGE_50 };
+}
 
 export type UISheet = null | 'template' | 'layout' | 'photos' | 'text';
 
@@ -486,7 +508,10 @@ Instagram недавно увеличил лимит до 20 фото. Тепе�
     kind: 'demo',
     isDemo: true,
   },
-];
+].map((slide) => ({
+  template: 'single',
+  ...slide,
+}));
 
 export const useCarouselStore = create<State>((set, get) => ({
   slides: initial,
@@ -504,7 +529,16 @@ export const useCarouselStore = create<State>((set, get) => ({
   closeSheet: () => set({ activeSheet: null }),
 
   addSlide: (s = {}) =>
-    set((st) => ({ slides: [...st.slides, { id: crypto.randomUUID(), ...s }] })),
+    set((st) => ({
+      slides: [
+        ...st.slides,
+        {
+          id: crypto.randomUUID(),
+          template: 'single',
+          ...s,
+        },
+      ],
+    })),
 
   removeSlide: (id) =>
     set((st) => ({
@@ -728,6 +762,7 @@ export const slidesActions = {
         id: uid(),
         image: p.src,
         photoId: p.id,
+        template: 'single',
         body: '',
         nickname: state.text?.nickname ?? '',
         kind: 'photo',

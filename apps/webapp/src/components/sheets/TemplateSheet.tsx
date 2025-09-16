@@ -1,6 +1,13 @@
+import { useMemo } from 'react';
 import Sheet from '../Sheet/Sheet';
-import { useCarouselStore } from '@/state/store';
-import type { TemplateStyle } from '@/state/store';
+import {
+  useCarouselStore,
+  createDefaultCollage50,
+  DEFAULT_COLLAGE_50,
+  usePhotos,
+} from '@/state/store';
+import type { Collage50, TemplateStyle, Slide } from '@/state/store';
+import { resolvePhotoFromStore } from '@/utils/photos';
 import '@/styles/photos-sheet.css';
 
 const SOFT_CLASSES = 'soft-pill';
@@ -20,6 +27,12 @@ const QUICK_STYLE_GROUPS: [TemplateStyle, string][][] = [
   ],
 ];
 
+const DIVIDER_COLOR_PRESETS: { value: string; label: string }[] = [
+  { value: 'auto', label: 'Auto' },
+  { value: '#FFFFFF', label: 'White' },
+  { value: '#000000', label: 'Black' },
+];
+
 export default function TemplateSheet() {
   const template = useCarouselStore((s) => s.style.template);
   const templateStyle = useCarouselStore((s) => s.templateStyle);
@@ -34,6 +47,57 @@ export default function TemplateSheet() {
   const reset = useCarouselStore((s) => s.resetTemplate);
   const apply = useCarouselStore((s) => s.applyTemplate);
   const close = useCarouselStore((s) => s.closeSheet);
+  const activeSlide = useCarouselStore((s) => s.slides[s.activeIndex]);
+  const updateSlide = useCarouselStore((s) => s.updateSlide);
+
+  const collageConfig = useMemo(
+    () => ({ ...DEFAULT_COLLAGE_50, ...(activeSlide?.collage50 ?? {}) }),
+    [activeSlide?.collage50],
+  );
+  const isCollageTemplate = activeSlide?.template === 'collage-50';
+
+  const updateCollage = (patch: Partial<Collage50>) => {
+    if (!activeSlide) return;
+    const next = { ...collageConfig, ...patch };
+    updateSlide(activeSlide.id, { collage50: next });
+  };
+
+  const selectSingle = () => {
+    if (!activeSlide) return;
+    if (activeSlide.template === 'single') return;
+    const snapshot = { ...DEFAULT_COLLAGE_50, ...(activeSlide.collage50 ?? {}) };
+    const topRef = snapshot.topPhoto;
+    const fallbackImage = topRef ? resolvePhotoFromStore(topRef) : undefined;
+    const photosState = usePhotos.getState();
+    const isLibraryPhoto = topRef ? photosState.items.some((p) => p.id === topRef) : false;
+    const patch: Partial<Slide> = {
+      template: 'single',
+      image: fallbackImage ?? activeSlide.image,
+    };
+    if (isLibraryPhoto && topRef) {
+      patch.photoId = topRef;
+    }
+    updateSlide(activeSlide.id, patch);
+  };
+
+  const selectCollage = () => {
+    if (!activeSlide) return;
+    const base = createDefaultCollage50();
+    const next = { ...base, ...(activeSlide.collage50 ?? {}) };
+    if (!next.topPhoto) {
+      if (activeSlide.photoId) next.topPhoto = activeSlide.photoId;
+      else if (activeSlide.image) next.topPhoto = activeSlide.image;
+    }
+    updateSlide(activeSlide.id, { template: 'collage-50', collage50: next, image: undefined });
+  };
+
+  const isDividerPresetActive = (value: string) => {
+    const current = (collageConfig.dividerColor ?? '').toLowerCase();
+    if (value === 'auto') return current === 'auto';
+    if (value === '#FFFFFF') return current === '#ffffff' || current === '#fff';
+    if (value === '#000000') return current === '#000000' || current === '#000';
+    return current === value.toLowerCase();
+  };
 
   const onDone = () => {
     apply();
@@ -43,6 +107,69 @@ export default function TemplateSheet() {
   return (
     <Sheet title="Template">
       <div className="template-sheet">
+        <div className="section">
+          <div className="title">Slide layout</div>
+          <div className="template-sheet__quick-row">
+            <button
+              type="button"
+              className={`${SOFT_CLASSES}${!isCollageTemplate ? ' is-active' : ''}`}
+              onClick={selectSingle}
+            >
+              Single photo
+            </button>
+            <button
+              type="button"
+              className={`${SOFT_CLASSES}${isCollageTemplate ? ' is-active' : ''}`}
+              onClick={selectCollage}
+            >
+              Collage 50/50
+            </button>
+          </div>
+          {isCollageTemplate && (
+            <div className="collage-controls">
+              <div className="slider-row">
+                <label>
+                  Толщина линии
+                  <input
+                    type="range"
+                    min={1}
+                    max={6}
+                    step={1}
+                    value={collageConfig.dividerPx}
+                    onChange={(e) => updateCollage({ dividerPx: Number(e.target.value) })}
+                  />
+                </label>
+                <div className="value">{collageConfig.dividerPx}px</div>
+              </div>
+              <div className="slider-row">
+                <label>
+                  Прозрачность
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={collageConfig.dividerOpacity}
+                    onChange={(e) => updateCollage({ dividerOpacity: Number(e.target.value) })}
+                  />
+                </label>
+                <div className="value">{collageConfig.dividerOpacity.toFixed(2)}</div>
+              </div>
+              <div className="segmented">
+                {DIVIDER_COLOR_PRESETS.map((preset) => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    className={`${SOFT_CLASSES}${isDividerPresetActive(preset.value) ? ' is-active' : ''}`}
+                    onClick={() => updateCollage({ dividerColor: preset.value })}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         <div className="template-sheet__quick">
           {QUICK_STYLE_GROUPS.map((group, idx) => (
             <div key={idx} className="template-sheet__quick-row">
