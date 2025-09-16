@@ -1,24 +1,28 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { BASE_FRAME } from '@/features/render/constants';
 import { Slide } from '@/state/store';
 import type { SlideDesign } from '@/styles/theme';
 import { splitEditorialText } from '@/utils/text';
+import { composeTextLines } from '@/utils/textLayout';
+import { resolveBlockPosition, resolveBlockWidth } from '@/utils/layoutGeometry';
 
 type Props = {
   slide: Slide;
   design: SlideDesign;
+  safeAreaEnabled: boolean;
 };
 
-export function SlideCard({ slide, design }: Props) {
+const SAFE_AREA_INSET_X = 96;
+const SAFE_AREA_INSET_Y = 120;
+const NICKNAME_FONT_SIZE = { S: 18, M: 22, L: 28 } as const;
+
+function formatGradientHeight(heightPct: number) {
+  return `${Math.round(heightPct * 100)}%`;
+}
+
+export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
   const { theme, typography, layout, template } = design;
-  const { title, body } = splitEditorialText(slide.body || '');
-  const gradientHeight = Math.max(0, Math.min(theme.gradientStops.heightPct, 1));
-  const gradientPercent = Number((gradientHeight * 100).toFixed(2));
-  const overlayOffset = Math.max(theme.padding.x - layout.padding, 0);
-  const overlayBottom = Math.max(theme.padding.y - layout.padding, 0);
-  const textShadow = theme.shadow
-    ? `0 ${theme.shadow.y}px ${theme.shadow.blur}px ${theme.shadow.color}`
-    : undefined;
+  const { title, body } = useMemo(() => splitEditorialText(slide.body ?? ''), [slide.body]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState<number | null>(null);
@@ -52,6 +56,136 @@ export function SlideCard({ slide, design }: Props) {
     return () => observer.disconnect();
   }, []);
 
+  const measurementContext = useMemo(() => {
+    if (typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    return canvas.getContext('2d');
+  }, []);
+
+  const composition = useMemo(() => {
+    if (!measurementContext) {
+      return {
+        block: {
+          position: { x: layout.padding, y: layout.padding },
+          width: BASE_FRAME.width - layout.padding * 2,
+          height: BASE_FRAME.height - layout.padding * 2,
+        },
+        text: { lines: [], contentHeight: 0, truncated: false, fadeMaskStart: undefined },
+      };
+    }
+
+    const { blockWidth, textWidth } = resolveBlockWidth(BASE_FRAME.width, layout);
+    const text = composeTextLines({
+      ctx: measurementContext,
+      maxWidth: textWidth,
+      title,
+      body,
+      typography,
+      colors: {
+        title: theme.titleColor ?? theme.textColor,
+        body: theme.textColor,
+      },
+      paragraphGap: layout.paragraphGap,
+      overflow: layout.overflow,
+      maxLines: layout.maxLines,
+    });
+    const blockHeight = text.contentHeight + layout.padding * 2;
+    const position = resolveBlockPosition(
+      BASE_FRAME.width,
+      BASE_FRAME.height,
+      layout,
+      blockWidth,
+      blockHeight,
+    );
+    return {
+      block: { position, width: blockWidth, height: blockHeight },
+      text,
+    };
+  }, [measurementContext, layout, typography, theme, title, body]);
+
+  const textShadow = useMemo(() => {
+    const shadow = theme.shadow;
+    return shadow ? `0 ${shadow.y}px ${shadow.blur}px ${shadow.color}` : undefined;
+  }, [theme.shadow]);
+
+  const fadeMaskStyle = useMemo(() => {
+    if (composition.text.fadeMaskStart === undefined) return undefined;
+    const start = Math.max(0, Math.min(composition.text.fadeMaskStart, 1));
+    const startPct = (start * 100).toFixed(2);
+    return {
+      WebkitMaskImage: `linear-gradient(to bottom, rgba(0,0,0,1) ${startPct}%, rgba(0,0,0,0) 100%)`,
+      maskImage: `linear-gradient(to bottom, rgba(0,0,0,1) ${startPct}%, rgba(0,0,0,0) 100%)`,
+    } as const;
+  }, [composition.text.fadeMaskStart]);
+
+  const safeAreaStyle = useMemo(() => {
+    const width = Math.max(0, BASE_FRAME.width - SAFE_AREA_INSET_X * 2);
+    const height = Math.max(0, BASE_FRAME.height - SAFE_AREA_INSET_Y * 2);
+    return {
+      left: SAFE_AREA_INSET_X,
+      top: SAFE_AREA_INSET_Y,
+      width,
+      height,
+    };
+  }, []);
+
+  const nicknameLayout = useMemo(() => {
+    if (!slide.nickname || !template.showNickname) return null;
+    const fontSize = NICKNAME_FONT_SIZE[layout.nickname.size] ?? 18;
+    const paddingX = Math.round(fontSize * 0.75);
+    const paddingY = Math.round(fontSize * 0.35);
+    const estimatedHeight = fontSize + paddingY * 2;
+
+    let justifyContent: 'flex-start' | 'center' | 'flex-end';
+    switch (layout.nickname.position) {
+      case 'center':
+        justifyContent = 'center';
+        break;
+      case 'right':
+        justifyContent = 'flex-end';
+        break;
+      default:
+        justifyContent = 'flex-start';
+        break;
+    }
+
+    const baseTop = composition.block.position.y + composition.block.height + layout.nickname.offset;
+    const top = Math.max(0, Math.min(baseTop, BASE_FRAME.height - estimatedHeight));
+    const normalizedColor = theme.textColor.trim().toLowerCase();
+    const isDarkText =
+      normalizedColor === '#000000' ||
+      normalizedColor === 'black' ||
+      normalizedColor === 'rgb(0,0,0)';
+    const opacity = Math.max(0, Math.min(layout.nickname.opacity, 1));
+    const backgroundAlpha = (isDarkText ? 0.85 : 0.45) * opacity;
+    const strokeAlpha = (isDarkText ? 0.2 : 0.18) * opacity;
+    const background = isDarkText
+      ? `rgba(255,255,255,${backgroundAlpha.toFixed(3)})`
+      : `rgba(0,0,0,${backgroundAlpha.toFixed(3)})`;
+    const borderColor = isDarkText
+      ? `rgba(0,0,0,${strokeAlpha.toFixed(3)})`
+      : `rgba(255,255,255,${strokeAlpha.toFixed(3)})`;
+
+    return {
+      wrapper: {
+        left: composition.block.position.x,
+        top,
+        width: composition.block.width,
+        justifyContent,
+        height: estimatedHeight,
+      },
+      pill: {
+        fontSize,
+        padding: `${paddingY}px ${paddingX}px`,
+        borderRadius: `${estimatedHeight / 2}px`,
+        background,
+        color: theme.textColor,
+        border: strokeAlpha > 0 ? `1px solid ${borderColor}` : 'none',
+        lineHeight: 1,
+      },
+    };
+  }, [composition.block, layout.nickname, slide.nickname, template.showNickname, theme.textColor]);
+
   return (
     <div
       ref={containerRef}
@@ -74,69 +208,95 @@ export function SlideCard({ slide, design }: Props) {
           ) : (
             <div className="ig-placeholder" />
           )}
-          {theme.gradient !== 'original' && gradientHeight > 0 && (
+          {theme.gradient !== 'original' && theme.gradientStops.heightPct > 0 && (
             <div
               className="footer-gradient"
               style={{
-                background: `linear-gradient(to top, ${theme.gradientStops.to} 0%, ${
-                  theme.gradientStops.from
-                } ${gradientPercent}%)`,
-                height: `${gradientPercent}%`,
+                background: `linear-gradient(to top, ${theme.gradientStops.to} 0%, ${theme.gradientStops.from} ${formatGradientHeight(
+                  theme.gradientStops.heightPct,
+                )})`,
+                height: formatGradientHeight(theme.gradientStops.heightPct),
               }}
             />
           )}
-          {(title || body || slide.nickname) && (
+          {safeAreaEnabled && (
             <div
-              className="overlay editorial"
-              style={{ left: overlayOffset, right: overlayOffset, bottom: overlayBottom }}
-            >
-              {(title || body) && (
+              className="safe-area-guides"
+              style={{
+                position: 'absolute',
+                left: safeAreaStyle.left,
+                top: safeAreaStyle.top,
+                width: safeAreaStyle.width,
+                height: safeAreaStyle.height,
+                border: '2px dashed rgba(255,255,255,0.35)',
+                borderRadius: 12,
+                pointerEvents: 'none',
+              }}
+            />
+          )}
+          {(composition.text.lines.length > 0 || (slide.nickname && template.showNickname)) && (
+            <div className="overlay editorial" style={{ position: 'absolute', inset: 0 }}>
+              {composition.text.lines.length > 0 && (
                 <div
-                  className="text"
-                  style={{ maxWidth: `${layout.blockWidth}%`, padding: layout.padding }}
+                  className="text-block"
+                  style={{
+                    position: 'absolute',
+                    left: composition.block.position.x,
+                    top: composition.block.position.y,
+                    width: composition.block.width,
+                    height: composition.block.height,
+                    padding: layout.padding,
+                    boxSizing: 'border-box',
+                    pointerEvents: 'none',
+                    overflow: 'hidden',
+                  }}
                 >
-                  {title && (
-                    <div
-                      className="title"
-                      style={{
-                        fontSize: typography.title.fontSize,
-                        lineHeight: typography.title.lineHeight,
-                        fontFamily: typography.title.fontFamily,
-                        fontWeight: typography.title.fontWeight,
-                        letterSpacing: typography.title.letterSpacing,
-                        color: theme.titleColor ?? theme.textColor,
-                        textShadow,
-                      }}
-                    >
-                      {title}
-                    </div>
-                  )}
-                  {body && (
-                    <div
-                      className="body"
-                      style={{
-                        marginTop: layout.paraGap,
-                        fontSize: typography.body.fontSize,
-                        lineHeight: typography.body.lineHeight,
-                        fontFamily: typography.body.fontFamily,
-                        fontWeight: typography.body.fontWeight,
-                        letterSpacing: typography.body.letterSpacing,
-                        color: theme.textColor,
-                        opacity: 0.92,
-                        textShadow,
-                      }}
-                    >
-                      {body}
-                    </div>
-                  )}
+                  <div
+                    className="text-content"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'flex-start',
+                      ...fadeMaskStyle,
+                    }}
+                  >
+                    {composition.text.lines.map((line, index) => (
+                      <div
+                        key={`${line.type}-${index}`}
+                        style={{
+                          fontSize: `${line.style.fontSize}px`,
+                          lineHeight: line.style.lineHeight,
+                          fontFamily: line.style.fontFamily,
+                          fontWeight: line.style.fontWeight,
+                          letterSpacing: `${line.style.letterSpacing}px`,
+                          color: line.color,
+                          marginTop: index === 0 ? 0 : `${line.gapBefore}px`,
+                          textShadow,
+                          whiteSpace: 'pre-wrap',
+                        }}
+                      >
+                        {line.text}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
-              {slide.nickname && template.showNickname && (
+              {slide.nickname && template.showNickname && nicknameLayout && (
                 <div
-                  className="nickname"
-                  style={{ marginTop: layout.nickOffset, color: theme.textColor }}
+                  className="nickname-wrapper"
+                  style={{
+                    position: 'absolute',
+                    left: nicknameLayout.wrapper.left,
+                    top: nicknameLayout.wrapper.top,
+                    width: nicknameLayout.wrapper.width,
+                    display: 'flex',
+                    justifyContent: nicknameLayout.wrapper.justifyContent,
+                    pointerEvents: 'none',
+                  }}
                 >
-                  {slide.nickname}
+                  <div className="nickname-pill" style={nicknameLayout.pill}>
+                    {slide.nickname}
+                  </div>
                 </div>
               )}
             </div>

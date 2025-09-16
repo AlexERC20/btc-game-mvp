@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 export type PhotoId = string;
 
@@ -88,6 +89,132 @@ if (typeof window !== 'undefined') {
   window.addEventListener('beforeunload', () => photosActions.clear());
 }
 
+const createNoopStorage = (): Storage =>
+  ({
+    getItem: () => null,
+    setItem: () => undefined,
+    removeItem: () => undefined,
+    clear: () => undefined,
+    key: () => null,
+    length: 0,
+  } as Storage);
+
+export type NicknameLayout = {
+  position: 'left' | 'center' | 'right';
+  offset: number;
+  size: 'S' | 'M' | 'L';
+  opacity: number;
+};
+
+export type LayoutConfig = {
+  vertical: 'top' | 'middle' | 'bottom';
+  vOffset: number;
+  horizontal: 'left' | 'center' | 'right';
+  useSafeArea: boolean;
+  blockWidth: number;
+  padding: number;
+  maxLines: number;
+  overflow: 'wrap' | 'fade';
+  paragraphGap: number;
+  cornerRadius: number;
+  fontSize: number;
+  lineHeight: number;
+  nickname: NicknameLayout;
+  textShadow: 0 | 1 | 2 | 3;
+  gradientIntensity: number;
+};
+
+export type LayoutState = LayoutConfig & {
+  set<K extends keyof LayoutConfig>(key: K, val: LayoutConfig[K]): void;
+  setNickname<K extends keyof NicknameLayout>(key: K, val: NicknameLayout[K]): void;
+  reset(): void;
+};
+
+const DEFAULT_LAYOUT: LayoutConfig = {
+  vertical: 'bottom',
+  vOffset: 0,
+  horizontal: 'left',
+  useSafeArea: false,
+  blockWidth: 0,
+  padding: 96,
+  maxLines: 8,
+  overflow: 'wrap',
+  paragraphGap: 24,
+  cornerRadius: 48,
+  fontSize: 28,
+  lineHeight: 1.3,
+  nickname: {
+    position: 'left',
+    offset: 32,
+    size: 'M',
+    opacity: 0.85,
+  },
+  textShadow: 1,
+  gradientIntensity: 0.45,
+};
+
+const layoutStorage = () =>
+  createJSONStorage<LayoutState>(() =>
+    (typeof window !== 'undefined' ? window.localStorage : createNoopStorage()),
+  );
+
+export const useLayoutStore = create<LayoutState>()(
+  persist(
+    (set) => ({
+      ...DEFAULT_LAYOUT,
+      set: (key, val) => {
+        if (key === 'nickname') {
+          set({ nickname: val as NicknameLayout });
+          return;
+        }
+        set({ [key]: val } as Partial<LayoutState>);
+      },
+      setNickname: (key, val) =>
+        set((state) => ({
+          nickname: {
+            ...state.nickname,
+            [key]: val,
+          },
+        })),
+      reset: () =>
+        set({
+          ...DEFAULT_LAYOUT,
+          nickname: { ...DEFAULT_LAYOUT.nickname },
+        }),
+    }),
+    {
+      name: 'layout-settings',
+      version: 1,
+      storage: layoutStorage(),
+      partialize: (state) => ({
+        vertical: state.vertical,
+        vOffset: state.vOffset,
+        horizontal: state.horizontal,
+        useSafeArea: state.useSafeArea,
+        blockWidth: state.blockWidth,
+        padding: state.padding,
+        maxLines: state.maxLines,
+        overflow: state.overflow,
+        paragraphGap: state.paragraphGap,
+        cornerRadius: state.cornerRadius,
+        fontSize: state.fontSize,
+        lineHeight: state.lineHeight,
+        nickname: state.nickname,
+        textShadow: state.textShadow,
+        gradientIntensity: state.gradientIntensity,
+      }),
+    },
+  ),
+);
+
+export function layoutSnapshot(): LayoutConfig {
+  const { set, setNickname, reset, ...values } = useLayoutStore.getState();
+  return values;
+}
+
+export const useLayoutSelector = <T,>(selector: (state: LayoutState) => T) =>
+  useLayoutStore(selector);
+
 export type Slide = {
   id: string;
   body?: string;
@@ -96,7 +223,7 @@ export type Slide = {
   nickname?: string;
   overrides?: {
     template?: TemplateConfig;
-    layout?: LayoutStyle;
+    layout?: Partial<LayoutConfig>;
   };
   kind?: 'demo' | 'photo';
   isDemo?: boolean;
@@ -163,26 +290,6 @@ export const getHeadingColor = (
   accent: string | null,
 ) => accent ?? getBaseTextColor(bg, mode);
 
-export interface LayoutStyle {
-  vPos: 'top' | 'middle' | 'bottom';
-  vOffset: number;
-  hAlign: 'left' | 'center' | 'right';
-  fontSize: number;
-  lineHeight: number;
-  blockWidth: number;
-  padding: number;
-  maxLines: number;
-  paraGap: number;
-  overflow: 'wrap' | 'fade';
-  nickPos: 'left' | 'center' | 'right';
-  nickOffset: number;
-  nickSize: 's' | 'm' | 'l';
-  nickOpacity: number;
-  nickRadius: number;
-  textShadow: 0 | 1 | 2 | 3;
-  gradient: number;
-}
-
 type ApplyScope = 'all' | 'current';
 
 type State = {
@@ -194,9 +301,7 @@ type State = {
   typography: TypographySettings;
   style: {
     template: TemplateConfig;
-    layout: LayoutStyle;
     templateScope: ApplyScope;
-    layoutScope: ApplyScope;
   };
 
   openSheet: (s: Exclude<UISheet, null>) => void;
@@ -221,10 +326,6 @@ type State = {
   setHeadingAccent: (hex: string | null) => void;
   setTextColorMode: (mode: 'auto' | 'white' | 'black') => void;
 
-  setLayout: (patch: Partial<LayoutStyle>) => void;
-  resetLayout: () => void;
-  setLayoutScope: (s: ApplyScope) => void;
-  applyLayout: () => void;
 };
 
 const editorialTemplate: TemplateConfig = {
@@ -293,28 +394,6 @@ const originalTemplate: TemplateConfig = {
 };
 
 const defaultTemplate = originalTemplate;
-
-const defaultLayout: LayoutStyle = {
-  vPos: 'bottom',
-  vOffset: 0,
-  hAlign: 'left',
-  fontSize: 28,
-  lineHeight: 1.25,
-  blockWidth: 88,
-  padding: 10,
-
-  maxLines: 20,
-
-  paraGap: 6,
-  overflow: 'wrap',
-  nickPos: 'left',
-  nickOffset: 8,
-  nickSize: 's',
-  nickOpacity: 80,
-  nickRadius: 999,
-  textShadow: 0,
-  gradient: 0,
-};
 
 // дефолтный сет мотивации (10 приветственных слайдов)
 const initial: Slide[] = [
@@ -418,9 +497,7 @@ export const useCarouselStore = create<State>((set, get) => ({
   typography: { textColorMode: 'auto', headingAccent: null },
   style: {
     template: defaultTemplate,
-    layout: defaultLayout,
     templateScope: 'all',
-    layoutScope: 'all',
   },
 
   openSheet: (s) => set({ activeSheet: s }),
@@ -640,28 +717,6 @@ export const useCarouselStore = create<State>((set, get) => ({
       };
     }),
 
-  setLayout: (patch) =>
-    set((s) => ({ style: { ...s.style, layout: { ...s.style.layout, ...patch } } })),
-
-  resetLayout: () => set((s) => ({ style: { ...s.style, layout: defaultLayout } })),
-
-  setLayoutScope: (sc) =>
-    set((s) => ({ style: { ...s.style, layoutScope: sc } })),
-
-  applyLayout: () =>
-    set((state) => {
-      const { layout, layoutScope } = state.style;
-      const slides = state.slides.map((sl, i) => {
-        if (layoutScope === 'all' || i === state.activeIndex) {
-          return {
-            ...sl,
-            overrides: { ...sl.overrides, layout },
-          };
-        }
-        return sl;
-      });
-      return { slides };
-    }),
 }));
 
 const uid = () => crypto.randomUUID();

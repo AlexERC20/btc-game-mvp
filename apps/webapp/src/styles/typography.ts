@@ -1,4 +1,4 @@
-import type { LayoutStyle, TemplateConfig } from '@/state/store';
+import type { LayoutConfig, TemplateConfig } from '@/state/store';
 
 export type Typography = {
   title: {
@@ -48,7 +48,7 @@ function normalizeLineHeight(value: number): number {
   return value > 0 ? value : BODY_LINE_HEIGHT_BASE;
 }
 
-function computeTitleSize(layout: LayoutStyle): { fontSize: number; lineHeight: number } {
+function computeTitleSize(layout: LayoutConfig): { fontSize: number; lineHeight: number } {
   const bodyFontSize = normalizeFontSize(layout.fontSize);
   const bodyLineHeight = normalizeLineHeight(layout.lineHeight);
   const fontSize = Number((bodyFontSize * TITLE_FONT_SCALE).toFixed(3));
@@ -56,13 +56,13 @@ function computeTitleSize(layout: LayoutStyle): { fontSize: number; lineHeight: 
   return { fontSize, lineHeight };
 }
 
-function computeBodySize(layout: LayoutStyle): { fontSize: number; lineHeight: number } {
+function computeBodySize(layout: LayoutConfig): { fontSize: number; lineHeight: number } {
   const fontSize = Number(normalizeFontSize(layout.fontSize).toFixed(3));
   const lineHeight = Number(normalizeLineHeight(layout.lineHeight).toFixed(3));
   return { fontSize, lineHeight };
 }
 
-export function createTypography(template: TemplateConfig, layout: LayoutStyle): Typography {
+export function createTypography(template: TemplateConfig, layout: LayoutConfig): Typography {
   const family = getFontFamily(template.font);
   const titleSize = computeTitleSize(layout);
   const bodySize = computeBodySize(layout);
