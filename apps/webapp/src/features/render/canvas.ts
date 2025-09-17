@@ -1,6 +1,6 @@
 import { BASE_FRAME } from './constants';
 import type { LayoutConfig, TemplateConfig } from '@/state/store';
-import { DEFAULT_COLLAGE_50, Slide, layoutSnapshot, useCarouselStore } from '@/state/store';
+import { Slide, layoutSnapshot, useCarouselStore, normalizeCollage } from '@/state/store';
 import { resolveSlideDesign, Theme } from '@/styles/theme';
 import { Typography, typographyToCanvasFont } from '@/styles/typography';
 import { splitEditorialText } from '@/utils/text';
@@ -8,6 +8,7 @@ import { composeTextLines } from '@/utils/textLayout';
 import { resolveBlockPosition, resolveBlockWidth } from '@/utils/layoutGeometry';
 import { drawImageCover } from '@/utils/drawImageCover';
 import { resolvePhotoFromStore } from '@/utils/photos';
+import { computeCollageBoxes } from '@/utils/collage';
 import { applyOpacityToColor } from '@/utils/color';
 
 export const CANVAS_W = BASE_FRAME.width;
@@ -33,27 +34,6 @@ function roundedRectPath(
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
-}
-
-type CollageBoxes = {
-  top: { x: number; y: number; width: number; height: number };
-  bottom: { x: number; y: number; width: number; height: number };
-  divider: { y: number; height: number };
-};
-
-function computeCollageBoxes(dividerPx: number): CollageBoxes {
-  const thickness = Math.max(0, dividerPx);
-  const half = Math.floor(CANVAS_H / 2);
-  const halfLine = thickness / 2;
-  const topHeight = Math.max(0, half - halfLine);
-  const bottomY = half + halfLine;
-  const bottomHeight = Math.max(0, CANVAS_H - bottomY);
-
-  return {
-    top: { x: 0, y: 0, width: CANVAS_W, height: topHeight },
-    bottom: { x: 0, y: bottomY, width: CANVAS_W, height: bottomHeight },
-    divider: { y: half - halfLine, height: thickness },
-  };
 }
 
 function drawFooterGradient(ctx: CanvasRenderingContext2D, theme: Theme) {
@@ -318,15 +298,15 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
 
   await ensureFontsLoaded(design.typography);
 
-  const collageConfig = { ...DEFAULT_COLLAGE_50, ...(slide.collage50 ?? {}) };
+  const collageConfig = normalizeCollage(slide.collage50);
   const isCollage = slide.template === 'collage-50';
   let singleImage: HTMLImageElement | null = null;
   let topImage: HTMLImageElement | null = null;
   let bottomImage: HTMLImageElement | null = null;
 
   if (isCollage) {
-    const topSrc = resolvePhotoFromStore(collageConfig.topPhoto);
-    const bottomSrc = resolvePhotoFromStore(collageConfig.bottomPhoto);
+    const topSrc = resolvePhotoFromStore(collageConfig.top.photoId);
+    const bottomSrc = resolvePhotoFromStore(collageConfig.bottom.photoId);
     [topImage, bottomImage] = await Promise.all([
       topSrc ? loadImage(topSrc) : Promise.resolve(null),
       bottomSrc ? loadImage(bottomSrc) : Promise.resolve(null),
@@ -345,12 +325,12 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
   if (isCollage) {
-    const boxes = computeCollageBoxes(collageConfig.dividerPx ?? DEFAULT_COLLAGE_50.dividerPx);
+    const boxes = computeCollageBoxes(collageConfig.dividerPx);
     const placeholder = 'rgba(0,0,0,0.08)';
 
     if (boxes.top.height > 0) {
       if (topImage) {
-        drawImageCover(ctx, topImage, boxes.top);
+        drawImageCover(ctx, topImage, boxes.top, collageConfig.top.transform);
       } else {
         ctx.fillStyle = placeholder;
         ctx.fillRect(boxes.top.x, boxes.top.y, boxes.top.width, boxes.top.height);
@@ -359,7 +339,7 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
 
     if (boxes.bottom.height > 0) {
       if (bottomImage) {
-        drawImageCover(ctx, bottomImage, boxes.bottom);
+        drawImageCover(ctx, bottomImage, boxes.bottom, collageConfig.bottom.transform);
       } else {
         ctx.fillStyle = placeholder;
         ctx.fillRect(boxes.bottom.x, boxes.bottom.y, boxes.bottom.width, boxes.bottom.height);
@@ -370,10 +350,10 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
       const baseColor =
         collageConfig.dividerColor === 'auto'
           ? design.theme.textColor
-          : collageConfig.dividerColor ?? DEFAULT_COLLAGE_50.dividerColor;
+          : collageConfig.dividerColor;
       ctx.fillStyle = applyOpacityToColor(
         baseColor,
-        collageConfig.dividerOpacity ?? DEFAULT_COLLAGE_50.dividerOpacity,
+        collageConfig.dividerOpacity,
       );
       ctx.fillRect(0, boxes.divider.y, CANVAS_W, boxes.divider.height);
     }
