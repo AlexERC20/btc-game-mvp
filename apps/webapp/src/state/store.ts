@@ -22,6 +22,27 @@ const MAX_SIZE = 30 * 1024 * 1024;
 
 export const usePhotos = create<PhotosState>(() => ({ items: [], selectedId: undefined }));
 
+export type CropSlot = 'single' | 'top' | 'bottom';
+
+export type CropState = {
+  active: boolean;
+  slot: CropSlot | null;
+  slideId: string | null;
+};
+
+type UIState = {
+  crop: CropState;
+  setCrop: (patch: Partial<CropState>) => void;
+};
+
+export const useUIStore = create<UIState>((set) => ({
+  crop: { active: false, slot: null, slideId: null },
+  setCrop: (patch) =>
+    set((state) => ({
+      crop: { ...state.crop, ...patch },
+    })),
+}));
+
 export const DEFAULT_TRANSFORM: PhotoTransform = { scale: 1, offsetX: 0, offsetY: 0 };
 
 export function createDefaultTransform(): PhotoTransform {
