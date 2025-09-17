@@ -112,24 +112,6 @@
   border-color:rgba(255,255,255,.8);
 }
 
-/* быстрый кроп в превью слотов */
-.slot-thumb .edit{
-  position:absolute;
-  top:6px;
-  right:6px;
-  width:26px;
-  height:26px;
-  border-radius:999px;
-  border:1px solid rgba(255,255,255,.35);
-  background:rgba(0,0,0,.45);
-  color:#fff;
-  display:grid;
-  place-items:center;
-  backdrop-filter:blur(4px);
-}
-.slot-thumb .edit svg{ width:14px; height:14px; }
-
-
 /* бейджи использования фото */
 .thumb .badge{
   display:inline-flex;
@@ -189,16 +171,4 @@
 
 
 
-.crop-modal{ position:fixed; inset:0; z-index:120; display:flex; align-items:center; justify-content:center; }
-.crop-modal__overlay{ position:absolute; inset:0; background:rgba(0,0,0,.65); }
-.crop-modal__panel{ position:relative; z-index:121; width:min(92vw, 600px); max-height:90vh; background:rgba(15,15,18,.96); color:#fff; border-radius:18px; padding:20px; display:flex; flex-direction:column; gap:18px; box-shadow:0 20px 60px rgba(0,0,0,.45); }
-.crop-modal__header{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.crop-modal__header h3{ margin:0; font-size:18px; font-weight:600; }
-.crop-modal__close{ border:0; background:transparent; color:#fff; font-size:26px; line-height:1; padding:0 4px; cursor:pointer; }
-.crop-modal__content{ display:flex; flex-direction:column; gap:12px; }
-.crop-modal__canvas{ position:relative; width:100%; height:min(60vh, 460px); background:#000; border-radius:16px; overflow:hidden; }
-.crop-modal__surface{ position:absolute; top:50%; left:50%; transform-origin:top left; border-radius:12px; overflow:hidden; background:#000; box-shadow:0 12px 24px rgba(0,0,0,.35); touch-action:none; cursor:grab; }
-.crop-modal__surface canvas{ width:100%; height:100%; display:block; }
-.crop-modal__controls{ display:flex; gap:12px; }
-.crop-modal__footer{ display:flex; justify-content:flex-end; gap:12px; }
 

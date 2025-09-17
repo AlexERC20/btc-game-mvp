@@ -36,6 +36,7 @@ export function PreviewCarousel({ slides }: { slides: Slide[] }) {
               typographySettings,
             })}
             safeAreaEnabled={layout.useSafeArea}
+            slideIndex={i}
           />
         </div>
       ))}

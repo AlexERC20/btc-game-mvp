@@ -5,6 +5,7 @@ import {
   createDefaultCollage50,
   normalizeCollage,
   createDefaultTransform,
+  normalizeSingle,
   usePhotos,
 } from '@/state/store';
 import type { Collage50, TemplateStyle, Slide } from '@/state/store';
@@ -75,6 +76,7 @@ export default function TemplateSheet() {
     const patch: Partial<Slide> = {
       template: 'single',
       image: fallbackImage ?? activeSlide.image,
+      single: normalizeSingle(activeSlide.single),
     };
     if (isLibraryPhoto && topRef) {
       patch.photoId = topRef;

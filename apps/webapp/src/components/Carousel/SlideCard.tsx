@@ -1,6 +1,21 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import { BASE_FRAME } from '@/features/render/constants';
-import { Slide, usePhotos, normalizeCollage } from '@/state/store';
+import {
+  Slide,
+  usePhotos,
+  normalizeCollage,
+  normalizeSingle,
+  useCarouselStore,
+  PhotoTransform,
+} from '@/state/store';
 import type { SlideDesign } from '@/styles/theme';
 import { splitEditorialText } from '@/utils/text';
 import { composeTextLines } from '@/utils/textLayout';
@@ -9,11 +24,30 @@ import { resolvePhotoSource } from '@/utils/photos';
 import { applyOpacityToColor } from '@/utils/color';
 import { computeCollageBoxes } from '@/utils/collage';
 import { CollageSlotImage } from '@/components/collage/CollageSlotImage';
+import { SwapIcon } from '@/ui/icons';
+import { SlideCropOverlay } from './SlideCropOverlay';
+
+type CropMode =
+  | null
+  | {
+      kind: 'single';
+      src: string;
+      box: { x: number; y: number; width: number; height: number };
+      transform: PhotoTransform;
+    }
+  | {
+      kind: 'collage';
+      slot: 'top' | 'bottom';
+      src: string;
+      box: { x: number; y: number; width: number; height: number };
+      transform: PhotoTransform;
+    };
 
 type Props = {
   slide: Slide;
   design: SlideDesign;
   safeAreaEnabled: boolean;
+  slideIndex: number;
 };
 
 const SAFE_AREA_INSET_X = 96;
@@ -24,11 +58,12 @@ function formatGradientHeight(heightPct: number) {
   return `${Math.round(heightPct * 100)}%`;
 }
 
-export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
+export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props) {
   const { theme, typography, layout, template } = design;
   const photos = usePhotos((state) => state.items);
   const isCollage = slide.template === 'collage-50';
   const collage = useMemo(() => normalizeCollage(slide.collage50), [slide.collage50]);
+  const singleConfig = useMemo(() => normalizeSingle(slide.single), [slide.single]);
   const collageImages = useMemo(
     () => ({
       top: isCollage ? resolvePhotoSource(collage.top.photoId, photos) : undefined,
@@ -40,6 +75,115 @@ export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
     () => computeCollageBoxes(collage.dividerPx),
     [collage.dividerPx],
   );
+  const singleImage = useMemo(() => {
+    const ref = resolvePhotoSource(slide.photoId, photos);
+    if (ref) return ref;
+    return slide.image;
+  }, [photos, slide.image, slide.photoId]);
+  const setCollageTransform = useCarouselStore((s) => s.setCollageTransform);
+  const setSingleTransform = useCarouselStore((s) => s.setSingleTransform);
+  const swapCollage = useCarouselStore((s) => s.swapCollage);
+  const [cropMode, setCropMode] = useState<CropMode>(null);
+  const cropHoldTimer = useRef<number | null>(null);
+  const cropping = cropMode !== null;
+
+  const openSingleCrop = useCallback(() => {
+    if (!singleImage) return;
+    setCropMode({
+      kind: 'single',
+      src: singleImage,
+      box: { x: 0, y: 0, width: BASE_FRAME.width, height: BASE_FRAME.height },
+      transform: singleConfig.transform,
+    });
+  }, [singleConfig.transform, singleImage]);
+
+  const openCollageCrop = useCallback(
+    (slot: 'top' | 'bottom') => {
+      if (!isCollage) return;
+      const src = slot === 'top' ? collageImages.top : collageImages.bottom;
+      if (!src) return;
+      const box = slot === 'top' ? collageBoxes.top : collageBoxes.bottom;
+      const transform = slot === 'top' ? collage.top.transform : collage.bottom.transform;
+      setCropMode({ kind: 'collage', slot, src, box, transform });
+    },
+    [collage.bottom.transform, collage.top.transform, collageBoxes.bottom, collageBoxes.top, collageImages.bottom, collageImages.top, isCollage],
+  );
+
+  const clearCropHold = useCallback(() => {
+    if (cropHoldTimer.current !== null) {
+      window.clearTimeout(cropHoldTimer.current);
+      cropHoldTimer.current = null;
+    }
+  }, []);
+
+  const startCropHold = useCallback(
+    (slot: 'top' | 'bottom') => {
+      if (cropMode || !isCollage) return;
+      const hasImage = slot === 'top' ? collageImages.top : collageImages.bottom;
+      if (!hasImage) return;
+      clearCropHold();
+      cropHoldTimer.current = window.setTimeout(() => {
+        cropHoldTimer.current = null;
+        openCollageCrop(slot);
+      }, 350);
+    },
+    [clearCropHold, collageImages.bottom, collageImages.top, cropMode, isCollage, openCollageCrop],
+  );
+
+  useEffect(() => () => clearCropHold(), [clearCropHold]);
+
+  useEffect(() => {
+    if (!cropMode) return;
+    if (cropMode.kind === 'single') {
+      if (slide.template !== 'single' || !singleImage) {
+        setCropMode(null);
+      }
+    } else {
+      if (!isCollage) {
+        setCropMode(null);
+        return;
+      }
+      const hasImage = cropMode.slot === 'top' ? collageImages.top : collageImages.bottom;
+      if (!hasImage) {
+        setCropMode(null);
+      }
+    }
+  }, [collageImages.bottom, collageImages.top, cropMode, isCollage, singleImage, slide.template]);
+
+  useEffect(() => {
+    if (cropMode) {
+      clearCropHold();
+    }
+  }, [clearCropHold, cropMode]);
+
+  const handleCropSave = useCallback(
+    (next: PhotoTransform) => {
+      if (!cropMode) return;
+      if (cropMode.kind === 'single') {
+        setSingleTransform(slideIndex, next);
+      } else {
+        setCollageTransform(slideIndex, cropMode.slot, next);
+      }
+      setCropMode(null);
+    },
+    [cropMode, setCollageTransform, setSingleTransform, slideIndex],
+  );
+
+  const handleCropCancel = useCallback(() => {
+    setCropMode(null);
+  }, []);
+
+  const handleSlotPointerDown = useCallback(
+    (slot: 'top' | 'bottom') => (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      startCropHold(slot);
+    },
+    [startCropHold],
+  );
+
+  const handleSlotPointerEnd = useCallback(() => {
+    clearCropHold();
+  }, [clearCropHold]);
   const collageDividerColor = useMemo(() => {
     if (!isCollage) return undefined;
     const baseColor = collage.dividerColor === 'auto' ? theme.textColor : collage.dividerColor;
@@ -237,6 +381,10 @@ export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
                   width: '100%',
                   height: collageBoxes.top.height,
                 }}
+                onPointerDown={handleSlotPointerDown('top')}
+                onPointerUp={handleSlotPointerEnd}
+                onPointerLeave={handleSlotPointerEnd}
+                onPointerCancel={handleSlotPointerEnd}
               >
                 {collageImages.top && collageBoxes.top.height > 0 ? (
                   <CollageSlotImage
@@ -256,6 +404,10 @@ export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
                   width: '100%',
                   height: collageBoxes.bottom.height,
                 }}
+                onPointerDown={handleSlotPointerDown('bottom')}
+                onPointerUp={handleSlotPointerEnd}
+                onPointerLeave={handleSlotPointerEnd}
+                onPointerCancel={handleSlotPointerEnd}
               >
                 {collageImages.bottom && collageBoxes.bottom.height > 0 ? (
                   <CollageSlotImage
@@ -280,13 +432,19 @@ export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
                 />
               )}
             </div>
-          ) : slide.image ? (
-            <img src={slide.image} alt="" draggable={false} />
+          ) : singleImage ? (
+            <div className="single-slot">
+              <CollageSlotImage
+                src={singleImage}
+                box={{ width: BASE_FRAME.width, height: BASE_FRAME.height }}
+                transform={singleConfig.transform}
+              />
+            </div>
           ) : (
             <div className="ig-placeholder" />
           )}
-          {isCollage && <div className="collage-tag">Collage</div>}
-          {theme.gradient !== 'original' && theme.gradientStops.heightPct > 0 && (
+          {!cropping && isCollage && <div className="collage-tag">Collage</div>}
+          {!cropping && theme.gradient !== 'original' && theme.gradientStops.heightPct > 0 && (
             <div
               className="footer-gradient"
               style={{
@@ -297,7 +455,7 @@ export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
               }}
             />
           )}
-          {safeAreaEnabled && (
+          {!cropping && safeAreaEnabled && (
             <div
               className="safe-area-guides"
               style={{
@@ -312,7 +470,8 @@ export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
               }}
             />
           )}
-          {(composition.text.lines.length > 0 || (slide.nickname && template.showNickname)) && (
+          {!cropping &&
+            (composition.text.lines.length > 0 || (slide.nickname && template.showNickname)) && (
             <div className="overlay editorial" style={{ position: 'absolute', inset: 0 }}>
               {composition.text.lines.length > 0 && (
                 <div
@@ -378,6 +537,56 @@ export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
                 </div>
               )}
             </div>
+          )}
+          {!cropping && (
+            <div className="slide-tools">
+              {isCollage ? (
+                <>
+                  <button
+                    type="button"
+                    className="slide-tools__button"
+                    onClick={() => swapCollage(slideIndex)}
+                    disabled={!collageImages.top || !collageImages.bottom}
+                    aria-label="Swap collage photos"
+                  >
+                    <SwapIcon />
+                    <span>Swap</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="slide-tools__button"
+                    onClick={() => openCollageCrop('top')}
+                    disabled={!collageImages.top}
+                  >
+                    Crop top
+                  </button>
+                  <button
+                    type="button"
+                    className="slide-tools__button"
+                    onClick={() => openCollageCrop('bottom')}
+                    disabled={!collageImages.bottom}
+                  >
+                    Crop bottom
+                  </button>
+                </>
+              ) : (
+                singleImage && (
+                  <button type="button" className="slide-tools__button" onClick={openSingleCrop}>
+                    Crop
+                  </button>
+                )
+              )}
+            </div>
+          )}
+          {cropMode && (
+            <SlideCropOverlay
+              slot={cropMode.kind === 'single' ? 'single' : cropMode.slot}
+              photoSrc={cropMode.src}
+              box={cropMode.box}
+              transform={cropMode.transform}
+              onCancel={handleCropCancel}
+              onSave={handleCropSave}
+            />
           )}
         </div>
       </div>
