@@ -1,278 +1,166 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type SyntheticEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
 import type { CropSlot, PhotoTransform } from '@/state/store';
-import { clampValue, useCropGestures, type CropTransform } from '@/utils/cropGestures';
+import { useCropGestures } from '@/utils/cropGestures';
+import { getCollageBoxes } from '@/utils/getCollageBoxes';
 import { placeImage } from '@/utils/placeImage';
 
-const MAX_RELATIVE_SCALE = 3;
-const MIN_RELATIVE_SCALE = 1;
-const AUTO_ZOOM_EPSILON = 0.02;
-const MIN_SCALE_DELTA = 1e-4;
-const OFFSET_THRESHOLD_PX = 0.5;
+const MIN_SCALE = 1;
+const PAN_EPSILON = 0.5;
+const SCALE_EPSILON = 1e-4;
 
 type Box = { x: number; y: number; w: number; h: number };
 
+type FrameSize = { width: number; height: number };
+
 type Props = {
   slot: CropSlot;
-  box: Box;
   photoSrc: string;
   transform: PhotoTransform;
+  frame: FrameSize;
+  dividerPx?: number;
   onCancel: () => void;
   onSave: (slot: CropSlot, transform: PhotoTransform) => void;
-  onChange?: (slot: CropSlot, transform: PhotoTransform) => void;
 };
 
-type Size = { width: number; height: number };
+type DimRegion = Box;
 
-export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, onChange }: Props) {
+type BoxConfig = { active: Box; dims: DimRegion[] };
+
+function resolveBoxes(slot: CropSlot, frame: FrameSize, dividerPx = 0): BoxConfig {
+  const full: Box = { x: 0, y: 0, w: frame.width, h: frame.height };
+  if (slot === 'single') {
+    return { active: full, dims: [] };
+  }
+
+  const safeDivider = Math.min(Math.max(0, dividerPx), frame.height);
+  const { top, bot } = getCollageBoxes(frame.width, frame.height, safeDivider);
+  const divider: DimRegion | null = safeDivider > 0 ? { x: 0, y: top.h, w: frame.width, h: safeDivider } : null;
+
+  const normalize = (region: DimRegion | null) =>
+    region && region.w > 0 && region.h > 0 ? region : null;
+
+  if (slot === 'top') {
+    return {
+      active: top,
+      dims: [normalize(bot), normalize(divider)].filter((v): v is DimRegion => Boolean(v)),
+    };
+  }
+
+  return {
+    active: bot,
+    dims: [normalize(top), normalize(divider)].filter((v): v is DimRegion => Boolean(v)),
+  };
+}
+
+function applyTransform(element: HTMLImageElement | null, state: { scale: number; x: number; y: number }) {
+  if (!element) return;
+  element.style.transform = `translate3d(${state.x}px, ${state.y}px, 0) scale(${state.scale})`;
+}
+
+function clampToBox(
+  state: { scale: number; x: number; y: number },
+  box: Box,
+  imgWidth: number,
+  imgHeight: number,
+  minScale: number,
+) {
+  const baseScale = Math.max(box.w / imgWidth, box.h / imgHeight);
+  const effective = baseScale * state.scale;
+  const maxOffsetX = Math.max(0, (imgWidth * effective - box.w) / 2);
+  const maxOffsetY = Math.max(0, (imgHeight * effective - box.h) / 2);
+  state.x = Math.min(maxOffsetX, Math.max(-maxOffsetX, state.x));
+  state.y = Math.min(maxOffsetY, Math.max(-maxOffsetY, state.y));
+  if (state.scale <= minScale + SCALE_EPSILON && (Math.abs(state.x) > PAN_EPSILON || Math.abs(state.y) > PAN_EPSILON)) {
+    state.scale = minScale * 1.02;
+  }
+}
+
+export function CropOverlay({ slot, photoSrc, transform, frame, dividerPx = 0, onCancel, onSave }: Props) {
   const frameRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
-  const [imageSize, setImageSize] = useState<Size | null>(null);
-  const baseScaleRef = useRef(1);
-  const pendingSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const relativeTransformRef = useRef<PhotoTransform>({
-    scale: transform.scale ?? 1,
-    offsetX: transform.offsetX ?? 0,
-    offsetY: transform.offsetY ?? 0,
-  });
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
 
-  const clampTransform = useCallback(
-    (value: CropTransform): CropTransform => {
-      const minScale = baseScaleRef.current;
-      const maxScale = minScale * MAX_RELATIVE_SCALE;
-      const scale = clampValue(value.scale, minScale, maxScale);
-      if (!imageSize) {
-        return { scale, offsetX: value.offsetX, offsetY: value.offsetY };
-      }
-      const drawWidth = imageSize.width * scale;
-      const drawHeight = imageSize.height * scale;
-      const maxOffsetX = Math.max(0, (drawWidth - box.w) / 2);
-      const maxOffsetY = Math.max(0, (drawHeight - box.h) / 2);
-      return {
-        scale,
-        offsetX: clampValue(value.offsetX, -maxOffsetX, maxOffsetX),
-        offsetY: clampValue(value.offsetY, -maxOffsetY, maxOffsetY),
-      };
-    },
-    [box.h, box.w, imageSize],
-  );
-
-  const toRelativeTransform = useCallback(
-    (value: CropTransform): PhotoTransform => {
-      const baseScale = baseScaleRef.current || 1;
-      const safeBase = baseScale > 0 ? baseScale : 1;
-      const next: PhotoTransform = {
-        scale: value.scale / safeBase,
-        offsetX: value.offsetX,
-        offsetY: value.offsetY,
-      };
-      relativeTransformRef.current = next;
-      return next;
-    },
-    [],
-  );
+  const { active: box, dims } = useMemo(() => resolveBoxes(slot, frame, dividerPx), [dividerPx, frame, slot]);
 
   const gestures = useCropGestures({
-    boxRef: frameRef,
+    frameRef,
     imgRef: imageRef,
-    initial: clampTransform({
-      scale: baseScaleRef.current,
+    minScale: MIN_SCALE,
+    initial: {
+      scale: transform.scale ?? MIN_SCALE,
       offsetX: transform.offsetX ?? 0,
       offsetY: transform.offsetY ?? 0,
-    }),
-    clamp: clampTransform,
-    onChange: (value) => {
-      toRelativeTransform(value);
     },
   });
 
-  const computePayload = useCallback((): PhotoTransform => {
-    const current = gestures.getTransform();
-    return toRelativeTransform(current);
-  }, [gestures, toRelativeTransform]);
-
-  const applyRelativeTransform = useCallback(
-    (value: PhotoTransform) => {
-      const baseScale = baseScaleRef.current || 1;
-      const safeBase = baseScale > 0 ? baseScale : 1;
-      gestures.setTransform({
-        scale: safeBase * value.scale,
-        offsetX: value.offsetX,
-        offsetY: value.offsetY,
-      });
-    },
-    [gestures],
-  );
-
-  const normalizeBeforeSave = useCallback(() => {
-    if (!imageSize) return;
-
-    const current = relativeTransformRef.current;
-    let { scale, offsetX, offsetY } = current;
-
-    const hasOffset = Math.abs(offsetX) > OFFSET_THRESHOLD_PX || Math.abs(offsetY) > OFFSET_THRESHOLD_PX;
-    if (scale <= MIN_RELATIVE_SCALE + MIN_SCALE_DELTA && hasOffset) {
-      scale = MIN_RELATIVE_SCALE * (1 + AUTO_ZOOM_EPSILON);
-    }
-
-    const baseScale = baseScaleRef.current || 1;
-    const safeBase = baseScale > 0 ? baseScale : 1;
-    const effectiveScale = safeBase * scale;
-    const drawWidth = imageSize.width * effectiveScale;
-    const drawHeight = imageSize.height * effectiveScale;
-    const maxOffsetX = Math.max(0, (drawWidth - box.w) / 2);
-    const maxOffsetY = Math.max(0, (drawHeight - box.h) / 2);
-
-    const next: PhotoTransform = {
-      scale,
-      offsetX: clampValue(offsetX, -maxOffsetX, maxOffsetX),
-      offsetY: clampValue(offsetY, -maxOffsetY, maxOffsetY),
-    };
-
-    if (
-      next.scale !== current.scale ||
-      next.offsetX !== current.offsetX ||
-      next.offsetY !== current.offsetY
-    ) {
-      applyRelativeTransform(next);
-    }
-  }, [applyRelativeTransform, box.h, box.w, imageSize]);
-
-  const cancelPendingSave = useCallback(() => {
-    if (pendingSaveRef.current !== null) {
-      clearTimeout(pendingSaveRef.current);
-      pendingSaveRef.current = null;
-    }
-  }, []);
-
-  const scheduleAutoSave = useCallback(() => {
-    if (!onChange) return;
-    cancelPendingSave();
-    pendingSaveRef.current = setTimeout(() => {
-      pendingSaveRef.current = null;
-      normalizeBeforeSave();
-      onChange(slot, computePayload());
-    }, 200);
-  }, [cancelPendingSave, computePayload, normalizeBeforeSave, onChange, slot]);
-
-  const frameStyle = useMemo<CSSProperties>(
-    () => ({
-      '--box-left': `${box.x}px`,
-      '--box-top': `${box.y}px`,
-      '--box-width': `${box.w}px`,
-      '--box-height': `${box.h}px`,
-    }),
-    [box.h, box.w, box.x, box.y],
-  );
+  useEffect(() => {
+    const state = gestures.current;
+    state.scale = Math.max(transform.scale ?? MIN_SCALE, MIN_SCALE);
+    state.x = transform.offsetX ?? 0;
+    state.y = transform.offsetY ?? 0;
+    state.pts.clear();
+    state.pinchDistance = 0;
+    applyTransform(imageRef.current, state);
+  }, [gestures, transform.offsetX, transform.offsetY, transform.scale]);
 
   useEffect(() => {
-    if (!onChange) return;
-    const frame = frameRef.current;
-    if (!frame) return;
-
-    const activePointers = new Set<number>();
-
-    const handlePointerDown = (event: PointerEvent) => {
-      activePointers.add(event.pointerId);
-      cancelPendingSave();
-    };
-
-    const handlePointerMove = (event: PointerEvent) => {
-      if (activePointers.has(event.pointerId)) {
-        cancelPendingSave();
-      }
-    };
-
-    const handlePointerUp = (event: PointerEvent) => {
-      activePointers.delete(event.pointerId);
-      if (activePointers.size === 0) {
-        scheduleAutoSave();
-      }
-    };
-
-    frame.addEventListener('pointerdown', handlePointerDown);
-    frame.addEventListener('pointermove', handlePointerMove);
-    frame.addEventListener('pointerup', handlePointerUp);
-    frame.addEventListener('pointercancel', handlePointerUp);
-    frame.addEventListener('pointerleave', handlePointerUp);
-
-    return () => {
-      frame.removeEventListener('pointerdown', handlePointerDown);
-      frame.removeEventListener('pointermove', handlePointerMove);
-      frame.removeEventListener('pointerup', handlePointerUp);
-      frame.removeEventListener('pointercancel', handlePointerUp);
-      frame.removeEventListener('pointerleave', handlePointerUp);
-      activePointers.clear();
-    };
-  }, [cancelPendingSave, onChange, scheduleAutoSave]);
+    setNaturalSize(null);
+  }, [photoSrc]);
 
   const handleImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
     const img = event.currentTarget;
     const width = img.naturalWidth || img.width;
     const height = img.naturalHeight || img.height;
     if (!width || !height) return;
-    setImageSize({ width, height });
+    setNaturalSize({ width, height });
   }, []);
 
   useEffect(() => {
-    setImageSize(null);
-  }, [photoSrc]);
-
-  useEffect(() => {
-    if (!imageSize) return;
-    const placement = placeImage({ x: 0, y: 0, w: box.w, h: box.h }, imageSize.width, imageSize.height);
-    baseScaleRef.current = placement.scale0 || 1;
     const img = imageRef.current;
-    if (img) {
-      img.style.position = 'absolute';
-      img.style.left = `${placement.left}px`;
-      img.style.top = `${placement.top}px`;
-      img.style.width = `${placement.width}px`;
-      img.style.height = `${placement.height}px`;
-      img.style.transformOrigin = 'center center';
-      img.style.willChange = 'transform';
-    }
-    applyRelativeTransform({
-      scale: transform.scale ?? 1,
-      offsetX: transform.offsetX ?? 0,
-      offsetY: transform.offsetY ?? 0,
-    });
-    cancelPendingSave();
-  }, [
-    box.h,
-    box.w,
-    cancelPendingSave,
-    applyRelativeTransform,
-    imageSize,
-    transform.offsetX,
-    transform.offsetY,
-    transform.scale,
-  ]);
+    if (!img || !naturalSize) return;
 
-  const ready = Boolean(imageSize);
+    const placement = placeImage(box, naturalSize.width, naturalSize.height);
+    img.style.position = 'absolute';
+    img.style.left = `${placement.left - box.x}px`;
+    img.style.top = `${placement.top - box.y}px`;
+    img.style.width = `${placement.width}px`;
+    img.style.height = `${placement.height}px`;
+    img.style.transformOrigin = 'center center';
+    img.style.willChange = 'transform';
+    img.draggable = false;
+
+    applyTransform(img, gestures.current);
+  }, [box, gestures, naturalSize]);
+
+  const ready = Boolean(naturalSize);
 
   const handleReset = useCallback(() => {
-    applyRelativeTransform({ scale: MIN_RELATIVE_SCALE, offsetX: 0, offsetY: 0 });
-    cancelPendingSave();
-    if (onChange) {
-      onChange(slot, { scale: MIN_RELATIVE_SCALE, offsetX: 0, offsetY: 0 });
-    }
-  }, [applyRelativeTransform, cancelPendingSave, onChange, slot]);
+    const state = gestures.current;
+    state.scale = MIN_SCALE;
+    state.x = 0;
+    state.y = 0;
+    applyTransform(imageRef.current, state);
+  }, [gestures]);
 
   const handleSave = useCallback(() => {
-    cancelPendingSave();
-    normalizeBeforeSave();
-    onSave(slot, computePayload());
-  }, [cancelPendingSave, computePayload, normalizeBeforeSave, onSave, slot]);
+    if (!naturalSize) return;
+    const state = gestures.current;
+    clampToBox(state, box, naturalSize.width, naturalSize.height, MIN_SCALE);
+    applyTransform(imageRef.current, state);
+    onSave(slot, { scale: state.scale, offsetX: state.x, offsetY: state.y });
+  }, [box, gestures, naturalSize, onSave, slot]);
 
-  useEffect(() => () => cancelPendingSave(), [cancelPendingSave]);
-
-  const handleCancelClick = useCallback(() => {
-    cancelPendingSave();
-    onCancel();
-  }, [cancelPendingSave, onCancel]);
+  const frameStyle = useMemo(() => ({ left: box.x, top: box.y, width: box.w, height: box.h }), [box]);
 
   return (
     <div className="crop-layer">
+      {dims.map((region) => (
+        <div
+          key={`${region.x}-${region.y}-${region.w}-${region.h}`}
+          className="dim-other"
+          style={{ left: region.x, top: region.y, width: region.w, height: region.h }}
+        />
+      ))}
       <div className="crop-frame" ref={frameRef} style={frameStyle}>
         <img
           ref={imageRef}
@@ -289,7 +177,7 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
           Reset
         </button>
         <div className="crop-toolbar__actions">
-          <button type="button" className="crop-button" onClick={handleCancelClick}>
+          <button type="button" className="crop-button" onClick={onCancel}>
             Cancel
           </button>
           <button type="button" className="crop-button is-primary" onClick={handleSave} disabled={!ready}>
