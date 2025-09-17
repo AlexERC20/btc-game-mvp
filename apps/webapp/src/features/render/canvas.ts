@@ -13,14 +13,14 @@ import { splitEditorialText } from '@/utils/text';
 import { composeTextLines } from '@/utils/textLayout';
 import { resolveBlockPosition, resolveBlockWidth } from '@/utils/layoutGeometry';
 import { resolvePhotoFromStore } from '@/utils/photos';
-import { computeCollageBoxes } from '@/utils/collage';
+import { getCollageBoxes } from '@/utils/getCollageBoxes';
 import { placeImage } from '@/utils/placeImage';
 import { applyOpacityToColor } from '@/utils/color';
 
 export const CANVAS_W = BASE_FRAME.width;
 export const CANVAS_H = BASE_FRAME.height;
 
-type Rect = { x: number; y: number; width: number; height: number };
+type Rect = { x: number; y: number; w: number; h: number };
 
 function drawImageWithTransform(
   ctx: CanvasRenderingContext2D,
@@ -36,7 +36,7 @@ function drawImageWithTransform(
 
   ctx.save();
   ctx.beginPath();
-  ctx.rect(box.x, box.y, box.width, box.height);
+  ctx.rect(box.x, box.y, box.w, box.h);
   ctx.clip();
   ctx.drawImage(img, placement.left, placement.top, placement.width, placement.height);
   ctx.restore();
@@ -355,28 +355,29 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
   if (isCollage) {
-    const boxes = computeCollageBoxes(collageConfig.dividerPx);
+    const safeDivider = Math.min(Math.max(0, collageConfig.dividerPx), CANVAS_H);
+    const boxes = getCollageBoxes(CANVAS_W, CANVAS_H, safeDivider);
     const placeholder = 'rgba(0,0,0,0.08)';
 
-    if (boxes.top.height > 0) {
+    if (boxes.top.h > 0) {
       if (topImage) {
         drawImageWithTransform(ctx, topImage, boxes.top, collageConfig.top.transform);
       } else {
         ctx.fillStyle = placeholder;
-        ctx.fillRect(boxes.top.x, boxes.top.y, boxes.top.width, boxes.top.height);
+        ctx.fillRect(boxes.top.x, boxes.top.y, boxes.top.w, boxes.top.h);
       }
     }
 
-    if (boxes.bottom.height > 0) {
+    if (boxes.bot.h > 0) {
       if (bottomImage) {
-        drawImageWithTransform(ctx, bottomImage, boxes.bottom, collageConfig.bottom.transform);
+        drawImageWithTransform(ctx, bottomImage, boxes.bot, collageConfig.bottom.transform);
       } else {
         ctx.fillStyle = placeholder;
-        ctx.fillRect(boxes.bottom.x, boxes.bottom.y, boxes.bottom.width, boxes.bottom.height);
+        ctx.fillRect(boxes.bot.x, boxes.bot.y, boxes.bot.w, boxes.bot.h);
       }
     }
 
-    if (boxes.divider.height > 0) {
+    if (safeDivider > 0) {
       const baseColor =
         collageConfig.dividerColor === 'auto'
           ? design.theme.textColor
@@ -385,13 +386,13 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
         baseColor,
         collageConfig.dividerOpacity,
       );
-      ctx.fillRect(0, boxes.divider.y, CANVAS_W, boxes.divider.height);
+      ctx.fillRect(0, boxes.top.h, CANVAS_W, safeDivider);
     }
   } else if (singleImage) {
     drawImageWithTransform(
       ctx,
       singleImage,
-      { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H },
+      { x: 0, y: 0, w: CANVAS_W, h: CANVAS_H },
       singleConfig.transform,
     );
   }

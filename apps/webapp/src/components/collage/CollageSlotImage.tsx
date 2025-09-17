@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, type SyntheticEvent } from '
 import type { PhotoTransform } from '@/state/store';
 import { placeImage } from '@/utils/placeImage';
 
-type Box = { width: number; height: number };
+type Box = { x: number; y: number; w: number; h: number };
 
 type Props = {
   src: string;
@@ -43,7 +43,7 @@ export function CollageSlotImage({ src, box, transform, className, hidden, onLoa
     }
 
     const placement = placeImage(
-      { x: 0, y: 0, width: box.width, height: box.height },
+      { x: 0, y: 0, w: box.w, h: box.h },
       size.width,
       size.height,
       transform,
@@ -57,7 +57,7 @@ export function CollageSlotImage({ src, box, transform, className, hidden, onLoa
       height: `${placement.height}px`,
       transform: 'translate3d(0,0,0)',
     };
-  }, [box.height, box.width, size, transform.offsetX, transform.offsetY, transform.scale]);
+  }, [box.h, box.w, size, transform.offsetX, transform.offsetY, transform.scale]);
 
   const resolvedClassName = useMemo(() => {
     const classes = [className, hidden ? 'is-hidden' : null].filter(Boolean);
