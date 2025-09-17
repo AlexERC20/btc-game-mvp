@@ -50,6 +50,7 @@ export default function TemplateSheet() {
   const close = useCarouselStore((s) => s.closeSheet);
   const activeSlide = useCarouselStore((s) => s.slides[s.activeIndex]);
   const updateSlide = useCarouselStore((s) => s.updateSlide);
+  const applyCollageTemplateToAll = useCarouselStore((s) => s.applyCollageTemplateToAll);
 
   const collageConfig = useMemo(
     () => normalizeCollage(activeSlide?.collage50),
@@ -176,6 +177,13 @@ export default function TemplateSheet() {
                   </button>
                 ))}
               </div>
+              <button
+                type="button"
+                className="btn-soft"
+                onClick={applyCollageTemplateToAll}
+              >
+                Apply template to all slides
+              </button>
             </div>
           )}
         </div>

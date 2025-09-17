@@ -965,10 +965,12 @@ export const useCarouselStore = create<State>((set, get) => ({
   autoFillCollage: (photoIds) =>
     set((state) => {
       if (photoIds.length === 0) return {};
+      const maxSlides = Math.min(state.slides.length, 10);
+      if (maxSlides === 0) return {};
       let changed = false;
-      const limit = state.slides.length * 2;
-      const queue = photoIds.slice(0, limit);
+      const queue = photoIds.slice(0, maxSlides * 2);
       const slides = state.slides.map((slide, index) => {
+        if (index >= maxSlides) return slide;
         const collage = normalizeCollage(slide.collage50);
         const topId = queue[index * 2];
         const bottomId = queue[index * 2 + 1];
@@ -980,7 +982,7 @@ export const useCarouselStore = create<State>((set, get) => ({
                   ? { ...collage.top.transform }
                   : createDefaultTransform(),
             }
-          : { photoId: undefined, transform: createDefaultTransform() };
+          : createDefaultCollageSlot();
         const nextBottom: CollageSlot = bottomId
           ? {
               photoId: bottomId,
@@ -989,7 +991,7 @@ export const useCarouselStore = create<State>((set, get) => ({
                   ? { ...collage.bottom.transform }
                   : createDefaultTransform(),
             }
-          : { photoId: undefined, transform: createDefaultTransform() };
+          : createDefaultCollageSlot();
         const sameTop =
           collage.top.photoId === nextTop.photoId &&
           collage.top.transform.scale === nextTop.transform.scale &&
