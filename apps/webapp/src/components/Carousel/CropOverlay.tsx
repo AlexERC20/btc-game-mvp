@@ -13,15 +13,17 @@ type Props = {
   transform: PhotoTransform;
   onCancel: () => void;
   onSave: (slot: CropSlot, transform: PhotoTransform) => void;
+  onChange?: (slot: CropSlot, transform: PhotoTransform) => void;
 };
 
 type Size = { width: number; height: number };
 
-export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave }: Props) {
+export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, onChange }: Props) {
   const frameRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const [imageSize, setImageSize] = useState<Size | null>(null);
   const baseScaleRef = useRef(1);
+  const pendingSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clampTransform = useCallback(
     (value: CropTransform): CropTransform => {
@@ -55,6 +57,32 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave }
     clamp: clampTransform,
   });
 
+  const computePayload = useCallback((): PhotoTransform => {
+    const current = gestures.getTransform();
+    const baseScale = baseScaleRef.current || 1;
+    return {
+      scale: current.scale / baseScale,
+      offsetX: current.offsetX,
+      offsetY: current.offsetY,
+    };
+  }, [gestures]);
+
+  const cancelPendingSave = useCallback(() => {
+    if (pendingSaveRef.current !== null) {
+      clearTimeout(pendingSaveRef.current);
+      pendingSaveRef.current = null;
+    }
+  }, []);
+
+  const scheduleAutoSave = useCallback(() => {
+    if (!onChange) return;
+    cancelPendingSave();
+    pendingSaveRef.current = setTimeout(() => {
+      pendingSaveRef.current = null;
+      onChange(slot, computePayload());
+    }, 200);
+  }, [cancelPendingSave, computePayload, onChange, slot]);
+
   const frameStyle = useMemo(
     () => ({
       left: `${box.x}px`,
@@ -64,6 +92,47 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave }
     }),
     [box.height, box.width, box.x, box.y],
   );
+
+  useEffect(() => {
+    if (!onChange) return;
+    const frame = frameRef.current;
+    if (!frame) return;
+
+    const activePointers = new Set<number>();
+
+    const handlePointerDown = (event: PointerEvent) => {
+      activePointers.add(event.pointerId);
+      cancelPendingSave();
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (activePointers.has(event.pointerId)) {
+        cancelPendingSave();
+      }
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      activePointers.delete(event.pointerId);
+      if (activePointers.size === 0) {
+        scheduleAutoSave();
+      }
+    };
+
+    frame.addEventListener('pointerdown', handlePointerDown);
+    frame.addEventListener('pointermove', handlePointerMove);
+    frame.addEventListener('pointerup', handlePointerUp);
+    frame.addEventListener('pointercancel', handlePointerUp);
+    frame.addEventListener('pointerleave', handlePointerUp);
+
+    return () => {
+      frame.removeEventListener('pointerdown', handlePointerDown);
+      frame.removeEventListener('pointermove', handlePointerMove);
+      frame.removeEventListener('pointerup', handlePointerUp);
+      frame.removeEventListener('pointercancel', handlePointerUp);
+      frame.removeEventListener('pointerleave', handlePointerUp);
+      activePointers.clear();
+    };
+  }, [cancelPendingSave, onChange, scheduleAutoSave]);
 
   const handleImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
     const img = event.currentTarget;
@@ -97,7 +166,18 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave }
       offsetY: transform.offsetY ?? 0,
     });
     gestures.setTransform(initial);
-  }, [box.height, box.width, clampTransform, gestures, imageSize, transform.offsetX, transform.offsetY, transform.scale]);
+    cancelPendingSave();
+  }, [
+    box.height,
+    box.width,
+    cancelPendingSave,
+    clampTransform,
+    gestures,
+    imageSize,
+    transform.offsetX,
+    transform.offsetY,
+    transform.scale,
+  ]);
 
   const ready = Boolean(imageSize);
 
@@ -110,18 +190,23 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave }
         offsetY: 0,
       }),
     );
-  }, [clampTransform, gestures]);
+    cancelPendingSave();
+    if (onChange) {
+      onChange(slot, { scale: 1, offsetX: 0, offsetY: 0 });
+    }
+  }, [cancelPendingSave, clampTransform, gestures, onChange, slot]);
 
   const handleSave = useCallback(() => {
-    const current = gestures.getTransform();
-    const baseScale = baseScaleRef.current || 1;
-    const payload: PhotoTransform = {
-      scale: current.scale / baseScale,
-      offsetX: current.offsetX,
-      offsetY: current.offsetY,
-    };
-    onSave(slot, payload);
-  }, [gestures, onSave, slot]);
+    cancelPendingSave();
+    onSave(slot, computePayload());
+  }, [cancelPendingSave, computePayload, onSave, slot]);
+
+  useEffect(() => () => cancelPendingSave(), [cancelPendingSave]);
+
+  const handleCancelClick = useCallback(() => {
+    cancelPendingSave();
+    onCancel();
+  }, [cancelPendingSave, onCancel]);
 
   return (
     <div className="crop-layer">
@@ -141,7 +226,7 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave }
           Reset
         </button>
         <div className="crop-toolbar__actions">
-          <button type="button" className="crop-button" onClick={onCancel}>
+          <button type="button" className="crop-button" onClick={handleCancelClick}>
             Cancel
           </button>
           <button type="button" className="crop-button is-primary" onClick={handleSave} disabled={!ready}>
