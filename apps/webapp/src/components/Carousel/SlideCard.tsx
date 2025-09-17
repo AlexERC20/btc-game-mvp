@@ -1,12 +1,14 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { BASE_FRAME } from '@/features/render/constants';
-import { DEFAULT_COLLAGE_50, Slide, usePhotos } from '@/state/store';
+import { Slide, usePhotos, normalizeCollage } from '@/state/store';
 import type { SlideDesign } from '@/styles/theme';
 import { splitEditorialText } from '@/utils/text';
 import { composeTextLines } from '@/utils/textLayout';
 import { resolveBlockPosition, resolveBlockWidth } from '@/utils/layoutGeometry';
 import { resolvePhotoSource } from '@/utils/photos';
 import { applyOpacityToColor } from '@/utils/color';
+import { computeCollageBoxes } from '@/utils/collage';
+import { CollageSlotImage } from '@/components/collage/CollageSlotImage';
 
 type Props = {
   slide: Slide;
@@ -26,37 +28,22 @@ export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
   const { theme, typography, layout, template } = design;
   const photos = usePhotos((state) => state.items);
   const isCollage = slide.template === 'collage-50';
-  const collage = useMemo(
-    () => ({ ...DEFAULT_COLLAGE_50, ...(slide.collage50 ?? {}) }),
-    [slide.collage50],
-  );
+  const collage = useMemo(() => normalizeCollage(slide.collage50), [slide.collage50]);
   const collageImages = useMemo(
     () => ({
-      top: isCollage ? resolvePhotoSource(collage.topPhoto, photos) : undefined,
-      bottom: isCollage ? resolvePhotoSource(collage.bottomPhoto, photos) : undefined,
+      top: isCollage ? resolvePhotoSource(collage.top.photoId, photos) : undefined,
+      bottom: isCollage ? resolvePhotoSource(collage.bottom.photoId, photos) : undefined,
     }),
-    [collage.bottomPhoto, collage.topPhoto, isCollage, photos],
+    [collage.bottom.photoId, collage.top.photoId, isCollage, photos],
   );
-  const collageMetrics = useMemo(() => {
-    if (!isCollage) {
-      return { dividerThickness: 0, topHeight: 0, bottomY: 0, bottomHeight: 0, dividerY: 0 };
-    }
-    const thickness = Math.max(0, collage.dividerPx ?? DEFAULT_COLLAGE_50.dividerPx);
-    const half = Math.floor(BASE_FRAME.height / 2);
-    const halfLine = thickness / 2;
-    const topHeight = Math.max(0, half - halfLine);
-    const bottomY = half + halfLine;
-    const bottomHeight = Math.max(0, BASE_FRAME.height - bottomY);
-    const dividerY = half - halfLine;
-    return { dividerThickness: thickness, topHeight, bottomY, bottomHeight, dividerY };
-  }, [collage.dividerPx, isCollage]);
+  const collageBoxes = useMemo(
+    () => computeCollageBoxes(collage.dividerPx),
+    [collage.dividerPx],
+  );
   const collageDividerColor = useMemo(() => {
     if (!isCollage) return undefined;
-    const baseColor =
-      collage.dividerColor === 'auto'
-        ? theme.textColor
-        : collage.dividerColor ?? DEFAULT_COLLAGE_50.dividerColor;
-    const opacity = collage.dividerOpacity ?? DEFAULT_COLLAGE_50.dividerOpacity;
+    const baseColor = collage.dividerColor === 'auto' ? theme.textColor : collage.dividerColor;
+    const opacity = collage.dividerOpacity;
     return applyOpacityToColor(baseColor, opacity);
   }, [collage.dividerColor, collage.dividerOpacity, isCollage, theme.textColor]);
   const { title, body } = useMemo(() => splitEditorialText(slide.body ?? ''), [slide.body]);
@@ -248,11 +235,15 @@ export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
                   top: 0,
                   left: 0,
                   width: '100%',
-                  height: collageMetrics.topHeight,
+                  height: collageBoxes.top.height,
                 }}
               >
-                {collageImages.top ? (
-                  <img src={collageImages.top} alt="" draggable={false} />
+                {collageImages.top && collageBoxes.top.height > 0 ? (
+                  <CollageSlotImage
+                    src={collageImages.top}
+                    box={{ width: collageBoxes.top.width, height: collageBoxes.top.height }}
+                    transform={collage.top.transform}
+                  />
                 ) : (
                   <span className="collage-slot__placeholder">Добавьте фото</span>
                 )}
@@ -260,26 +251,30 @@ export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
               <div
                 className={`collage-slot${collageImages.bottom ? '' : ' is-empty'}`}
                 style={{
-                  top: collageMetrics.bottomY,
+                  top: collageBoxes.bottom.y,
                   left: 0,
                   width: '100%',
-                  height: collageMetrics.bottomHeight,
+                  height: collageBoxes.bottom.height,
                 }}
               >
-                {collageImages.bottom ? (
-                  <img src={collageImages.bottom} alt="" draggable={false} />
+                {collageImages.bottom && collageBoxes.bottom.height > 0 ? (
+                  <CollageSlotImage
+                    src={collageImages.bottom}
+                    box={{ width: collageBoxes.bottom.width, height: collageBoxes.bottom.height }}
+                    transform={collage.bottom.transform}
+                  />
                 ) : (
                   <span className="collage-slot__placeholder">Добавьте фото</span>
                 )}
               </div>
-              {collageMetrics.dividerThickness > 0 && (
+              {collageBoxes.divider.height > 0 && (
                 <div
                   className="collage-divider"
                   style={{
-                    top: collageMetrics.dividerY,
+                    top: collageBoxes.divider.y,
                     left: 0,
                     width: '100%',
-                    height: collageMetrics.dividerThickness,
+                    height: collageBoxes.divider.height,
                     background: collageDividerColor,
                   }}
                 />
@@ -290,6 +285,7 @@ export function SlideCard({ slide, design, safeAreaEnabled }: Props) {
           ) : (
             <div className="ig-placeholder" />
           )}
+          {isCollage && <div className="collage-tag">Collage</div>}
           {theme.gradient !== 'original' && theme.gradientStops.heightPct > 0 && (
             <div
               className="footer-gradient"

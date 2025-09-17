@@ -87,6 +87,22 @@
 .collage-slot.is-empty{ background:rgba(0,0,0,.08); color:rgba(255,255,255,.65); }
 .collage-slot__placeholder{ pointer-events:none; padding:12px; text-align:center; }
 .collage-divider{ position:absolute; left:0; width:100%; pointer-events:none; }
+.collage-tag{
+  position:absolute;
+  top:12px;
+  left:12px;
+  padding:6px 10px;
+  border-radius:999px;
+  background:color-mix(in srgb, #000 55%, transparent);
+  border:1px solid rgba(255,255,255,.28);
+  color:#fff;
+  font-size:12px;
+  font-weight:700;
+  letter-spacing:0.02em;
+  text-transform:uppercase;
+  pointer-events:none;
+  backdrop-filter:blur(6px);
+}
 
 .overlay{
   position:absolute; inset:auto 12px 12px 12px; display:flex; flex-direction:column; gap:8px;

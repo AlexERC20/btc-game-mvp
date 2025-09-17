@@ -3,7 +3,8 @@ import Sheet from '../Sheet/Sheet';
 import {
   useCarouselStore,
   createDefaultCollage50,
-  DEFAULT_COLLAGE_50,
+  normalizeCollage,
+  createDefaultTransform,
   usePhotos,
 } from '@/state/store';
 import type { Collage50, TemplateStyle, Slide } from '@/state/store';
@@ -51,7 +52,7 @@ export default function TemplateSheet() {
   const updateSlide = useCarouselStore((s) => s.updateSlide);
 
   const collageConfig = useMemo(
-    () => ({ ...DEFAULT_COLLAGE_50, ...(activeSlide?.collage50 ?? {}) }),
+    () => normalizeCollage(activeSlide?.collage50),
     [activeSlide?.collage50],
   );
   const isCollageTemplate = activeSlide?.template === 'collage-50';
@@ -65,8 +66,8 @@ export default function TemplateSheet() {
   const selectSingle = () => {
     if (!activeSlide) return;
     if (activeSlide.template === 'single') return;
-    const snapshot = { ...DEFAULT_COLLAGE_50, ...(activeSlide.collage50 ?? {}) };
-    const topRef = snapshot.topPhoto;
+    const snapshot = normalizeCollage(activeSlide.collage50);
+    const topRef = snapshot.top.photoId;
     const fallbackImage = topRef ? resolvePhotoFromStore(topRef) : undefined;
     const photosState = usePhotos.getState();
     const isLibraryPhoto = topRef ? photosState.items.some((p) => p.id === topRef) : false;
@@ -83,12 +84,20 @@ export default function TemplateSheet() {
   const selectCollage = () => {
     if (!activeSlide) return;
     const base = createDefaultCollage50();
-    const next = { ...base, ...(activeSlide.collage50 ?? {}) };
-    if (!next.topPhoto) {
-      if (activeSlide.photoId) next.topPhoto = activeSlide.photoId;
-      else if (activeSlide.image) next.topPhoto = activeSlide.image;
+    const previous = normalizeCollage(activeSlide.collage50);
+    const next = {
+      ...base,
+      dividerPx: previous.dividerPx,
+      dividerColor: previous.dividerColor,
+      dividerOpacity: previous.dividerOpacity,
+      top: { ...previous.top },
+      bottom: { ...previous.bottom },
+    };
+    if (!next.top.photoId) {
+      if (activeSlide.photoId) next.top = { photoId: activeSlide.photoId, transform: createDefaultTransform() };
+      else if (activeSlide.image) next.top = { photoId: activeSlide.image, transform: createDefaultTransform() };
     }
-    updateSlide(activeSlide.id, { template: 'collage-50', collage50: next, image: undefined });
+    updateSlide(activeSlide.id, { template: 'collage-50', collage50: next, image: undefined, photoId: undefined });
   };
 
   const isDividerPresetActive = (value: string) => {
