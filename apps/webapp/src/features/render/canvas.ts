@@ -14,6 +14,7 @@ import { composeTextLines } from '@/utils/textLayout';
 import { resolveBlockPosition, resolveBlockWidth } from '@/utils/layoutGeometry';
 import { resolvePhotoFromStore } from '@/utils/photos';
 import { computeCollageBoxes } from '@/utils/collage';
+import { placeImage } from '@/utils/placeImage';
 import { applyOpacityToColor } from '@/utils/color';
 
 export const CANVAS_W = BASE_FRAME.width;
@@ -31,18 +32,13 @@ function drawImageWithTransform(
   const imageHeight = img.naturalHeight || img.height;
   if (!imageWidth || !imageHeight) return;
 
-  const baseScale = Math.max(box.width / imageWidth, box.height / imageHeight);
-  const scale = baseScale * (transform?.scale ?? 1);
-  const drawWidth = imageWidth * scale;
-  const drawHeight = imageHeight * scale;
-  const dx = box.x + (box.width - drawWidth) / 2 + (transform?.offsetX ?? 0);
-  const dy = box.y + (box.height - drawHeight) / 2 + (transform?.offsetY ?? 0);
+  const placement = placeImage(box, imageWidth, imageHeight, transform);
 
   ctx.save();
   ctx.beginPath();
   ctx.rect(box.x, box.y, box.width, box.height);
   ctx.clip();
-  ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
+  ctx.drawImage(img, placement.left, placement.top, placement.width, placement.height);
   ctx.restore();
 }
 
