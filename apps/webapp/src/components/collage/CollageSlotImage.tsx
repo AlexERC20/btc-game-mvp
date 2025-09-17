@@ -9,10 +9,11 @@ type Props = {
   box: Box;
   transform: PhotoTransform;
   className?: string;
+  hidden?: boolean;
   onLoad?: (size: { width: number; height: number }) => void;
 };
 
-export function CollageSlotImage({ src, box, transform, className, onLoad }: Props) {
+export function CollageSlotImage({ src, box, transform, className, hidden, onLoad }: Props) {
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
@@ -58,12 +59,17 @@ export function CollageSlotImage({ src, box, transform, className, onLoad }: Pro
     };
   }, [box.height, box.width, size, transform.offsetX, transform.offsetY, transform.scale]);
 
+  const resolvedClassName = useMemo(() => {
+    const classes = [className, hidden ? 'is-hidden' : null].filter(Boolean);
+    return classes.length > 0 ? classes.join(' ') : undefined;
+  }, [className, hidden]);
+
   return (
     <img
       src={src}
       alt=""
       draggable={false}
-      className={className}
+      className={resolvedClassName}
       onLoad={handleLoad}
       style={style}
     />
