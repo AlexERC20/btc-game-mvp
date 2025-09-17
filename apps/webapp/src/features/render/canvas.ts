@@ -1,6 +1,12 @@
 import { BASE_FRAME } from './constants';
 import type { LayoutConfig, TemplateConfig } from '@/state/store';
-import { Slide, layoutSnapshot, useCarouselStore, normalizeCollage } from '@/state/store';
+import {
+  Slide,
+  layoutSnapshot,
+  useCarouselStore,
+  normalizeCollage,
+  normalizeSingle,
+} from '@/state/store';
 import { resolveSlideDesign, Theme } from '@/styles/theme';
 import { Typography, typographyToCanvasFont } from '@/styles/typography';
 import { splitEditorialText } from '@/utils/text';
@@ -304,6 +310,8 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
   let topImage: HTMLImageElement | null = null;
   let bottomImage: HTMLImageElement | null = null;
 
+  const singleConfig = normalizeSingle(slide.single);
+
   if (isCollage) {
     const topSrc = resolvePhotoFromStore(collageConfig.top.photoId);
     const bottomSrc = resolvePhotoFromStore(collageConfig.bottom.photoId);
@@ -358,7 +366,7 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
       ctx.fillRect(0, boxes.divider.y, CANVAS_W, boxes.divider.height);
     }
   } else if (singleImage) {
-    drawImageCover(ctx, singleImage, { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H });
+    drawImageCover(ctx, singleImage, { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H }, singleConfig.transform);
   }
 
   drawFooterGradient(ctx, design.theme);

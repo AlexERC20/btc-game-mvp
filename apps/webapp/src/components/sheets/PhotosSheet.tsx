@@ -8,42 +8,22 @@ import {
   type PointerEvent as ReactPointerEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import {
-  photosActions,
-  usePhotos,
-  Photo,
-  PhotoId,
-  PhotoTransform,
-  useCarouselStore,
-  slidesActions,
-  normalizeCollage,
-} from '@/state/store';
+import { photosActions, usePhotos, Photo, PhotoId, useCarouselStore, slidesActions, normalizeCollage } from '@/state/store';
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
   TrashIcon,
   CheckIcon,
-  PencilIcon,
   SwapIcon,
 } from '@/ui/icons';
 import { resolvePhotoSource } from '@/utils/photos';
 import { computeCollageBoxes } from '@/utils/collage';
 import { CollageSlotImage } from '@/components/collage/CollageSlotImage';
-import { CollageCropModal } from '@/components/collage/CollageCropModal';
 import '@/styles/photos-sheet.css';
-
-type MenuIntent = 'assign' | 'assign-and-crop' | 'choose-crop-slot';
 
 type MenuState = {
   photo: Photo;
   anchor: { x: number; y: number };
-  intent: MenuIntent;
-};
-
-type CropState = {
-  slot: 'top' | 'bottom';
-  photoId: string;
-  photoSrc: string;
 };
 
 const impact = (style: 'light' | 'medium' = 'light') => {
@@ -63,11 +43,9 @@ type SlotThumbProps = {
   badge?: string;
   active: boolean;
   onSelect: () => void;
-  onEdit: () => void;
-  canEdit: boolean;
 };
 
-function SlotThumb({ label, box, src, transform, badge, active, onSelect, onEdit, canEdit }: SlotThumbProps) {
+function SlotThumb({ label, box, src, transform, badge, active, onSelect }: SlotThumbProps) {
   const frameRef = useRef<HTMLButtonElement>(null);
   const [frameWidth, setFrameWidth] = useState(0);
 
@@ -122,19 +100,6 @@ function SlotThumb({ label, box, src, transform, badge, active, onSelect, onEdit
       </button>
       <span className="slot-thumb__label">{label}</span>
       {badge && <div className="badge">{badge}</div>}
-      {canEdit && (
-        <button
-          type="button"
-          className="edit"
-          onClick={(event) => {
-            event.stopPropagation();
-            onEdit();
-          }}
-          aria-label="Edit crop"
-        >
-          <PencilIcon />
-        </button>
-      )}
     </div>
   );
 }
@@ -156,7 +121,6 @@ export default function PhotosSheet() {
   const [selected, setSelected] = useState<PhotoId[]>([]);
   const [activeSlot, setActiveSlot] = useState<'top' | 'bottom'>('top');
   const [menu, setMenu] = useState<MenuState | null>(null);
-  const [crop, setCrop] = useState<CropState | null>(null);
   const [actionPhotoId, setActionPhotoId] = useState<PhotoId | null>(null);
   const actionHoldRef = useRef<{ timer: number; photoId: PhotoId } | null>(null);
   const actionHoldTriggered = useRef(false);
@@ -167,7 +131,6 @@ export default function PhotosSheet() {
   const activeIndex = useCarouselStore((s) => s.activeIndex);
   const setCollageSlot = useCarouselStore((s) => s.setCollageSlot);
   const swapCollage = useCarouselStore((s) => s.swapCollage);
-  const setCollageTransform = useCarouselStore((s) => s.setCollageTransform);
   const autoFillCollage = useCarouselStore((s) => s.autoFillCollage);
 
   const activeSlide = slides[activeIndex];
@@ -270,7 +233,7 @@ export default function PhotosSheet() {
     impact('medium');
   };
 
-  const openMenu = (photo: Photo, element: HTMLElement, intent: MenuIntent = 'assign') => {
+  const openMenu = (photo: Photo, element: HTMLElement) => {
     const panel = panelRef.current;
     if (!panel) return;
     const rect = element.getBoundingClientRect();
@@ -282,7 +245,6 @@ export default function PhotosSheet() {
         x: rect.left - panelRect.left + rect.width / 2,
         y: rect.top - panelRect.top + rect.height + 8,
       },
-      intent,
     });
   };
 
@@ -363,142 +325,36 @@ export default function PhotosSheet() {
     toggleSelect(photo.id);
   };
 
-  const assignToSlot = (
-    slot: 'top' | 'bottom',
-    photo: Photo,
-    options: { openCrop?: boolean } = {},
-  ) => {
+  const assignToSlot = (slot: 'top' | 'bottom', photo: Photo) => {
     if (!activeSlide || !isCollage) return;
     setCollageSlot(activeIndex, slot, photo.id);
     setActiveSlot(slot === 'top' ? 'bottom' : 'top');
+    setActionPhotoId(null);
     impact('light');
     closeMenu();
-    if (options.openCrop) {
-      requestAnimationFrame(() => {
-        openCrop(slot);
-      });
-    }
-  };
-
-  const openCrop = (slot: 'top' | 'bottom') => {
-    if (!isCollage) return;
-    const photoId = collage[slot].photoId;
-    if (!photoId) return;
-    const src = resolvePhotoSource(photoId, items);
-    if (!src) return;
-    setCrop({ slot, photoId, photoSrc: src });
-  };
-
-  const handleEditCropRequest = (photo: Photo) => {
-    if (!isCollage) return;
-    const isTop = collage.top.photoId === photo.id;
-    const isBottom = collage.bottom.photoId === photo.id;
-    if (isTop && isBottom) {
-      setMenu((prev) => (prev ? { ...prev, intent: 'choose-crop-slot' } : prev));
-      return;
-    }
-    if (isTop) {
-      closeMenu();
-      openCrop('top');
-      return;
-    }
-    if (isBottom) {
-      closeMenu();
-      openCrop('bottom');
-      return;
-    }
-    setMenu((prev) => (prev ? { ...prev, intent: 'assign-and-crop' } : prev));
-  };
-
-  const handleThumbEdit = (photo: Photo, element: HTMLElement) => {
-    if (!isCollage) return;
-    setActionPhotoId(null);
-    const isTop = collage.top.photoId === photo.id;
-    const isBottom = collage.bottom.photoId === photo.id;
-    if (isTop && isBottom) {
-      openMenu(photo, element, 'choose-crop-slot');
-      return;
-    }
-    if (isTop) {
-      openCrop('top');
-      return;
-    }
-    if (isBottom) {
-      openCrop('bottom');
-      return;
-    }
-    openMenu(photo, element, 'assign-and-crop');
-  };
-
-  const handleSaveCrop = (next: PhotoTransform) => {
-    if (!crop) return;
-    setCollageTransform(activeIndex, crop.slot, next);
-    setCrop(null);
-    impact('light');
   };
 
   const renderMenu = () => {
     if (!menu || !isCollage) return null;
 
-    const { photo, intent } = menu;
+    const { photo } = menu;
     const isTopAssigned = collage.top.photoId === photo.id;
     const isBottomAssigned = collage.bottom.photoId === photo.id;
 
     const buttons: { key: string; label: string; onClick: () => void }[] = [];
 
-    if (intent === 'assign') {
-      buttons.push({
-        key: 'assign-top',
-        label: collage.top.photoId ? 'Replace Top' : 'Set as Top',
-        onClick: () => assignToSlot('top', photo),
-      });
-      buttons.push({
-        key: 'assign-bottom',
-        label: collage.bottom.photoId ? 'Replace Bottom' : 'Set as Bottom',
-        onClick: () => assignToSlot('bottom', photo),
-      });
-      buttons.push({
-        key: 'edit',
-        label: 'Edit crop…',
-        onClick: () => handleEditCropRequest(photo),
-      });
-    } else if (intent === 'assign-and-crop') {
-      buttons.push({
-        key: 'assign-top',
-        label: collage.top.photoId ? 'Replace Top & crop' : 'Set as Top & crop',
-        onClick: () => assignToSlot('top', photo, { openCrop: true }),
-      });
-      buttons.push({
-        key: 'assign-bottom',
-        label: collage.bottom.photoId ? 'Replace Bottom & crop' : 'Set as Bottom & crop',
-        onClick: () => assignToSlot('bottom', photo, { openCrop: true }),
-      });
-    } else if (intent === 'choose-crop-slot') {
-      if (isTopAssigned) {
-        buttons.push({
-          key: 'crop-top',
-          label: 'Edit Top crop',
-          onClick: () => {
-            closeMenu();
-            openCrop('top');
-          },
-        });
-      }
-      if (isBottomAssigned) {
-        buttons.push({
-          key: 'crop-bottom',
-          label: 'Edit Bottom crop',
-          onClick: () => {
-            closeMenu();
-            openCrop('bottom');
-          },
-        });
-      }
-    }
+    buttons.push({
+      key: 'assign-top',
+      label: isTopAssigned ? 'Replace Top' : 'Set as Top',
+      onClick: () => assignToSlot('top', photo),
+    });
+    buttons.push({
+      key: 'assign-bottom',
+      label: isBottomAssigned ? 'Replace Bottom' : 'Set as Bottom',
+      onClick: () => assignToSlot('bottom', photo),
+    });
 
-    if (buttons.length === 0) {
-      return null;
-    }
+    if (buttons.length === 0) return null;
 
     return (
       <div className="collage-menu" style={{ left: menu.anchor.x, top: menu.anchor.y }}>
@@ -579,8 +435,6 @@ export default function PhotosSheet() {
                       badge={topBadgeLabel}
                       active={activeSlot === 'top'}
                       onSelect={() => setActiveSlot('top')}
-                      onEdit={() => openCrop('top')}
-                      canEdit={Boolean(collage.top.photoId)}
                     />
                     <button
                       type="button"
@@ -599,8 +453,6 @@ export default function PhotosSheet() {
                       badge={bottomBadgeLabel}
                       active={activeSlot === 'bottom'}
                       onSelect={() => setActiveSlot('bottom')}
-                      onEdit={() => openCrop('bottom')}
-                      canEdit={Boolean(collage.bottom.photoId)}
                     />
                   </div>
                 )}
@@ -692,20 +544,6 @@ export default function PhotosSheet() {
                             ))}
                           </div>
                         )}
-                        <div className="ov-bot-right">
-                          <button
-                            type="button"
-                            className={`btn-ico edit${isTop || isBottom ? '' : ' is-idle'}`}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleThumbEdit(photo, event.currentTarget as HTMLElement);
-                            }}
-                            aria-label="Edit crop"
-                          >
-                            <PencilIcon />
-                          </button>
-                        </div>
                       </div>
                     );
                   })}
@@ -716,17 +554,6 @@ export default function PhotosSheet() {
         </div>
         {renderMenu()}
       </div>
-      {crop && (
-        <CollageCropModal
-          open
-          slot={crop.slot}
-          photoSrc={crop.photoSrc}
-          transform={collage[crop.slot].transform}
-          box={crop.slot === 'top' ? collageBoxes.top : collageBoxes.bottom}
-          onClose={() => setCrop(null)}
-          onSave={handleSaveCrop}
-        />
-      )}
     </div>
   );
 }

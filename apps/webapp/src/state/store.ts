@@ -55,6 +55,10 @@ export type PhotoTransform = {
   offsetY: number;
 };
 
+export type SingleSlot = {
+  transform: PhotoTransform;
+};
+
 export type CollageSlot = {
   photoId?: string;
   transform: PhotoTransform;
@@ -289,6 +293,7 @@ export type Slide = {
   photoId?: PhotoId;
   template: 'single' | 'collage-50';
   collage50?: Collage50;
+  single?: SingleSlot;
   nickname?: string;
   overrides?: {
     template?: TemplateConfig;
@@ -328,6 +333,15 @@ export function normalizeCollage(config?: Collage50): Collage50 {
     dividerColor: config.dividerColor ?? DEFAULT_COLLAGE_50.dividerColor,
     dividerOpacity: config.dividerOpacity ?? DEFAULT_COLLAGE_50.dividerOpacity,
   };
+}
+
+export function createDefaultSingle(): SingleSlot {
+  return { transform: createDefaultTransform() };
+}
+
+export function normalizeSingle(single?: SingleSlot): SingleSlot {
+  if (!single) return createDefaultSingle();
+  return { transform: normalizeTransform(single.transform) };
 }
 
 export type UISheet = null | 'template' | 'layout' | 'photos' | 'text';
@@ -426,6 +440,7 @@ type State = {
 
   setCollageSlot: (slideIndex: number, slot: 'top' | 'bottom', photoId?: string) => void;
   swapCollage: (slideIndex: number) => void;
+  setSingleTransform: (slideIndex: number, transform: Partial<PhotoTransform>) => void;
   setCollageTransform: (
     slideIndex: number,
     slot: 'top' | 'bottom',
@@ -595,6 +610,7 @@ Instagram недавно увеличил лимит до 20 фото. Тепе�
   },
 ].map((slide) => ({
   template: 'single',
+  single: createDefaultSingle(),
   ...slide,
 }));
 
@@ -619,8 +635,12 @@ export const useCarouselStore = create<State>((set, get) => ({
         ...st.slides,
         {
           id: crypto.randomUUID(),
-          template: 'single',
+          template: (s as Slide).template ?? 'single',
           ...s,
+          single:
+            'single' in s && (s as Slide).single
+              ? normalizeSingle((s as Slide).single)
+              : createDefaultSingle(),
         },
       ],
     })),
@@ -900,6 +920,29 @@ export const useCarouselStore = create<State>((set, get) => ({
       return { slides };
     }),
 
+  setSingleTransform: (slideIndex, transform) =>
+    set((state) => {
+      const slide = state.slides[slideIndex];
+      if (!slide) return {};
+      const single = normalizeSingle(slide.single);
+      const nextTransform: PhotoTransform = {
+        scale: transform.scale ?? single.transform.scale,
+        offsetX: transform.offsetX ?? single.transform.offsetX,
+        offsetY: transform.offsetY ?? single.transform.offsetY,
+      };
+      const changed =
+        nextTransform.scale !== single.transform.scale ||
+        nextTransform.offsetX !== single.transform.offsetX ||
+        nextTransform.offsetY !== single.transform.offsetY;
+      if (!changed) return {};
+      const slides = [...state.slides];
+      slides[slideIndex] = {
+        ...slide,
+        single: { transform: nextTransform },
+      };
+      return { slides };
+    }),
+
   setCollageTransform: (slideIndex, slot, transform) =>
     set((state) => {
       const slide = state.slides[slideIndex];
@@ -1029,6 +1072,7 @@ export const slidesActions = {
         image: p.src,
         photoId: p.id,
         template: 'single',
+        single: createDefaultSingle(),
         body: '',
         nickname: state.text?.nickname ?? '',
         kind: 'photo',
