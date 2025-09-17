@@ -77,6 +77,9 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
   const cropActive = crop.active;
   const cropping = cropActive && crop.slideId === slide.id;
   const cropSlot = cropping ? crop.slot : null;
+  const isCroppingTop = cropping && cropSlot === 'top';
+  const isCroppingBottom = cropping && cropSlot === 'bottom';
+  const isCroppingSingle = cropping && cropSlot === 'single';
   const [menuOpen, setMenuOpen] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -540,6 +543,8 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
                     src={collageImages.top}
                     box={{ width: collageBoxes.top.width, height: collageBoxes.top.height }}
                     transform={collage.top.transform}
+                    className="collage-slot__image"
+                    hidden={isCroppingTop}
                   />
                 ) : (
                   <span className="collage-slot__placeholder">Добавьте фото</span>
@@ -563,6 +568,8 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
                     src={collageImages.bottom}
                     box={{ width: collageBoxes.bottom.width, height: collageBoxes.bottom.height }}
                     transform={collage.bottom.transform}
+                    className="collage-slot__image"
+                    hidden={isCroppingBottom}
                   />
                 ) : (
                   <span className="collage-slot__placeholder">Добавьте фото</span>
@@ -587,6 +594,8 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
                 src={singleImage}
                 box={{ width: BASE_FRAME.width, height: BASE_FRAME.height }}
                 transform={singleConfig.transform}
+                className="single-slot__image"
+                hidden={isCroppingSingle}
               />
             </div>
           ) : (
