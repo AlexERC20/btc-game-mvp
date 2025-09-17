@@ -140,8 +140,14 @@ function SlotThumb({ label, box, src, transform, badge, active, onSelect, onEdit
 }
 
 function formatBadges(badges: string[] | undefined) {
-  if (!badges || badges.length === 0) return undefined;
-  return badges.join(', ');
+  if (!badges || badges.length === 0) return [];
+  if (badges.length <= 3) {
+    return badges.slice(0, 3);
+  }
+  const visible = badges.slice(0, 2);
+  const remaining = badges.length - visible.length;
+  visible.push(`+${remaining}`);
+  return visible;
 }
 
 export default function PhotosSheet() {
@@ -151,7 +157,10 @@ export default function PhotosSheet() {
   const [activeSlot, setActiveSlot] = useState<'top' | 'bottom'>('top');
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [crop, setCrop] = useState<CropState | null>(null);
-  const holdRef = useRef<{ timer: number; photo: Photo; target: HTMLElement | null } | null>(null);
+  const [actionPhotoId, setActionPhotoId] = useState<PhotoId | null>(null);
+  const actionHoldRef = useRef<{ timer: number; photoId: PhotoId } | null>(null);
+  const actionHoldTriggered = useRef(false);
+  const suppressClickRef = useRef(false);
 
   const closeSheet = useCarouselStore((s) => s.closeSheet);
   const slides = useCarouselStore((s) => s.slides);
@@ -228,6 +237,7 @@ export default function PhotosSheet() {
 
   const toggleSelect = useCallback((id: PhotoId) => {
     setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setActionPhotoId(null);
     impact('light');
   }, []);
 
@@ -253,6 +263,7 @@ export default function PhotosSheet() {
     if (!panel) return;
     const rect = element.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
+    setActionPhotoId(null);
     setMenu({
       photo,
       anchor: {
@@ -265,49 +276,76 @@ export default function PhotosSheet() {
 
   const closeMenu = () => setMenu(null);
 
-  const startHold = (photo: Photo, element: HTMLElement) => {
-    const timer = window.setTimeout(() => {
-      const state = holdRef.current;
-      if (!state) return;
-      holdRef.current = null;
-      if (!activeSlide || !isCollage) return;
-      const topEmpty = !collage.top.photoId;
-      const bottomEmpty = !collage.bottom.photoId;
-      if (topEmpty) {
-        assignToSlot('top', photo);
-      } else if (bottomEmpty) {
-        assignToSlot('bottom', photo);
-      } else {
-        openMenu(photo, element);
-      }
-    }, 350);
-    holdRef.current = { timer, photo, target: element };
-  };
-
-  const cancelHold = () => {
-    if (holdRef.current) {
-      clearTimeout(holdRef.current.timer);
-      holdRef.current = null;
+  const clearActionHold = useCallback(() => {
+    const state = actionHoldRef.current;
+    if (state) {
+      window.clearTimeout(state.timer);
+      actionHoldRef.current = null;
     }
-  };
+  }, []);
+
+  const startActionHold = useCallback(
+    (photoId: PhotoId) => {
+      clearActionHold();
+      setActionPhotoId(null);
+      actionHoldTriggered.current = false;
+      suppressClickRef.current = false;
+      const timer = window.setTimeout(() => {
+        const state = actionHoldRef.current;
+        if (!state || state.photoId !== photoId) return;
+        actionHoldTriggered.current = true;
+        suppressClickRef.current = true;
+        setActionPhotoId(photoId);
+        impact('light');
+      }, 350);
+      actionHoldRef.current = { timer, photoId };
+    },
+    [clearActionHold],
+  );
+
+  useEffect(() => () => clearActionHold(), [clearActionHold]);
 
   const handleThumbPointerDown = (photo: Photo, event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!isCollage) return;
-    startHold(photo, event.currentTarget);
+    if (event.button !== undefined && event.button !== 0) return;
+    startActionHold(photo.id);
   };
 
   const handleThumbPointerUp = (photo: Photo, event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!isCollage) return;
-    if (!holdRef.current) return;
-    const state = holdRef.current;
-    cancelHold();
-    openMenu(photo, state?.target ?? event.currentTarget);
-  };
-
-  const handleThumbClick = (photo: Photo, event: ReactMouseEvent<HTMLDivElement>) => {
+    const triggered = actionHoldTriggered.current;
+    actionHoldTriggered.current = false;
+    clearActionHold();
+    if (triggered) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    suppressClickRef.current = false;
     if (isCollage) {
       event.preventDefault();
       event.stopPropagation();
+      openMenu(photo, event.currentTarget);
+    }
+  };
+
+  const handleThumbPointerCancel = () => {
+    actionHoldTriggered.current = false;
+    suppressClickRef.current = false;
+    clearActionHold();
+  };
+
+  const handleThumbClick = (photo: Photo, event: ReactMouseEvent<HTMLDivElement>) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    if (actionPhotoId === photo.id) {
+      setActionPhotoId(null);
+      return;
+    }
+    if (isCollage) {
+      event.preventDefault();
+      event.stopPropagation();
+      setActionPhotoId(null);
       return;
     }
     toggleSelect(photo.id);
@@ -362,6 +400,7 @@ export default function PhotosSheet() {
 
   const handleThumbEdit = (photo: Photo, element: HTMLElement) => {
     if (!isCollage) return;
+    setActionPhotoId(null);
     const isTop = collage.top.photoId === photo.id;
     const isBottom = collage.bottom.photoId === photo.id;
     if (isTop && isBottom) {
@@ -374,7 +413,9 @@ export default function PhotosSheet() {
     }
     if (isBottom) {
       openCrop('bottom');
+      return;
     }
+    openMenu(photo, element, 'assign-and-crop');
   };
 
   const handleSaveCrop = (next: PhotoTransform) => {
@@ -462,6 +503,7 @@ export default function PhotosSheet() {
   };
 
   const handleRemove = (id: PhotoId) => {
+    setActionPhotoId((prev) => (prev === id ? null : prev));
     photosActions.remove(id);
   };
 
@@ -474,8 +516,12 @@ export default function PhotosSheet() {
     closeSheet();
   };
 
-  const moveLeft = (id: PhotoId) => photosActions.move(id, 'left');
-  const moveRight = (id: PhotoId) => photosActions.move(id, 'right');
+  const moveLeft = (id: PhotoId) => {
+    photosActions.move(id, 'left');
+  };
+  const moveRight = (id: PhotoId) => {
+    photosActions.move(id, 'right');
+  };
 
   return (
     <div className="sheet" aria-open="true" onClick={closeSheet}>
@@ -555,10 +601,11 @@ export default function PhotosSheet() {
                 <div className="photo-grid grid">
                   {items.map((photo, index) => {
                     const badges = assignments.get(photo.id);
-                    const badgeContent = formatBadges(badges);
+                    const badgeChips = formatBadges(badges);
                     const isSelected = selected.includes(photo.id);
                     const isTop = isCollage && collage.top.photoId === photo.id;
                     const isBottom = isCollage && collage.bottom.photoId === photo.id;
+                    const inActionMode = actionPhotoId === photo.id;
                     return (
                       <div
                         key={photo.id}
@@ -567,82 +614,92 @@ export default function PhotosSheet() {
                         }`}
                         onPointerDown={(event) => handleThumbPointerDown(photo, event)}
                         onPointerUp={(event) => handleThumbPointerUp(photo, event)}
-                        onPointerLeave={cancelHold}
-                        onPointerCancel={cancelHold}
+                        onPointerLeave={handleThumbPointerCancel}
+                        onPointerCancel={handleThumbPointerCancel}
                         onClick={(event) => handleThumbClick(photo, event)}
                       >
                         <img src={photo.src} alt={photo.fileName ?? 'photo'} loading="lazy" />
-                        <div className="ov-top-left">
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            aria-label="Move left"
-                            disabled={index === 0}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              moveLeft(photo.id);
-                            }}
-                          >
-                            <ArrowLeftIcon />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            aria-label="Delete"
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleRemove(photo.id);
-                            }}
-                          >
-                            <TrashIcon />
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-icon"
-                            aria-label="Move right"
-                            disabled={index === items.length - 1}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              moveRight(photo.id);
-                            }}
-                          >
-                            <ArrowRightIcon />
-                          </button>
-                        </div>
-                        <div className="ov-top-right">
-                          <button
-                            type="button"
-                            className={`check${isSelected ? ' is-active' : ''}`}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toggleSelect(photo.id);
-                            }}
-                            aria-label={isSelected ? 'Deselect photo' : 'Select photo'}
-                          >
-                            <CheckIcon />
-                          </button>
-                        </div>
-                        {(isTop || isBottom) && (
-                          <div className="ov-bot-right">
+                        {inActionMode && (
+                          <div className="ov-top-left">
                             <button
                               type="button"
-                              className="btn-icon edit"
+                              className="btn-ico"
+                              aria-label="Move left"
+                              disabled={index === 0}
                               onPointerDown={(event) => event.stopPropagation()}
                               onClick={(event) => {
                                 event.stopPropagation();
-                                handleThumbEdit(photo, event.currentTarget as HTMLElement);
+                                moveLeft(photo.id);
                               }}
-                              aria-label="Edit crop"
                             >
-                              <PencilIcon />
+                              <ArrowLeftIcon />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-ico"
+                              aria-label="Delete"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleRemove(photo.id);
+                              }}
+                            >
+                              <TrashIcon />
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-ico"
+                              aria-label="Move right"
+                              disabled={index === items.length - 1}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                moveRight(photo.id);
+                              }}
+                            >
+                              <ArrowRightIcon />
                             </button>
                           </div>
                         )}
-                        {badgeContent && <div className="badge">{badgeContent}</div>}
+                        {!inActionMode && (
+                          <div className="ov-top-right">
+                            <button
+                              type="button"
+                              className={`check${isSelected ? ' is-active' : ''}`}
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleSelect(photo.id);
+                              }}
+                              aria-label={isSelected ? 'Deselect photo' : 'Select photo'}
+                            >
+                              <CheckIcon />
+                            </button>
+                          </div>
+                        )}
+                        {badgeChips.length > 0 && (
+                          <div className="ov-bot-left">
+                            {badgeChips.map((label, chipIndex) => (
+                              <span key={`${photo.id}-badge-${chipIndex}`} className="badge">
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="ov-bot-right">
+                          <button
+                            type="button"
+                            className={`btn-ico edit${isTop || isBottom ? '' : ' is-idle'}`}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleThumbEdit(photo, event.currentTarget as HTMLElement);
+                            }}
+                            aria-label="Edit crop"
+                          >
+                            <PencilIcon />
+                          </button>
+                        </div>
                       </div>
                     );
                   })}
