@@ -83,7 +83,7 @@
   font-weight:600;
   font-size:22px;
 }
-.collage-slot img{ width:100%; height:100%; object-fit:cover; object-position:center; display:block; }
+.collage-slot img{ display:block; -webkit-user-drag:none; }
 .collage-slot.is-empty{ background:rgba(0,0,0,.08); color:rgba(255,255,255,.65); }
 .collage-slot.is-dimmed{ filter:brightness(0.45); }
 .collage-slot.is-active{ box-shadow:inset 0 0 0 2px rgba(255,255,255,.8); }

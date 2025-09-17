@@ -921,16 +921,12 @@ export const useCarouselStore = create<State>()(
         const slide = state.slides[slideIndex];
         if (!slide) return {};
         const collage = normalizeCollage(slide.collage50);
-        const slotsEqual =
-          collage.top.photoId === collage.bottom.photoId &&
-          collage.top.transform.scale === collage.bottom.transform.scale &&
-          collage.top.transform.offsetX === collage.bottom.transform.offsetX &&
-          collage.top.transform.offsetY === collage.bottom.transform.offsetY;
+        const slotsEqual = collage.top.photoId === collage.bottom.photoId;
         if (slotsEqual) return {};
         const nextCollage: Collage50 = {
           ...collage,
-          top: { photoId: collage.bottom.photoId, transform: { ...collage.bottom.transform } },
-          bottom: { photoId: collage.top.photoId, transform: { ...collage.top.transform } },
+          top: { ...collage.top, photoId: collage.bottom.photoId },
+          bottom: { ...collage.bottom, photoId: collage.top.photoId },
         };
         const slides = [...state.slides];
         slides[slideIndex] = {
