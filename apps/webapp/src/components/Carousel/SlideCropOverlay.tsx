@@ -7,10 +7,12 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
   type MouseEvent as ReactMouseEvent,
+  type SyntheticEvent as ReactSyntheticEvent,
 } from 'react';
 import { BASE_FRAME } from '@/features/render/constants';
 import { createDefaultTransform, type PhotoTransform } from '@/state/store';
 import { computeCoverScale } from '@/utils/collage';
+import { haptic } from '@/utils/haptics';
 
 const SCALE_MAX = 3;
 
@@ -37,23 +39,16 @@ type Props = {
 export function SlideCropOverlay({ slot, photoSrc, box, transform, onCancel, onSave }: Props) {
   const transformRef = useRef<PhotoTransform>(transform);
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const areaRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const pointerPositions = useRef(new Map<number, Point>());
   const gestureRef = useRef<GestureState>({ mode: 'none' });
+  const surfaceRectRef = useRef<DOMRect | null>(null);
+  const framePendingRef = useRef(false);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      ctxRef.current = canvas.getContext('2d');
-    }
-  }, []);
-
-  useEffect(() => {
-    transformRef.current = transform;
-  }, [transform]);
+    applyTransform(transform);
+  }, [applyTransform, transform]);
 
   const baseScale = useMemo(() => {
     if (!imageSize) return 1;
@@ -84,27 +79,27 @@ export function SlideCropOverlay({ slot, photoSrc, box, transform, onCancel, onS
     [baseScale, box.height, box.width, clampScale, imageSize],
   );
 
-  const render = useCallback(() => {
-    const ctx = ctxRef.current;
+  const renderTransform = useCallback(() => {
+    framePendingRef.current = false;
     const img = imageRef.current;
-    if (!ctx || !img || !imageSize) return;
-    ctx.clearRect(0, 0, box.width, box.height);
+    if (!img) return;
     const { scale, offsetX, offsetY } = transformRef.current;
-    const absoluteScale = baseScale * scale;
-    const drawWidth = imageSize.width * absoluteScale;
-    const drawHeight = imageSize.height * absoluteScale;
-    const dx = (box.width - drawWidth) / 2 + offsetX;
-    const dy = (box.height - drawHeight) / 2 + offsetY;
-    ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
-  }, [baseScale, box.height, box.width, imageSize]);
+    img.style.transform = `translate3d(${offsetX}px, ${offsetY}px, 0) scale(${scale})`;
+  }, []);
+
+  const scheduleRender = useCallback(() => {
+    if (framePendingRef.current) return;
+    framePendingRef.current = true;
+    requestAnimationFrame(renderTransform);
+  }, [renderTransform]);
 
   const applyTransform = useCallback(
     (value: PhotoTransform) => {
       const next = clampTransform(value);
       transformRef.current = next;
-      render();
+      scheduleRender();
     },
-    [clampTransform, render],
+    [clampTransform, scheduleRender],
   );
 
   useEffect(() => {
@@ -114,56 +109,25 @@ export function SlideCropOverlay({ slot, photoSrc, box, transform, onCancel, onS
   }, [applyTransform, imageSize]);
 
   useEffect(() => {
-    let alive = true;
     setImageSize(null);
-    imageRef.current = null;
-    const img = new Image();
-    img.decoding = 'async';
-    img.crossOrigin = 'anonymous';
-    img.src = photoSrc;
+    surfaceRectRef.current = null;
+  }, [photoSrc]);
 
-    const waitForDecode = async () => {
-      if (typeof img.decode === 'function') {
-        try {
-          await img.decode();
-          return;
-        } catch {
-          // fall through to load events
-        }
-      }
-      await new Promise<void>((resolve) => {
-        img.onload = () => resolve();
-        img.onerror = () => resolve();
-      });
-    };
-
-    (async () => {
-      try {
-        await waitForDecode();
-        if (!alive) return;
-        const width = img.naturalWidth || img.width;
-        const height = img.naturalHeight || img.height;
-        imageRef.current = img;
-        if (width && height) {
-          setImageSize({ width, height });
-        }
-        render();
-      } catch (error) {
-        console.error('Failed to decode crop image', error);
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, [photoSrc, render]);
+  const getSurfaceRect = useCallback(() => {
+    if (surfaceRectRef.current) {
+      return surfaceRectRef.current;
+    }
+    const area = areaRef.current;
+    if (!area) return null;
+    const rect = area.getBoundingClientRect();
+    surfaceRectRef.current = rect;
+    return rect;
+  }, []);
 
   const getLocalPoint = useCallback(
     (clientX: number, clientY: number): Point | null => {
-      const area = areaRef.current;
-      if (!area) return null;
-      const rect = area.getBoundingClientRect();
-      if (!rect.width || !rect.height) return null;
+      const rect = getSurfaceRect();
+      if (!rect || !rect.width || !rect.height) return null;
       const scaleX = rect.width / box.width;
       const scaleY = rect.height / box.height;
       if (!scaleX || !scaleY) return null;
@@ -172,12 +136,49 @@ export function SlideCropOverlay({ slot, photoSrc, box, transform, onCancel, onS
         y: (clientY - rect.top) / scaleY,
       };
     },
-    [box.height, box.width],
+    [box.height, box.width, getSurfaceRect],
   );
+
+  const updateImageLayout = useCallback(() => {
+    const img = imageRef.current;
+    if (!img || !imageSize) return;
+    const baseWidth = imageSize.width * baseScale;
+    const baseHeight = imageSize.height * baseScale;
+    const left = (box.width - baseWidth) / 2;
+    const top = (box.height - baseHeight) / 2;
+    img.style.width = `${baseWidth}px`;
+    img.style.height = `${baseHeight}px`;
+    img.style.left = `${left}px`;
+    img.style.top = `${top}px`;
+    img.style.position = 'absolute';
+    img.style.transformOrigin = 'center center';
+    img.style.willChange = 'transform';
+  }, [baseScale, box.height, box.width, imageSize]);
+
+  useEffect(() => {
+    if (!imageSize) return;
+    updateImageLayout();
+    scheduleRender();
+  }, [imageSize, scheduleRender, updateImageLayout]);
+
+  useEffect(() => {
+    surfaceRectRef.current = null;
+  }, [box.height, box.width, box.x, box.y]);
+
+  const handleImageLoad = useCallback((event: ReactSyntheticEvent<HTMLImageElement>) => {
+    const img = event.currentTarget;
+    const width = img.naturalWidth || img.width;
+    const height = img.naturalHeight || img.height;
+    if (width && height) {
+      imageRef.current = img;
+      setImageSize({ width, height });
+    }
+  }, []);
 
   const resetGesture = useCallback(() => {
     pointerPositions.current.clear();
     gestureRef.current = { mode: 'none' };
+    surfaceRectRef.current = null;
   }, []);
 
   const applyPan = useCallback(
@@ -219,6 +220,7 @@ export function SlideCropOverlay({ slot, photoSrc, box, transform, onCancel, onS
 
   const handlePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
+      surfaceRectRef.current = areaRef.current?.getBoundingClientRect() ?? null;
       const local = getLocalPoint(event.clientX, event.clientY);
       if (!local) return;
       areaRef.current?.setPointerCapture(event.pointerId);
@@ -305,6 +307,9 @@ export function SlideCropOverlay({ slot, photoSrc, box, transform, onCancel, onS
       }
     }
     areaRef.current?.releasePointerCapture?.(event.pointerId);
+    if (pointerPositions.current.size === 0) {
+      surfaceRectRef.current = null;
+    }
   }, []);
 
   const handlePointerCancel = useCallback(() => {
@@ -350,6 +355,7 @@ export function SlideCropOverlay({ slot, photoSrc, box, transform, onCancel, onS
   }, [applyTransform]);
 
   const handleSaveClick = useCallback(() => {
+    haptic('success');
     onSave(transformRef.current);
     resetGesture();
   }, [onSave, resetGesture]);
@@ -419,7 +425,17 @@ export function SlideCropOverlay({ slot, photoSrc, box, transform, onCancel, onS
         onWheel={handleWheel}
         onDoubleClick={handleDoubleClick}
       >
-        <canvas ref={canvasRef} width={box.width} height={box.height} />
+        <img
+          ref={imageRef}
+          src={photoSrc}
+          alt=""
+          className="slide-crop-overlay__image"
+          crossOrigin="anonymous"
+          decoding="async"
+          draggable={false}
+          onLoad={handleImageLoad}
+          style={{ visibility: imageSize ? 'visible' : 'hidden' }}
+        />
         <div className="slide-crop-overlay__grid" />
       </div>
       <div className="slide-crop-overlay__toolbar">
