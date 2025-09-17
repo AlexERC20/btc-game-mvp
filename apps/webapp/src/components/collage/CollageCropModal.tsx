@@ -11,7 +11,7 @@ import {
 } from 'react';
 import type { PhotoTransform } from '@/state/store';
 import { createDefaultTransform } from '@/state/store';
-import type { CollageBox } from '@/utils/collage';
+import { computeCoverScale, type CollageBox } from '@/utils/collage';
 
 type Point = { x: number; y: number };
 
@@ -52,6 +52,8 @@ export function CollageCropModal({
   const surfaceRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const viewportRef = useRef<{ width: number; height: number }>({ width: box.width, height: box.height });
+  const [viewportVersion, setViewportVersion] = useState(0);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const pointerPositions = useRef(
     new Map<number, { start: Point; point: Point }>(),
@@ -71,9 +73,12 @@ export function CollageCropModal({
     setImageSize(null);
     imageRef.current = null;
     const ctx = ctxRef.current;
-    if (ctx) {
-      ctx.clearRect(0, 0, box.width, box.height);
+    const { width, height } = viewportRef.current;
+    if (ctx && width && height) {
+      ctx.clearRect(0, 0, width, height);
     }
+    viewportRef.current = { width: box.width, height: box.height };
+    setViewportVersion((prev) => prev + 1);
   }, [box.height, box.width, photoSrc]);
 
   useEffect(() => {
@@ -115,22 +120,25 @@ export function CollageCropModal({
 
   const baseScale = useMemo(() => {
     if (!imageSize) return 1;
-    return Math.max(box.width / imageSize.width, box.height / imageSize.height);
-  }, [imageSize, box.width, box.height]);
+    const { width, height } = viewportRef.current;
+    if (!width || !height) return 1;
+    return computeCoverScale(imageSize.width, imageSize.height, width, height);
+  }, [imageSize, viewportVersion]);
 
   const render = useCallback(() => {
     const ctx = ctxRef.current;
     const img = imageRef.current;
-    if (!ctx || !img || !imageSize) return;
-    ctx.clearRect(0, 0, box.width, box.height);
+    const { width: canvasWidth, height: canvasHeight } = viewportRef.current;
+    if (!ctx || !img || !imageSize || !canvasWidth || !canvasHeight) return;
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
     const { scale, offsetX, offsetY } = transformRef.current;
     const absoluteScale = baseScale * scale;
     const drawWidth = imageSize.width * absoluteScale;
     const drawHeight = imageSize.height * absoluteScale;
-    const dx = (box.width - drawWidth) / 2 + offsetX;
-    const dy = (box.height - drawHeight) / 2 + offsetY;
+    const dx = (canvasWidth - drawWidth) / 2 + offsetX;
+    const dy = (canvasHeight - drawHeight) / 2 + offsetY;
     ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
-  }, [baseScale, box.height, box.width, imageSize]);
+  }, [baseScale, imageSize]);
 
   const clampScale = useCallback((value: number) => {
     if (Number.isNaN(value)) return 1;
@@ -141,23 +149,27 @@ export function CollageCropModal({
     if (!open) return;
     let alive = true;
     const img = new Image();
+    img.decoding = 'async';
     img.crossOrigin = 'anonymous';
     img.src = photoSrc;
 
-    const decode = 'decode' in img ? img.decode() : undefined;
-    const loadPromise =
-      decode instanceof Promise
-        ? decode
-        : new Promise<void>((resolve, reject) => {
+    const decodePromise =
+      typeof img.decode === 'function'
+        ? img.decode().catch(
+            () =>
+              new Promise<void>((resolve) => {
+                img.onload = () => resolve();
+                img.onerror = () => resolve();
+              }),
+          )
+        : new Promise<void>((resolve) => {
             img.onload = () => resolve();
-            img.onerror = (error) => reject(error);
+            img.onerror = () => resolve();
           });
 
     (async () => {
       try {
-        await loadPromise;
-        if (!alive) return;
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        await decodePromise;
         if (!alive) return;
         imageRef.current = img;
         const width = img.naturalWidth || img.width;
@@ -167,7 +179,7 @@ export function CollageCropModal({
         }
         render();
       } catch (error) {
-        console.error('Failed to load image for crop', error);
+        console.error('Failed to decode crop image', error);
       }
     })();
 
@@ -176,21 +188,48 @@ export function CollageCropModal({
     };
   }, [open, photoSrc, render]);
 
+  const ensureCanvasSize = useCallback(() => {
+    if (!open) return;
+    const surface = surfaceRef.current;
+    const canvas = canvasRef.current;
+    if (!surface || !canvas) return;
+
+    const measure = () => {
+      const rect = surface.getBoundingClientRect();
+      if (!rect.width || !rect.height) {
+        requestAnimationFrame(measure);
+        return;
+      }
+      const scale = surfaceScale || 1;
+      const cssWidth = rect.width / scale;
+      const cssHeight = rect.height / scale;
+      if (!cssWidth || !cssHeight) {
+        requestAnimationFrame(measure);
+        return;
+      }
+      const safeWidth = Math.max(1, cssWidth);
+      const safeHeight = Math.max(1, cssHeight);
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.round(safeWidth * dpr));
+      canvas.height = Math.max(1, Math.round(safeHeight * dpr));
+      canvas.style.width = `${safeWidth}px`;
+      canvas.style.height = `${safeHeight}px`;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctxRef.current = ctx;
+      viewportRef.current = { width: safeWidth, height: safeHeight };
+      setViewportVersion((prev) => prev + 1);
+      render();
+    };
+
+    requestAnimationFrame(measure);
+  }, [open, render, surfaceScale]);
+
   useEffect(() => {
     if (!open) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = box.width * dpr;
-    canvas.height = box.height * dpr;
-    canvas.style.width = `${box.width}px`;
-    canvas.style.height = `${box.height}px`;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctxRef.current = ctx;
-    render();
-  }, [box.height, box.width, open, render]);
+    ensureCanvasSize();
+  }, [ensureCanvasSize, open, box.height, box.width, surfaceScale]);
 
   const clampTransform = useCallback(
     (value: PhotoTransform): PhotoTransform => {
@@ -202,17 +241,21 @@ export function CollageCropModal({
         };
       }
       const scale = clampScale(value.scale);
+      const { width, height } = viewportRef.current;
+      if (!width || !height) {
+        return { scale, offsetX: value.offsetX, offsetY: value.offsetY };
+      }
       const drawWidth = imageSize.width * baseScale * scale;
       const drawHeight = imageSize.height * baseScale * scale;
-      const minX = box.width - drawWidth;
-      const minY = box.height - drawHeight;
+      const minX = width - drawWidth;
+      const minY = height - drawHeight;
       return {
         scale,
         offsetX: Math.min(Math.max(value.offsetX, minX), 0),
         offsetY: Math.min(Math.max(value.offsetY, minY), 0),
       };
     },
-    [baseScale, box.height, box.width, clampScale, imageSize],
+    [baseScale, clampScale, imageSize],
   );
 
   useEffect(() => {
@@ -229,6 +272,11 @@ export function CollageCropModal({
     },
     [clampTransform, render],
   );
+
+  useEffect(() => {
+    if (!open || !imageSize) return;
+    applyTransform(transformRef.current);
+  }, [applyTransform, baseScale, imageSize, open]);
 
   const applyPan = useCallback(
     (base: PhotoTransform, delta: Point) => {
@@ -249,23 +297,28 @@ export function CollageCropModal({
         return;
       }
 
+      const { width, height } = viewportRef.current;
+      if (!width || !height) {
+        applyTransform({ ...base, scale });
+        return;
+      }
       const baseAbsScale = baseScale * base.scale;
       const newAbsScale = baseScale * scale;
       const baseDrawWidth = imageSize.width * baseAbsScale;
       const baseDrawHeight = imageSize.height * baseAbsScale;
-      const baseLeft = (box.width - baseDrawWidth) / 2 + base.offsetX;
-      const baseTop = (box.height - baseDrawHeight) / 2 + base.offsetY;
+      const baseLeft = (width - baseDrawWidth) / 2 + base.offsetX;
+      const baseTop = (height - baseDrawHeight) / 2 + base.offsetY;
       const imgX = (baseCenter.x - baseLeft) / baseAbsScale;
       const imgY = (baseCenter.y - baseTop) / baseAbsScale;
       const drawWidth = imageSize.width * newAbsScale;
       const drawHeight = imageSize.height * newAbsScale;
       const newLeft = nextCenter.x - imgX * newAbsScale;
       const newTop = nextCenter.y - imgY * newAbsScale;
-      const offsetX = newLeft - (box.width - drawWidth) / 2;
-      const offsetY = newTop - (box.height - drawHeight) / 2;
+      const offsetX = newLeft - (width - drawWidth) / 2;
+      const offsetY = newTop - (height - drawHeight) / 2;
       applyTransform({ scale, offsetX, offsetY });
     },
-    [applyTransform, baseScale, box.height, box.width, clampScale, imageSize],
+    [applyTransform, baseScale, clampScale, imageSize],
   );
 
   const resetGesture = useCallback(() => {

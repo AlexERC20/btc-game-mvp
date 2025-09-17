@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, type SyntheticEvent } from 'react';
 import type { PhotoTransform } from '@/state/store';
+import { computeCoverScale } from '@/utils/collage';
 
 type Box = { width: number; height: number };
 
@@ -41,7 +42,7 @@ export function CollageSlotImage({ src, box, transform, className, onLoad }: Pro
       };
     }
 
-    const scaleBase = Math.max(box.width / size.width, box.height / size.height);
+    const scaleBase = computeCoverScale(size.width, size.height, box.width, box.height);
     const finalScale = scaleBase * transform.scale;
     const drawWidth = size.width * finalScale;
     const drawHeight = size.height * finalScale;

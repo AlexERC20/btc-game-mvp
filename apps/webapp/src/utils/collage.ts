@@ -23,3 +23,15 @@ export function computeCollageBoxes(dividerPx: number): CollageBoxes {
   };
 }
 
+export function computeCoverScale(
+  imageWidth: number,
+  imageHeight: number,
+  boxWidth: number,
+  boxHeight: number,
+): number {
+  if (!imageWidth || !imageHeight || !boxWidth || !boxHeight) {
+    return 1;
+  }
+  return Math.max(boxWidth / imageWidth, boxHeight / imageHeight);
+}
+
