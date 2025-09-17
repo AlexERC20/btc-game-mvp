@@ -12,7 +12,6 @@ import {
 import type { PhotoTransform } from '@/state/store';
 import { createDefaultTransform } from '@/state/store';
 import type { CollageBox } from '@/utils/collage';
-import { CollageSlotImage } from './CollageSlotImage';
 
 type Point = { x: number; y: number };
 
@@ -51,6 +50,9 @@ export function CollageCropModal({
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const pointerPositions = useRef(
     new Map<number, { start: Point; point: Point }>(),
   );
@@ -61,12 +63,18 @@ export function CollageCropModal({
     if (open) {
       setCurrent(transform);
       transformRef.current = transform;
+      render();
     }
-  }, [open, transform]);
+  }, [open, render, transform]);
 
   useEffect(() => {
     setImageSize(null);
-  }, [photoSrc]);
+    imageRef.current = null;
+    const ctx = ctxRef.current;
+    if (ctx) {
+      ctx.clearRect(0, 0, box.width, box.height);
+    }
+  }, [box.height, box.width, photoSrc]);
 
   useEffect(() => {
     if (!open) return;
@@ -110,10 +118,79 @@ export function CollageCropModal({
     return Math.max(box.width / imageSize.width, box.height / imageSize.height);
   }, [imageSize, box.width, box.height]);
 
+  const render = useCallback(() => {
+    const ctx = ctxRef.current;
+    const img = imageRef.current;
+    if (!ctx || !img || !imageSize) return;
+    ctx.clearRect(0, 0, box.width, box.height);
+    const { scale, offsetX, offsetY } = transformRef.current;
+    const absoluteScale = baseScale * scale;
+    const drawWidth = imageSize.width * absoluteScale;
+    const drawHeight = imageSize.height * absoluteScale;
+    const dx = (box.width - drawWidth) / 2 + offsetX;
+    const dy = (box.height - drawHeight) / 2 + offsetY;
+    ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
+  }, [baseScale, box.height, box.width, imageSize]);
+
   const clampScale = useCallback((value: number) => {
     if (Number.isNaN(value)) return 1;
     return Math.min(Math.max(value, 1), SCALE_MAX);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = photoSrc;
+
+    const decode = 'decode' in img ? img.decode() : undefined;
+    const loadPromise =
+      decode instanceof Promise
+        ? decode
+        : new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = (error) => reject(error);
+          });
+
+    (async () => {
+      try {
+        await loadPromise;
+        if (!alive) return;
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (!alive) return;
+        imageRef.current = img;
+        const width = img.naturalWidth || img.width;
+        const height = img.naturalHeight || img.height;
+        if (width && height) {
+          setImageSize({ width, height });
+        }
+        render();
+      } catch (error) {
+        console.error('Failed to load image for crop', error);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [open, photoSrc, render]);
+
+  useEffect(() => {
+    if (!open) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = box.width * dpr;
+    canvas.height = box.height * dpr;
+    canvas.style.width = `${box.width}px`;
+    canvas.style.height = `${box.height}px`;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctxRef.current = ctx;
+    render();
+  }, [box.height, box.width, open, render]);
 
   const clampTransform = useCallback(
     (value: PhotoTransform): PhotoTransform => {
@@ -138,13 +215,19 @@ export function CollageCropModal({
     [baseScale, box.height, box.width, clampScale, imageSize],
   );
 
+  useEffect(() => {
+    if (!open) return;
+    render();
+  }, [open, render]);
+
   const applyTransform = useCallback(
     (value: PhotoTransform) => {
       const next = clampTransform(value);
       setCurrent(next);
       transformRef.current = next;
+      render();
     },
-    [clampTransform],
+    [clampTransform, render],
   );
 
   const applyPan = useCallback(
@@ -378,12 +461,7 @@ export function CollageCropModal({
               onWheel={handleWheel}
               onDoubleClick={handleDoubleClick}
             >
-              <CollageSlotImage
-                src={photoSrc}
-                box={{ width: box.width, height: box.height }}
-                transform={current}
-                onLoad={(size) => setImageSize(size)}
-              />
+              <canvas ref={canvasRef} width={box.width} height={box.height} />
             </div>
           </div>
           <div className="crop-modal__controls">
