@@ -69,6 +69,7 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
       divider: { y: boxes.top.h, height: safeDivider },
     };
   }, [collage.dividerPx]);
+  const frameSize = useMemo(() => ({ width: BASE_FRAME.width, height: BASE_FRAME.height }), []);
   const singleImage = useMemo(() => {
     const ref = resolvePhotoSource(slide.photoId, photos);
     if (ref) return ref;
@@ -88,7 +89,6 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
   const [menuOpen, setMenuOpen] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const initialTransformRef = useRef<{ slot: CropSlot; transform: PhotoTransform } | null>(null);
 
   const closeCrop = useCallback(() => {
     setCrop({ active: false, slot: null, slideId: null });
@@ -161,32 +161,9 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
     }
   }, [clearCropHold, cropping]);
 
-  useEffect(() => {
-    if (!cropping) {
-      initialTransformRef.current = null;
-      return;
-    }
-    if (!cropSlot || initialTransformRef.current) return;
-    if (cropSlot === 'single') {
-      initialTransformRef.current = { slot: 'single', transform: { ...singleConfig.transform } };
-      return;
-    }
-    if (!isCollage) return;
-    const source = cropSlot === 'top' ? collage.top.transform : collage.bottom.transform;
-    initialTransformRef.current = { slot: cropSlot, transform: { ...source } };
-  }, [
-    collage.bottom.transform,
-    collage.top.transform,
-    cropSlot,
-    cropping,
-    isCollage,
-    singleConfig.transform,
-  ]);
-
   const handleCropSave = useCallback(
     (slot: CropSlot, next: PhotoTransform) => {
       setTransform(slideIndex, slot, next);
-      initialTransformRef.current = null;
       closeCrop();
       haptic('success');
     },
@@ -194,20 +171,8 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
   );
 
   const handleCropCancel = useCallback(() => {
-    const previous = initialTransformRef.current;
-    if (previous) {
-      setTransform(slideIndex, previous.slot, previous.transform);
-    }
-    initialTransformRef.current = null;
     closeCrop();
-  }, [closeCrop, setTransform, slideIndex]);
-
-  const handleCropChange = useCallback(
-    (slot: CropSlot, next: PhotoTransform) => {
-      setTransform(slideIndex, slot, next);
-    },
-    [setTransform, slideIndex],
-  );
+  }, [closeCrop]);
 
   const handleSlotPointerDown = useCallback(
     (slot: 'top' | 'bottom') => (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -446,16 +411,6 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
     if (!isCollage) return undefined;
     return cropSlot === 'top' ? collageImages.top : collageImages.bottom;
   }, [collageImages.bottom, collageImages.top, cropSlot, cropping, isCollage, singleImage]);
-
-  const cropBox = useMemo(() => {
-    if (!cropping || !cropSlot) return undefined;
-    if (cropSlot === 'single') {
-      return { x: 0, y: 0, w: BASE_FRAME.width, h: BASE_FRAME.height };
-    }
-    if (!isCollage) return undefined;
-    const target = cropSlot === 'top' ? collageBoxes.top : collageBoxes.bottom;
-    return { x: target.x, y: target.y, w: target.w, h: target.h };
-  }, [collageBoxes.bottom, collageBoxes.top, cropSlot, cropping, isCollage]);
 
   const cropTransform = useMemo(() => {
     if (!cropping || !cropSlot) return undefined;
@@ -737,15 +692,15 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
               )}
             </div>
           )}
-          {cropping && cropSlot && cropPhotoSrc && cropBox && cropTransform && (
+          {cropping && cropSlot && cropPhotoSrc && cropTransform && (
             <CropOverlay
               slot={cropSlot}
               photoSrc={cropPhotoSrc}
-              box={cropBox}
               transform={cropTransform}
+              frame={frameSize}
+              dividerPx={isCollage ? collage.dividerPx : 0}
               onCancel={handleCropCancel}
               onSave={handleCropSave}
-              onChange={handleCropChange}
             />
           )}
         </div>
