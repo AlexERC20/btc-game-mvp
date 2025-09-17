@@ -572,70 +572,77 @@ export default function PhotosSheet() {
                         onClick={(event) => handleThumbClick(photo, event)}
                       >
                         <img src={photo.src} alt={photo.fileName ?? 'photo'} loading="lazy" />
-                        {(isTop || isBottom) && (
+                        <div className="ov-top-left">
                           <button
                             type="button"
-                            className="edit"
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleThumbEdit(photo, event.currentTarget as HTMLElement);
-                            }}
-                            aria-label="Edit crop"
-                          >
-                            <PencilIcon />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className={`thumb__selector${isSelected ? ' is-active' : ''}`}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            toggleSelect(photo.id);
-                          }}
-                          aria-label={isSelected ? 'Deselect photo' : 'Select photo'}
-                        >
-                          <CheckIcon />
-                        </button>
-                        {badgeContent && <div className="badge">{badgeContent}</div>}
-                        <div className="controls">
-                          <button
-                            className="btn-circle-soft"
+                            className="btn-icon"
                             aria-label="Move left"
                             disabled={index === 0}
+                            onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                               event.stopPropagation();
                               moveLeft(photo.id);
                             }}
-                            onPointerDown={(event) => event.stopPropagation()}
                           >
                             <ArrowLeftIcon />
                           </button>
                           <button
-                            className="btn-circle-soft"
+                            type="button"
+                            className="btn-icon"
                             aria-label="Delete"
+                            onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                               event.stopPropagation();
                               handleRemove(photo.id);
                             }}
-                            onPointerDown={(event) => event.stopPropagation()}
                           >
                             <TrashIcon />
                           </button>
                           <button
-                            className="btn-circle-soft"
+                            type="button"
+                            className="btn-icon"
                             aria-label="Move right"
                             disabled={index === items.length - 1}
+                            onPointerDown={(event) => event.stopPropagation()}
                             onClick={(event) => {
                               event.stopPropagation();
                               moveRight(photo.id);
                             }}
-                            onPointerDown={(event) => event.stopPropagation()}
                           >
                             <ArrowRightIcon />
                           </button>
                         </div>
+                        <div className="ov-top-right">
+                          <button
+                            type="button"
+                            className={`check${isSelected ? ' is-active' : ''}`}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleSelect(photo.id);
+                            }}
+                            aria-label={isSelected ? 'Deselect photo' : 'Select photo'}
+                          >
+                            <CheckIcon />
+                          </button>
+                        </div>
+                        {(isTop || isBottom) && (
+                          <div className="ov-bot-right">
+                            <button
+                              type="button"
+                              className="btn-icon edit"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleThumbEdit(photo, event.currentTarget as HTMLElement);
+                              }}
+                              aria-label="Edit crop"
+                            >
+                              <PencilIcon />
+                            </button>
+                          </div>
+                        )}
+                        {badgeContent && <div className="badge">{badgeContent}</div>}
                       </div>
                     );
                   })}
