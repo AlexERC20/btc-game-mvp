@@ -24,7 +24,8 @@ import { resolvePhotoSource } from '@/utils/photos';
 import { applyOpacityToColor } from '@/utils/color';
 import { computeCollageBoxes } from '@/utils/collage';
 import { CollageSlotImage } from '@/components/collage/CollageSlotImage';
-import { SwapIcon } from '@/ui/icons';
+import { MoreIcon } from '@/ui/icons';
+import { haptic } from '@/utils/haptics';
 import { SlideCropOverlay } from './SlideCropOverlay';
 
 type CropMode =
@@ -42,6 +43,8 @@ type CropMode =
       box: { x: number; y: number; width: number; height: number };
       transform: PhotoTransform;
     };
+
+type MenuItem = { key: string; label: string; action: () => void; disabled?: boolean };
 
 type Props = {
   slide: Slide;
@@ -86,6 +89,9 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
   const [cropMode, setCropMode] = useState<CropMode>(null);
   const cropHoldTimer = useRef<number | null>(null);
   const cropping = cropMode !== null;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const openSingleCrop = useCallback(() => {
     if (!singleImage) return;
@@ -354,6 +360,98 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
     };
   }, [composition.block, layout.nickname, slide.nickname, template.showNickname, theme.textColor]);
 
+  const menuItems = useMemo<MenuItem[]>(() => {
+    if (isCollage) {
+      const hasTop = Boolean(collageImages.top);
+      const hasBottom = Boolean(collageImages.bottom);
+      return [
+        {
+          key: 'swap',
+          label: 'Swap',
+          action: () => swapCollage(slideIndex),
+          disabled: !(hasTop && hasBottom),
+        },
+        {
+          key: 'crop-top',
+          label: 'Crop top',
+          action: () => openCollageCrop('top'),
+          disabled: !hasTop,
+        },
+        {
+          key: 'crop-bottom',
+          label: 'Crop bottom',
+          action: () => openCollageCrop('bottom'),
+          disabled: !hasBottom,
+        },
+      ];
+    }
+    if (singleImage) {
+      return [
+        {
+          key: 'crop',
+          label: 'Crop',
+          action: () => openSingleCrop(),
+        },
+      ];
+    }
+    return [];
+  }, [
+    collageImages.bottom,
+    collageImages.top,
+    isCollage,
+    openCollageCrop,
+    openSingleCrop,
+    singleImage,
+    swapCollage,
+    slideIndex,
+  ]);
+
+  const hasMenuItems = menuItems.length > 0;
+
+  useEffect(() => {
+    if (cropping) {
+      setMenuOpen(false);
+    }
+  }, [cropping]);
+
+  useEffect(() => {
+    if (!hasMenuItems) {
+      setMenuOpen(false);
+    }
+  }, [hasMenuItems]);
+
+  const handleMenuToggle = useCallback(() => {
+    if (!hasMenuItems) return;
+    setMenuOpen((prev) => {
+      if (prev) return false;
+      haptic('selection');
+      return true;
+    });
+  }, [hasMenuItems]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (menuRef.current?.contains(target) || menuTriggerRef.current?.contains(target)) {
+        return;
+      }
+      setMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [menuOpen]);
+
   return (
     <div
       ref={containerRef}
@@ -538,43 +636,39 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
               )}
             </div>
           )}
-          {!cropping && (
+          {!cropping && hasMenuItems && (
             <div className="slide-tools">
-              {isCollage ? (
-                <>
-                  <button
-                    type="button"
-                    className="slide-tools__button"
-                    onClick={() => swapCollage(slideIndex)}
-                    disabled={!collageImages.top || !collageImages.bottom}
-                    aria-label="Swap collage photos"
-                  >
-                    <SwapIcon />
-                    <span>Swap</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="slide-tools__button"
-                    onClick={() => openCollageCrop('top')}
-                    disabled={!collageImages.top}
-                  >
-                    Crop top
-                  </button>
-                  <button
-                    type="button"
-                    className="slide-tools__button"
-                    onClick={() => openCollageCrop('bottom')}
-                    disabled={!collageImages.bottom}
-                  >
-                    Crop bottom
-                  </button>
-                </>
-              ) : (
-                singleImage && (
-                  <button type="button" className="slide-tools__button" onClick={openSingleCrop}>
-                    Crop
-                  </button>
-                )
+              <button
+                ref={menuTriggerRef}
+                type="button"
+                className={`slide-tools__menu-trigger${menuOpen ? ' is-open' : ''}`}
+                onClick={handleMenuToggle}
+                aria-haspopup="true"
+                aria-expanded={menuOpen}
+                aria-label="Open slide menu"
+              >
+                <MoreIcon />
+              </button>
+              {menuOpen && (
+                <div ref={menuRef} className="slide-tools__menu" role="menu">
+                  {menuItems.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`slide-tools__menu-item${item.disabled ? ' is-disabled' : ''}`}
+                      onClick={() => {
+                        if (item.disabled) return;
+                        haptic('medium');
+                        setMenuOpen(false);
+                        item.action();
+                      }}
+                      disabled={item.disabled}
+                      role="menuitem"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               )}
             </div>
           )}
