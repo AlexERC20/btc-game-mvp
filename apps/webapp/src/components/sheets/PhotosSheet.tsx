@@ -168,7 +168,6 @@ export default function PhotosSheet() {
   const setCollageSlot = useCarouselStore((s) => s.setCollageSlot);
   const swapCollage = useCarouselStore((s) => s.swapCollage);
   const setCollageTransform = useCarouselStore((s) => s.setCollageTransform);
-  const applyCollageTemplateToAll = useCarouselStore((s) => s.applyCollageTemplateToAll);
   const autoFillCollage = useCarouselStore((s) => s.autoFillCollage);
 
   const activeSlide = slides[activeIndex];
@@ -242,13 +241,26 @@ export default function PhotosSheet() {
   }, []);
 
   const handleAutoFill = () => {
-    if (selected.length === 0) return;
-    autoFillCollage(selected);
-    impact('medium');
-  };
-
-  const handleApplyTemplate = () => {
-    applyCollageTemplateToAll();
+    if (!isCollage) return;
+    let queue: string[] = [];
+    if (selected.length === 0) {
+      alert('Выдели фото для автозаполнения');
+      if (items.length === 0) {
+        impact('light');
+        return;
+      }
+      impact('light');
+      queue = items.map((photo) => photo.id);
+    } else {
+      const selectedSet = new Set(selected);
+      queue = items.filter((photo) => selectedSet.has(photo.id)).map((photo) => photo.id);
+      if (queue.length === 0) {
+        alert('Выбранные фото недоступны для автозаполнения');
+        impact('light');
+        return;
+      }
+    }
+    autoFillCollage(queue);
     impact('medium');
   };
 
@@ -542,17 +554,11 @@ export default function PhotosSheet() {
             </svg>
             <span>Add photo</span>
           </label>
-          <button
-            type="button"
-            className={`btn-soft${selected.length === 0 ? ' is-disabled' : ''}`}
-            onClick={handleAutoFill}
-            disabled={selected.length === 0}
-          >
-            Auto-fill Collage
-          </button>
-          <button type="button" className="btn-soft" onClick={handleApplyTemplate}>
-            Apply template to all slides
-          </button>
+          {isCollage && (
+            <button type="button" className="btn-soft" onClick={handleAutoFill}>
+              Auto-fill
+            </button>
+          )}
           <button type="button" className="btn-soft" onClick={handleDone}>
             Done
           </button>

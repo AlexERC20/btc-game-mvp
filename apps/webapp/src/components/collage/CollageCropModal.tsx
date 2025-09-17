@@ -49,7 +49,7 @@ export function CollageCropModal({
   const transformRef = useRef(transform);
   const [imageSize, setImageSize] = useState<{ width: number; height: number } | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const surfaceRef = useRef<HTMLDivElement>(null);
+  const areaRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const viewportRef = useRef<{ width: number; height: number }>({ width: box.width, height: box.height });
@@ -146,30 +146,31 @@ export function CollageCropModal({
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !photoSrc) return;
     let alive = true;
     const img = new Image();
     img.decoding = 'async';
     img.crossOrigin = 'anonymous';
     img.src = photoSrc;
 
-    const decodePromise =
-      typeof img.decode === 'function'
-        ? img.decode().catch(
-            () =>
-              new Promise<void>((resolve) => {
-                img.onload = () => resolve();
-                img.onerror = () => resolve();
-              }),
-          )
-        : new Promise<void>((resolve) => {
-            img.onload = () => resolve();
-            img.onerror = () => resolve();
-          });
+    const waitForDecode = async () => {
+      if (typeof img.decode === 'function') {
+        try {
+          await img.decode();
+          return;
+        } catch {
+          // fall through to load events below
+        }
+      }
+      await new Promise<void>((resolve) => {
+        img.onload = () => resolve();
+        img.onerror = () => resolve();
+      });
+    };
 
     (async () => {
       try {
-        await decodePromise;
+        await waitForDecode();
         if (!alive) return;
         imageRef.current = img;
         const width = img.naturalWidth || img.width;
@@ -190,7 +191,7 @@ export function CollageCropModal({
 
   const ensureCanvasSize = useCallback(() => {
     if (!open) return;
-    const surface = surfaceRef.current;
+    const surface = areaRef.current;
     const canvas = canvasRef.current;
     if (!surface || !canvas) return;
 
@@ -230,6 +231,28 @@ export function CollageCropModal({
     if (!open) return;
     ensureCanvasSize();
   }, [ensureCanvasSize, open, box.height, box.width, surfaceScale]);
+
+  useEffect(() => {
+    if (!open) return;
+    const surface = areaRef.current;
+    if (!surface || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      ensureCanvasSize();
+    });
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, [ensureCanvasSize, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleResize = () => {
+      ensureCanvasSize();
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [ensureCanvasSize, open]);
 
   const clampTransform = useCallback(
     (value: PhotoTransform): PhotoTransform => {
@@ -328,7 +351,7 @@ export function CollageCropModal({
 
   const getLocalPoint = useCallback(
     (clientX: number, clientY: number): Point | null => {
-      const surface = surfaceRef.current;
+      const surface = areaRef.current;
       if (!surface) return null;
       const rect = surface.getBoundingClientRect();
       if (!rect.width || !rect.height) return null;
@@ -345,7 +368,7 @@ export function CollageCropModal({
       if (!open) return;
       const local = getLocalPoint(event.clientX, event.clientY);
       if (!local) return;
-      surfaceRef.current?.setPointerCapture(event.pointerId);
+      areaRef.current?.setPointerCapture(event.pointerId);
       pointerPositions.current.set(event.pointerId, { start: local, point: local });
 
       if (pointerPositions.current.size === 1) {
@@ -499,7 +522,7 @@ export function CollageCropModal({
         <div className="crop-modal__content">
           <div className="crop-modal__canvas" ref={wrapperRef}>
             <div
-              ref={surfaceRef}
+              ref={areaRef}
               className="crop-modal__surface"
               style={{
                 width: box.width,
