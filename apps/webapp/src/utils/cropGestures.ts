@@ -13,6 +13,7 @@ export type UseCropGesturesConfig = {
   imgRef: React.RefObject<HTMLElement>;
   initial: CropTransform;
   clamp: ClampTransform;
+  onChange?: (value: CropTransform) => void;
 };
 
 export type UseCropGesturesResult = {
@@ -52,12 +53,17 @@ export function readTransform(element: HTMLElement): CropTransform {
   };
 }
 
-export function useCropGestures({ boxRef, imgRef, initial, clamp }: UseCropGesturesConfig): UseCropGesturesResult {
+export function useCropGestures({ boxRef, imgRef, initial, clamp, onChange }: UseCropGesturesConfig): UseCropGesturesResult {
   const transformRef = useRef<CropTransform>(initial);
   const rafRef = useRef(0);
   const dirtyRef = useRef(true);
   const pointersRef = useRef<Map<number, Point>>(new Map());
   const pinchRef = useRef<PinchState>(null);
+  const changeRef = useRef<UseCropGesturesConfig['onChange']>(onChange);
+
+  useEffect(() => {
+    changeRef.current = onChange;
+  }, [onChange]);
 
   const flush = useCallback(() => {
     const img = imgRef.current;
@@ -80,6 +86,7 @@ export function useCropGestures({ boxRef, imgRef, initial, clamp }: UseCropGestu
       transformRef.current = clamp(
         typeof value === 'function' ? (value as (prev: CropTransform) => CropTransform)(transformRef.current) : value,
       );
+      changeRef.current?.(transformRef.current);
       dirtyRef.current = true;
       schedule();
     },
@@ -90,6 +97,7 @@ export function useCropGestures({ boxRef, imgRef, initial, clamp }: UseCropGestu
     transformRef.current = clamp(initial);
     dirtyRef.current = true;
     schedule();
+    changeRef.current?.(transformRef.current);
   }, [clamp, initial, schedule]);
 
   useEffect(() => {

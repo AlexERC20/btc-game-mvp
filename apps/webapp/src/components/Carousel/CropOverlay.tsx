@@ -3,6 +3,10 @@ import type { CropSlot, PhotoTransform } from '@/state/store';
 import { clampValue, useCropGestures, type CropTransform } from '@/utils/cropGestures';
 
 const MAX_RELATIVE_SCALE = 3;
+const MIN_RELATIVE_SCALE = 1;
+const AUTO_ZOOM_EPSILON = 0.02;
+const MIN_SCALE_DELTA = 1e-4;
+const OFFSET_THRESHOLD_PX = 0.5;
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -24,6 +28,11 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
   const [imageSize, setImageSize] = useState<Size | null>(null);
   const baseScaleRef = useRef(1);
   const pendingSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const relativeTransformRef = useRef<PhotoTransform>({
+    scale: transform.scale ?? 1,
+    offsetX: transform.offsetX ?? 0,
+    offsetY: transform.offsetY ?? 0,
+  });
 
   const clampTransform = useCallback(
     (value: CropTransform): CropTransform => {
@@ -46,6 +55,21 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
     [box.height, box.width, imageSize],
   );
 
+  const toRelativeTransform = useCallback(
+    (value: CropTransform): PhotoTransform => {
+      const baseScale = baseScaleRef.current || 1;
+      const safeBase = baseScale > 0 ? baseScale : 1;
+      const next: PhotoTransform = {
+        scale: value.scale / safeBase,
+        offsetX: value.offsetX,
+        offsetY: value.offsetY,
+      };
+      relativeTransformRef.current = next;
+      return next;
+    },
+    [],
+  );
+
   const gestures = useCropGestures({
     boxRef: frameRef,
     imgRef: imageRef,
@@ -55,17 +79,62 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
       offsetY: transform.offsetY ?? 0,
     }),
     clamp: clampTransform,
+    onChange: (value) => {
+      toRelativeTransform(value);
+    },
   });
 
   const computePayload = useCallback((): PhotoTransform => {
     const current = gestures.getTransform();
+    return toRelativeTransform(current);
+  }, [gestures, toRelativeTransform]);
+
+  const applyRelativeTransform = useCallback(
+    (value: PhotoTransform) => {
+      const baseScale = baseScaleRef.current || 1;
+      const safeBase = baseScale > 0 ? baseScale : 1;
+      gestures.setTransform({
+        scale: safeBase * value.scale,
+        offsetX: value.offsetX,
+        offsetY: value.offsetY,
+      });
+    },
+    [gestures],
+  );
+
+  const normalizeBeforeSave = useCallback(() => {
+    if (!imageSize) return;
+
+    const current = relativeTransformRef.current;
+    let { scale, offsetX, offsetY } = current;
+
+    const hasOffset = Math.abs(offsetX) > OFFSET_THRESHOLD_PX || Math.abs(offsetY) > OFFSET_THRESHOLD_PX;
+    if (scale <= MIN_RELATIVE_SCALE + MIN_SCALE_DELTA && hasOffset) {
+      scale = MIN_RELATIVE_SCALE * (1 + AUTO_ZOOM_EPSILON);
+    }
+
     const baseScale = baseScaleRef.current || 1;
-    return {
-      scale: current.scale / baseScale,
-      offsetX: current.offsetX,
-      offsetY: current.offsetY,
+    const safeBase = baseScale > 0 ? baseScale : 1;
+    const effectiveScale = safeBase * scale;
+    const drawWidth = imageSize.width * effectiveScale;
+    const drawHeight = imageSize.height * effectiveScale;
+    const maxOffsetX = Math.max(0, (drawWidth - box.width) / 2);
+    const maxOffsetY = Math.max(0, (drawHeight - box.height) / 2);
+
+    const next: PhotoTransform = {
+      scale,
+      offsetX: clampValue(offsetX, -maxOffsetX, maxOffsetX),
+      offsetY: clampValue(offsetY, -maxOffsetY, maxOffsetY),
     };
-  }, [gestures]);
+
+    if (
+      next.scale !== current.scale ||
+      next.offsetX !== current.offsetX ||
+      next.offsetY !== current.offsetY
+    ) {
+      applyRelativeTransform(next);
+    }
+  }, [applyRelativeTransform, box.height, box.width, imageSize]);
 
   const cancelPendingSave = useCallback(() => {
     if (pendingSaveRef.current !== null) {
@@ -79,9 +148,10 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
     cancelPendingSave();
     pendingSaveRef.current = setTimeout(() => {
       pendingSaveRef.current = null;
+      normalizeBeforeSave();
       onChange(slot, computePayload());
     }, 200);
-  }, [cancelPendingSave, computePayload, onChange, slot]);
+  }, [cancelPendingSave, computePayload, normalizeBeforeSave, onChange, slot]);
 
   const frameStyle = useMemo(
     () => ({
@@ -160,19 +230,17 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
       img.style.transformOrigin = 'center center';
       img.style.willChange = 'transform';
     }
-    const initial = clampTransform({
-      scale: baseScale * (transform.scale ?? 1),
+    applyRelativeTransform({
+      scale: transform.scale ?? 1,
       offsetX: transform.offsetX ?? 0,
       offsetY: transform.offsetY ?? 0,
     });
-    gestures.setTransform(initial);
     cancelPendingSave();
   }, [
     box.height,
     box.width,
     cancelPendingSave,
-    clampTransform,
-    gestures,
+    applyRelativeTransform,
     imageSize,
     transform.offsetX,
     transform.offsetY,
@@ -182,24 +250,18 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
   const ready = Boolean(imageSize);
 
   const handleReset = useCallback(() => {
-    const baseScale = baseScaleRef.current;
-    gestures.setTransform(
-      clampTransform({
-        scale: baseScale,
-        offsetX: 0,
-        offsetY: 0,
-      }),
-    );
+    applyRelativeTransform({ scale: MIN_RELATIVE_SCALE, offsetX: 0, offsetY: 0 });
     cancelPendingSave();
     if (onChange) {
-      onChange(slot, { scale: 1, offsetX: 0, offsetY: 0 });
+      onChange(slot, { scale: MIN_RELATIVE_SCALE, offsetX: 0, offsetY: 0 });
     }
-  }, [cancelPendingSave, clampTransform, gestures, onChange, slot]);
+  }, [applyRelativeTransform, cancelPendingSave, onChange, slot]);
 
   const handleSave = useCallback(() => {
     cancelPendingSave();
+    normalizeBeforeSave();
     onSave(slot, computePayload());
-  }, [cancelPendingSave, computePayload, onSave, slot]);
+  }, [cancelPendingSave, computePayload, normalizeBeforeSave, onSave, slot]);
 
   useEffect(() => () => cancelPendingSave(), [cancelPendingSave]);
 
