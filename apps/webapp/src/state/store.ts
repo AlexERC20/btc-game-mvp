@@ -1,5 +1,6 @@
-import { create } from 'zustand';
+import { create, type StoreApi } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import { getExportSlides } from '@/utils/getExportSlides';
 
 export type PhotoId = string;
 
@@ -191,6 +192,8 @@ const createNoopStorage = (): Storage =>
     length: 0,
   } as Storage);
 
+const uid = () => crypto.randomUUID();
+
 export type NicknameLayout = {
   position: 'left' | 'center' | 'right';
   offset: number;
@@ -310,6 +313,7 @@ export const useLayoutSelector = <T,>(selector: (state: LayoutState) => T) =>
 export type Slide = {
   id: string;
   body?: string;
+  text?: { title?: string; body?: string } | null;
   image?: string; // objectURL или http url
   photoId?: PhotoId;
   template: 'single' | 'collage-50';
@@ -363,6 +367,17 @@ export function createDefaultSingle(): SingleSlot {
 export function normalizeSingle(single?: SingleSlot): SingleSlot {
   if (!single) return createDefaultSingle();
   return { transform: normalizeTransform(single.transform) };
+}
+
+export function createEmptySlide(): Slide {
+  return {
+    id: uid(),
+    template: 'single',
+    single: createDefaultSingle(),
+    body: '',
+    nickname: '',
+    text: null,
+  };
 }
 
 export type UISheet = null | 'template' | 'layout' | 'photos' | 'text';
@@ -466,6 +481,8 @@ type State = {
   autoFillCollage: (photoIds: string[]) => void;
 };
 
+let carouselStoreApi: StoreApi<State> | null = null;
+
 const carouselStorage = () =>
   createJSONStorage<State>(() =>
     (typeof window !== 'undefined' ? window.localStorage : createNoopStorage()),
@@ -538,141 +555,68 @@ const originalTemplate: TemplateConfig = {
 
 const defaultTemplate = originalTemplate;
 
-// дефолтный сет мотивации (10 приветственных слайдов)
-const initial: Slide[] = [
-  {
-    id: 'demo-1',
-
-    body: `Карусель — лучший формат для продвижения.
-В Instagram карусели дают до 2 раз больше вовлечения, чем обычные фото или видео. Это прямой способ увеличить охват и подписчиков.`,
-    kind: 'demo',
-    isDemo: true,
-  },
-  {
-    id: 'demo-2',
-
-    body: `Алгоритм показывает карусель дважды.
-
-Если человек не отреагировал на первый слайд, Instagram может показать ему второй. Больше шансов, что тебя заметят.`,
-    kind: 'demo',
-    isDemo: true,
-  },
-  {
-    id: 'demo-3',
-
-    body: `Дольше удерживают внимание.
-
-Каждый свайп = дополнительное время в посте. Алгоритм видит интерес и поднимает публикацию выше в ленте.`,
-    kind: 'demo',
-    isDemo: true,
-  },
-  {
-    id: 'demo-4',
-
-    body: `Больше сохранений = больше охват.
-
-Образовательные или пошаговые карусели сохраняют в 10 раз чаще, чем одиночные посты. Сохранения — главный сигнал для Instagram.`,
-    kind: 'demo',
-    isDemo: true,
-  },
-  {
-    id: 'demo-5',
-
-    body: `Сторителлинг работает лучше.
-
-Карусель = мини-история. От «проблемы» → к «решению» → к «призову к действию». Люди дочитывают до конца и подписываются.`,
-    kind: 'demo',
-    isDemo: true,
-  },
-  {
-    id: 'demo-6',
-
-    body: `5+ слайдов = больше вовлечения.
-
-Карусели с 7–10 слайдами показывают самый высокий engagement rate (до 2 %). Чем длиннее история — тем больше действий.`,
-    kind: 'demo',
-    isDemo: true,
-  },
-  {
-    id: 'demo-7',
-
-    body: `Образовательный контент проще упаковать.
-
-Советы, инструкции, чек-листы — удобнее дать серией свайпов. Это вызывает доверие и делает тебя экспертом в нише.`,
-    kind: 'demo',
-    isDemo: true,
-  },
-  {
-    id: 'demo-8',
-
-    body: `Работает даже лучше, чем Reels.
-
-Средний engagement у каруселей выше, чем у Reels (0.55 % vs 0.50 %). Это значит: не только видео = рост аккаунта.`,
-    kind: 'demo',
-    isDemo: true,
-  },
-  {
-    id: 'demo-9',
-
-    body: `20 слайдов = новый уровень.
-
-Instagram недавно увеличил лимит до 20 фото. Теперь можно делать полноценные гайды прямо в ленте.`,
-    kind: 'demo',
-    isDemo: true,
-  },
-  {
-    id: 'demo-10',
-
-    body: `Итог — делай больше 5 слайдов.
-х
-Чем длиннее карусель, тем больше охват, вовлечение и сохранения. 👉 Используй этот формат регулярно, чтобы аккаунт рос быстрее.`,
-    kind: 'demo',
-    isDemo: true,
-  },
-].map((slide) => ({
-  template: 'single',
-  single: createDefaultSingle(),
-  ...slide,
-}));
-
 export const useCarouselStore = create<State>()(
   persist(
-    (set, get) => ({
-    slides: initial,
-    activeIndex: 0,
-    activeSheet: null,
-    text: { nickname: '', bulkText: '' },
-    templateStyle: 'original',
-    typography: { textColorMode: 'auto', headingAccent: null },
-    style: {
-      template: defaultTemplate,
-      templateScope: 'all',
-    },
+    (set, get, api) => {
+      carouselStoreApi = api;
+      return {
+        slides: [createEmptySlide()],
+        activeIndex: 0,
+        activeSheet: null,
+        text: { nickname: '', bulkText: '' },
+        templateStyle: 'original',
+        typography: { textColorMode: 'auto', headingAccent: null },
+        style: {
+          template: defaultTemplate,
+          templateScope: 'all',
+        },
 
-    openSheet: (s) => set({ activeSheet: s }),
-    closeSheet: () => set({ activeSheet: null }),
+        openSheet: (s) => set({ activeSheet: s }),
+        closeSheet: () => set({ activeSheet: null }),
 
     addSlide: (s = {}) =>
-      set((st) => ({
-        slides: [
-          ...st.slides,
-          {
-            id: crypto.randomUUID(),
-            template: (s as Slide).template ?? 'single',
-            ...s,
-            single:
-              'single' in s && (s as Slide).single
-                ? normalizeSingle((s as Slide).single)
-                : createDefaultSingle(),
-          },
-        ],
-      })),
+      set((st) => {
+        const template = (s as Slide).template ?? 'single';
+        const base = createEmptySlide();
+        const id = (s as Slide).id ?? base.id;
+        const slide: Slide = {
+          ...base,
+          ...s,
+          id,
+          template,
+        };
+
+        if (template === 'collage-50') {
+          slide.template = 'collage-50';
+          slide.collage50 = normalizeCollage((s as Slide).collage50);
+          slide.single = undefined;
+          slide.photoId = undefined;
+          slide.image = undefined;
+        } else {
+          slide.template = 'single';
+          slide.single = normalizeSingle((s as Slide).single);
+          slide.collage50 = undefined;
+        }
+
+        return {
+          slides: [...st.slides, slide],
+        };
+      }),
 
     removeSlide: (id) =>
-      set((st) => ({
-        slides: st.slides.filter((x) => x.id !== id),
-        activeIndex: Math.min(get().activeIndex, st.slides.length - 2),
-      })),
+      set((st) => {
+        const remaining = st.slides.filter((x) => x.id !== id);
+        if (remaining.length === st.slides.length) {
+          return {};
+        }
+        const slides = remaining.length > 0 ? remaining : [createEmptySlide()];
+        const maxIndex = slides.length - 1;
+        const current = get().activeIndex;
+        return {
+          slides,
+          activeIndex: Math.max(0, Math.min(current, maxIndex)),
+        };
+      }),
 
     updateSlide: (id, patch) =>
       set((st) => ({ slides: st.slides.map(s => s.id === id ? { ...s, ...patch } : s) })),
@@ -1029,7 +973,7 @@ export const useCarouselStore = create<State>()(
     autoFillCollage: (photoIds) =>
       set((state) => {
         if (photoIds.length === 0) return {};
-        const maxSlides = Math.min(state.slides.length, 10);
+        const maxSlides = state.slides.length;
         if (maxSlides === 0) return {};
         let changed = false;
         const queue = photoIds.slice(0, maxSlides * 2);
@@ -1081,7 +1025,8 @@ export const useCarouselStore = create<State>()(
         return changed ? { slides } : {};
       }),
 
-    }),
+      };
+    },
     {
       name: 'carousel-state-v1',
       version: 1,
@@ -1095,6 +1040,22 @@ export const useCarouselStore = create<State>()(
         typography: state.typography,
         style: state.style,
       }),
+      onRehydrateStorage: () => () => {
+        if (!carouselStoreApi) return;
+        const currentState = carouselStoreApi.getState();
+        const slides = currentState.slides;
+        if (!slides || slides.length === 0) {
+          carouselStoreApi.setState({ slides: [createEmptySlide()], activeIndex: 0 });
+          return;
+        }
+        const trimmed = getExportSlides(slides);
+        if (trimmed.length !== slides.length) {
+          carouselStoreApi.setState((state) => ({
+            slides: trimmed,
+            activeIndex: Math.max(0, Math.min(state.activeIndex, trimmed.length - 1)),
+          }));
+        }
+      },
       merge: (persistedState, currentState) => {
         const data = persistedState as Partial<State>;
         const slides = data.slides?.map((slide) => ({
@@ -1111,8 +1072,6 @@ export const useCarouselStore = create<State>()(
     },
   ),
 );
-
-const uid = () => crypto.randomUUID();
 
 export const slidesActions = {
   replaceWithPhotos(photos: Photo[]) {
