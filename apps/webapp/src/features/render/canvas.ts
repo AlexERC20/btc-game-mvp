@@ -1,5 +1,5 @@
 import { BASE_FRAME } from './constants';
-import type { LayoutConfig, TemplateConfig } from '@/state/store';
+import type { LayoutConfig, PhotoTransform, TemplateConfig } from '@/state/store';
 import {
   Slide,
   layoutSnapshot,
@@ -12,13 +12,39 @@ import { Typography, typographyToCanvasFont } from '@/styles/typography';
 import { splitEditorialText } from '@/utils/text';
 import { composeTextLines } from '@/utils/textLayout';
 import { resolveBlockPosition, resolveBlockWidth } from '@/utils/layoutGeometry';
-import { drawImageCover } from '@/utils/drawImageCover';
 import { resolvePhotoFromStore } from '@/utils/photos';
 import { computeCollageBoxes } from '@/utils/collage';
 import { applyOpacityToColor } from '@/utils/color';
 
 export const CANVAS_W = BASE_FRAME.width;
 export const CANVAS_H = BASE_FRAME.height;
+
+type Rect = { x: number; y: number; width: number; height: number };
+
+function drawImageWithTransform(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  box: Rect,
+  transform?: PhotoTransform,
+) {
+  const imageWidth = img.naturalWidth || img.width;
+  const imageHeight = img.naturalHeight || img.height;
+  if (!imageWidth || !imageHeight) return;
+
+  const baseScale = Math.max(box.width / imageWidth, box.height / imageHeight);
+  const scale = baseScale * (transform?.scale ?? 1);
+  const drawWidth = imageWidth * scale;
+  const drawHeight = imageHeight * scale;
+  const dx = box.x + (box.width - drawWidth) / 2 + (transform?.offsetX ?? 0);
+  const dy = box.y + (box.height - drawHeight) / 2 + (transform?.offsetY ?? 0);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(box.x, box.y, box.width, box.height);
+  ctx.clip();
+  ctx.drawImage(img, dx, dy, drawWidth, drawHeight);
+  ctx.restore();
+}
 
 function roundedRectPath(
   ctx: CanvasRenderingContext2D,
@@ -338,7 +364,7 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
 
     if (boxes.top.height > 0) {
       if (topImage) {
-        drawImageCover(ctx, topImage, boxes.top, collageConfig.top.transform);
+        drawImageWithTransform(ctx, topImage, boxes.top, collageConfig.top.transform);
       } else {
         ctx.fillStyle = placeholder;
         ctx.fillRect(boxes.top.x, boxes.top.y, boxes.top.width, boxes.top.height);
@@ -347,7 +373,7 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
 
     if (boxes.bottom.height > 0) {
       if (bottomImage) {
-        drawImageCover(ctx, bottomImage, boxes.bottom, collageConfig.bottom.transform);
+        drawImageWithTransform(ctx, bottomImage, boxes.bottom, collageConfig.bottom.transform);
       } else {
         ctx.fillStyle = placeholder;
         ctx.fillRect(boxes.bottom.x, boxes.bottom.y, boxes.bottom.width, boxes.bottom.height);
@@ -366,7 +392,12 @@ export async function renderSlideToPNG(slide: Slide, exportScale = 1): Promise<B
       ctx.fillRect(0, boxes.divider.y, CANVAS_W, boxes.divider.height);
     }
   } else if (singleImage) {
-    drawImageCover(ctx, singleImage, { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H }, singleConfig.transform);
+    drawImageWithTransform(
+      ctx,
+      singleImage,
+      { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H },
+      singleConfig.transform,
+    );
   }
 
   drawFooterGradient(ctx, design.theme);

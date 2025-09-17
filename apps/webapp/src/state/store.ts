@@ -461,15 +461,15 @@ type State = {
 
   setCollageSlot: (slideIndex: number, slot: 'top' | 'bottom', photoId?: string) => void;
   swapCollage: (slideIndex: number) => void;
-  setSingleTransform: (slideIndex: number, transform: Partial<PhotoTransform>) => void;
-  setCollageTransform: (
-    slideIndex: number,
-    slot: 'top' | 'bottom',
-    transform: Partial<PhotoTransform>,
-  ) => void;
+  setTransform: (slideIndex: number, slot: CropSlot, transform: Partial<PhotoTransform>) => void;
   applyCollageTemplateToAll: () => void;
   autoFillCollage: (photoIds: string[]) => void;
 };
+
+const carouselStorage = () =>
+  createJSONStorage<State>(() =>
+    (typeof window !== 'undefined' ? window.localStorage : createNoopStorage()),
+  );
 
 const editorialTemplate: TemplateConfig = {
   preset: 'editorial',
@@ -635,453 +635,486 @@ Instagram недавно увеличил лимит до 20 фото. Тепе�
   ...slide,
 }));
 
-export const useCarouselStore = create<State>((set, get) => ({
-  slides: initial,
-  activeIndex: 0,
-  activeSheet: null,
-  text: { nickname: '', bulkText: '' },
-  templateStyle: 'original',
-  typography: { textColorMode: 'auto', headingAccent: null },
-  style: {
-    template: defaultTemplate,
-    templateScope: 'all',
-  },
+export const useCarouselStore = create<State>()(
+  persist(
+    (set, get) => ({
+    slides: initial,
+    activeIndex: 0,
+    activeSheet: null,
+    text: { nickname: '', bulkText: '' },
+    templateStyle: 'original',
+    typography: { textColorMode: 'auto', headingAccent: null },
+    style: {
+      template: defaultTemplate,
+      templateScope: 'all',
+    },
 
-  openSheet: (s) => set({ activeSheet: s }),
-  closeSheet: () => set({ activeSheet: null }),
+    openSheet: (s) => set({ activeSheet: s }),
+    closeSheet: () => set({ activeSheet: null }),
 
-  addSlide: (s = {}) =>
-    set((st) => ({
-      slides: [
-        ...st.slides,
-        {
-          id: crypto.randomUUID(),
-          template: (s as Slide).template ?? 'single',
+    addSlide: (s = {}) =>
+      set((st) => ({
+        slides: [
+          ...st.slides,
+          {
+            id: crypto.randomUUID(),
+            template: (s as Slide).template ?? 'single',
+            ...s,
+            single:
+              'single' in s && (s as Slide).single
+                ? normalizeSingle((s as Slide).single)
+                : createDefaultSingle(),
+          },
+        ],
+      })),
+
+    removeSlide: (id) =>
+      set((st) => ({
+        slides: st.slides.filter((x) => x.id !== id),
+        activeIndex: Math.min(get().activeIndex, st.slides.length - 2),
+      })),
+
+    updateSlide: (id, patch) =>
+      set((st) => ({ slides: st.slides.map(s => s.id === id ? { ...s, ...patch } : s) })),
+
+    reorderSlides: (from, to) =>
+      set((st) => {
+        const slides = [...st.slides];
+        const [m] = slides.splice(from, 1);
+        slides.splice(Math.max(0, Math.min(to, slides.length)), 0, m);
+        return { slides, activeIndex: Math.max(0, Math.min(to, slides.length - 1)) };
+      }),
+
+    setActiveIndex: (i) => set({ activeIndex: i }),
+
+    setTextField: (patch) =>
+      set((s) => ({ text: { ...s.text, ...patch } })),
+
+    applyTextToSlides: (opts) =>
+      set((state) => {
+        const nickname = (opts?.nickname ?? state.text.nickname).trim();
+        const raw = (opts?.bulkText ?? state.text.bulkText) ?? '';
+
+        const parts = raw
+          .split(/\n{2,}/)
+          .map((p) => p.trim())
+          .filter((p) => p.length > 0);
+
+        const slides = state.slides.map((s, i) => ({
           ...s,
-          single:
-            'single' in s && (s as Slide).single
-              ? normalizeSingle((s as Slide).single)
-              : createDefaultSingle(),
-        },
-      ],
-    })),
+          body: parts[i] ?? '',
+          nickname,
+        }));
 
-  removeSlide: (id) =>
-    set((st) => ({
-      slides: st.slides.filter((x) => x.id !== id),
-      activeIndex: Math.min(get().activeIndex, st.slides.length - 2),
-    })),
-
-  updateSlide: (id, patch) =>
-    set((st) => ({ slides: st.slides.map(s => s.id === id ? { ...s, ...patch } : s) })),
-
-  reorderSlides: (from, to) =>
-    set((st) => {
-      const slides = [...st.slides];
-      const [m] = slides.splice(from, 1);
-      slides.splice(Math.max(0, Math.min(to, slides.length)), 0, m);
-      return { slides, activeIndex: Math.max(0, Math.min(to, slides.length - 1)) };
-    }),
-
-  setActiveIndex: (i) => set({ activeIndex: i }),
-
-  setTextField: (patch) =>
-    set((s) => ({ text: { ...s.text, ...patch } })),
-
-  applyTextToSlides: (opts) =>
-    set((state) => {
-      const nickname = (opts?.nickname ?? state.text.nickname).trim();
-      const raw = (opts?.bulkText ?? state.text.bulkText) ?? '';
-
-      const parts = raw
-        .split(/\n{2,}/)
-        .map((p) => p.trim())
-        .filter((p) => p.length > 0);
-
-      const slides = state.slides.map((s, i) => ({
-        ...s,
-        body: parts[i] ?? '',
-        nickname,
-      }));
-
-      return {
-        slides,
-        text: { nickname, bulkText: raw },
-      };
-    }),
-
-  setTemplateStyle: (styleName) => {
-    if (styleName === 'original') {
-      get().setFooterStyle('none');
-      return;
-    }
-    if (styleName === 'darkFooter') {
-      get().setFooterStyle('dark');
-      return;
-    }
-    if (styleName === 'lightFooter') {
-      get().setFooterStyle('light');
-      return;
-    }
-    get().setTemplatePreset(styleName as Exclude<TemplateStyle, 'original' | 'darkFooter' | 'lightFooter'>);
-  },
-
-  setTemplatePreset: (p) =>
-    set((s) => {
-      const preset = templatePresets[p];
-      return {
-        style: { ...s.style, template: preset },
-        templateStyle: p,
-        typography: { ...s.typography, textColorMode: preset.textColorMode },
-      };
-    }),
-
-  setTemplate: (patch) =>
-    set((s) => {
-      const template = { ...s.style.template, ...patch, preset: 'custom' } as TemplateConfig;
-      const slides = s.slides.map((sl, i) => {
-        if (s.style.templateScope === 'all' || i === s.activeIndex) {
-          return {
-            ...sl,
-            overrides: {
-              ...sl.overrides,
-              template: { ...(sl.overrides?.template || {}), ...patch },
-            },
-          };
-        }
-        return sl;
-      });
-
-      const nextState: Partial<State> = {
-        style: { ...s.style, template },
-        slides,
-      };
-
-      if ('textColorMode' in patch && patch.textColorMode) {
-        nextState.typography = {
-          ...s.typography,
-          textColorMode: patch.textColorMode,
+        return {
+          slides,
+          text: { nickname, bulkText: raw },
         };
+      }),
+
+    setTemplateStyle: (styleName) => {
+      if (styleName === 'original') {
+        get().setFooterStyle('none');
+        return;
       }
-
-      if ('footerStyle' in patch && patch.footerStyle) {
-        nextState.templateStyle =
-          patch.footerStyle === 'none'
-            ? 'original'
-            : patch.footerStyle === 'dark'
-            ? 'darkFooter'
-            : 'lightFooter';
+      if (styleName === 'darkFooter') {
+        get().setFooterStyle('dark');
+        return;
       }
+      if (styleName === 'lightFooter') {
+        get().setFooterStyle('light');
+        return;
+      }
+      get().setTemplatePreset(styleName as Exclude<TemplateStyle, 'original' | 'darkFooter' | 'lightFooter'>);
+    },
 
-      return nextState;
-    }),
-
-  setFooterStyle: (mode, scope = get().style.templateScope) =>
-    set((state) => {
-      const patch: Partial<TemplateConfig> =
-        mode === 'none'
-          ? { footerStyle: 'none', bottomGradient: 0 }
-          : mode === 'dark'
-          ? { footerStyle: 'dark', bottomGradient: 38, textColorMode: 'white' }
-          : { footerStyle: 'light', bottomGradient: 40, textColorMode: 'black' };
-
-      const styleName: TemplateStyle =
-        mode === 'none' ? 'original' : mode === 'dark' ? 'darkFooter' : 'lightFooter';
-
-      const slides = state.slides.map((sl, i) => {
-        if (scope === 'all' || i === state.activeIndex) {
-          return {
-            ...sl,
-            overrides: {
-              ...sl.overrides,
-              template: { ...(sl.overrides?.template || {}), ...patch },
-            },
-          };
-        }
-        return sl;
-      });
-
-      const nextState: Partial<State> = {
-        slides,
-        style: {
-          ...state.style,
-          template: { ...state.style.template, ...patch, preset: 'custom' },
-        },
-        templateStyle: styleName,
-      };
-
-      if (patch.textColorMode) {
-        nextState.typography = {
-          ...state.typography,
-          textColorMode: patch.textColorMode,
+    setTemplatePreset: (p) =>
+      set((s) => {
+        const preset = templatePresets[p];
+        return {
+          style: { ...s.style, template: preset },
+          templateStyle: p,
+          typography: { ...s.typography, textColorMode: preset.textColorMode },
         };
-      }
+      }),
 
-      return nextState;
-    }),
-
-  resetTemplate: () =>
-    set((s) => ({
-      style: { ...s.style, template: defaultTemplate },
-      templateStyle: 'original',
-      typography: {
-        ...s.typography,
-        textColorMode: defaultTemplate.textColorMode,
-        headingAccent: null,
-      },
-    })),
-
-  setTemplateScope: (sc) =>
-    set((s) => ({ style: { ...s.style, templateScope: sc } })),
-
-  applyTemplate: () =>
-    set((state) => {
-      const { template, templateScope } = state.style;
-      const slides = state.slides.map((sl, i) => {
-        if (templateScope === 'all' || i === state.activeIndex) {
-          return {
-            ...sl,
-            overrides: { ...sl.overrides, template },
-          };
-        }
-        return sl;
-      });
-      return { slides };
-    }),
-
-  setHeadingAccent: (hex) =>
-    set((s) => ({ typography: { ...s.typography, headingAccent: hex } })),
-
-  setTextColorMode: (mode) =>
-    set((s) => {
-      const slides = s.slides.map((sl, i) => {
-        if (s.style.templateScope === 'all' || i === s.activeIndex) {
-          return {
-            ...sl,
-            overrides: {
-              ...sl.overrides,
-              template: { ...(sl.overrides?.template || {}), textColorMode: mode },
-            },
-          };
-        }
-        return sl;
-      });
-
-      return {
-        slides,
-        typography: { ...s.typography, textColorMode: mode },
-        style: {
-          ...s.style,
-          template: { ...s.style.template, textColorMode: mode, preset: 'custom' },
-        },
-      };
-    }),
-
-  setCollageSlot: (slideIndex, slot, photoId) =>
-    set((state) => {
-      const slide = state.slides[slideIndex];
-      if (!slide) return {};
-      const collage = normalizeCollage(slide.collage50);
-      const prevSlot = collage[slot];
-      const nextSlot: CollageSlot = photoId
-        ? {
-            photoId,
-            transform:
-              prevSlot.photoId === photoId
-                ? { ...prevSlot.transform }
-                : createDefaultTransform(),
+    setTemplate: (patch) =>
+      set((s) => {
+        const template = { ...s.style.template, ...patch, preset: 'custom' } as TemplateConfig;
+        const slides = s.slides.map((sl, i) => {
+          if (s.style.templateScope === 'all' || i === s.activeIndex) {
+            return {
+              ...sl,
+              overrides: {
+                ...sl.overrides,
+                template: { ...(sl.overrides?.template || {}), ...patch },
+              },
+            };
           }
-        : { photoId: undefined, transform: createDefaultTransform() };
+          return sl;
+        });
 
-      const changed =
-        prevSlot.photoId !== nextSlot.photoId ||
-        prevSlot.transform.scale !== nextSlot.transform.scale ||
-        prevSlot.transform.offsetX !== nextSlot.transform.offsetX ||
-        prevSlot.transform.offsetY !== nextSlot.transform.offsetY ||
-        slide.template !== 'collage-50';
+        const nextState: Partial<State> = {
+          style: { ...s.style, template },
+          slides,
+        };
 
-      if (!changed) return {};
-
-      const nextCollage: Collage50 = { ...collage, [slot]: nextSlot };
-      const slides = [...state.slides];
-      slides[slideIndex] = {
-        ...slide,
-        template: 'collage-50',
-        collage50: nextCollage,
-        image: undefined,
-        photoId: undefined,
-      };
-      return { slides };
-    }),
-
-  swapCollage: (slideIndex) =>
-    set((state) => {
-      const slide = state.slides[slideIndex];
-      if (!slide) return {};
-      const collage = normalizeCollage(slide.collage50);
-      const slotsEqual =
-        collage.top.photoId === collage.bottom.photoId &&
-        collage.top.transform.scale === collage.bottom.transform.scale &&
-        collage.top.transform.offsetX === collage.bottom.transform.offsetX &&
-        collage.top.transform.offsetY === collage.bottom.transform.offsetY;
-      if (slotsEqual) return {};
-      const nextCollage: Collage50 = {
-        ...collage,
-        top: { photoId: collage.bottom.photoId, transform: { ...collage.bottom.transform } },
-        bottom: { photoId: collage.top.photoId, transform: { ...collage.top.transform } },
-      };
-      const slides = [...state.slides];
-      slides[slideIndex] = {
-        ...slide,
-        template: 'collage-50',
-        collage50: nextCollage,
-        image: undefined,
-        photoId: undefined,
-      };
-      return { slides };
-    }),
-
-  setSingleTransform: (slideIndex, transform) =>
-    set((state) => {
-      const slide = state.slides[slideIndex];
-      if (!slide) return {};
-      const single = normalizeSingle(slide.single);
-      const nextTransform: PhotoTransform = {
-        scale: transform.scale ?? single.transform.scale,
-        offsetX: transform.offsetX ?? single.transform.offsetX,
-        offsetY: transform.offsetY ?? single.transform.offsetY,
-      };
-      const changed =
-        nextTransform.scale !== single.transform.scale ||
-        nextTransform.offsetX !== single.transform.offsetX ||
-        nextTransform.offsetY !== single.transform.offsetY;
-      if (!changed) return {};
-      const slides = [...state.slides];
-      slides[slideIndex] = {
-        ...slide,
-        single: { transform: nextTransform },
-      };
-      return { slides };
-    }),
-
-  setCollageTransform: (slideIndex, slot, transform) =>
-    set((state) => {
-      const slide = state.slides[slideIndex];
-      if (!slide) return {};
-      const collage = normalizeCollage(slide.collage50);
-      const currentSlot = collage[slot];
-      const nextTransform: PhotoTransform = {
-        scale: transform.scale ?? currentSlot.transform.scale,
-        offsetX: transform.offsetX ?? currentSlot.transform.offsetX,
-        offsetY: transform.offsetY ?? currentSlot.transform.offsetY,
-      };
-      const changed =
-        nextTransform.scale !== currentSlot.transform.scale ||
-        nextTransform.offsetX !== currentSlot.transform.offsetX ||
-        nextTransform.offsetY !== currentSlot.transform.offsetY;
-      if (!changed) return {};
-      const slides = [...state.slides];
-      slides[slideIndex] = {
-        ...slide,
-        template: 'collage-50',
-        collage50: { ...collage, [slot]: { ...currentSlot, transform: nextTransform } },
-        image: undefined,
-        photoId: undefined,
-      };
-      return { slides };
-    }),
-
-  applyCollageTemplateToAll: () =>
-    set((state) => {
-      let changed = false;
-      const slides = state.slides.map((slide) => {
-        const collage = normalizeCollage(slide.collage50);
-        const sameTemplate = slide.template === 'collage-50';
-        const sameTop =
-          slide.collage50?.top?.photoId === collage.top.photoId &&
-          slide.collage50?.top?.transform?.scale === collage.top.transform.scale &&
-          slide.collage50?.top?.transform?.offsetX === collage.top.transform.offsetX &&
-          slide.collage50?.top?.transform?.offsetY === collage.top.transform.offsetY;
-        const sameBottom =
-          slide.collage50?.bottom?.photoId === collage.bottom.photoId &&
-          slide.collage50?.bottom?.transform?.scale === collage.bottom.transform.scale &&
-          slide.collage50?.bottom?.transform?.offsetX === collage.bottom.transform.offsetX &&
-          slide.collage50?.bottom?.transform?.offsetY === collage.bottom.transform.offsetY;
-        const sameDivider =
-          slide.collage50?.dividerPx === collage.dividerPx &&
-          slide.collage50?.dividerColor === collage.dividerColor &&
-          slide.collage50?.dividerOpacity === collage.dividerOpacity;
-        if (sameTemplate && sameTop && sameBottom && sameDivider) {
-          return slide;
+        if ('textColorMode' in patch && patch.textColorMode) {
+          nextState.typography = {
+            ...s.typography,
+            textColorMode: patch.textColorMode,
+          };
         }
-        changed = true;
+
+        if ('footerStyle' in patch && patch.footerStyle) {
+          nextState.templateStyle =
+            patch.footerStyle === 'none'
+              ? 'original'
+              : patch.footerStyle === 'dark'
+              ? 'darkFooter'
+              : 'lightFooter';
+        }
+
+        return nextState;
+      }),
+
+    setFooterStyle: (mode, scope = get().style.templateScope) =>
+      set((state) => {
+        const patch: Partial<TemplateConfig> =
+          mode === 'none'
+            ? { footerStyle: 'none', bottomGradient: 0 }
+            : mode === 'dark'
+            ? { footerStyle: 'dark', bottomGradient: 38, textColorMode: 'white' }
+            : { footerStyle: 'light', bottomGradient: 40, textColorMode: 'black' };
+
+        const styleName: TemplateStyle =
+          mode === 'none' ? 'original' : mode === 'dark' ? 'darkFooter' : 'lightFooter';
+
+        const slides = state.slides.map((sl, i) => {
+          if (scope === 'all' || i === state.activeIndex) {
+            return {
+              ...sl,
+              overrides: {
+                ...sl.overrides,
+                template: { ...(sl.overrides?.template || {}), ...patch },
+              },
+            };
+          }
+          return sl;
+        });
+
+        const nextState: Partial<State> = {
+          slides,
+          style: {
+            ...state.style,
+            template: { ...state.style.template, ...patch, preset: 'custom' },
+          },
+          templateStyle: styleName,
+        };
+
+        if (patch.textColorMode) {
+          nextState.typography = {
+            ...state.typography,
+            textColorMode: patch.textColorMode,
+          };
+        }
+
+        return nextState;
+      }),
+
+    resetTemplate: () =>
+      set((s) => ({
+        style: { ...s.style, template: defaultTemplate },
+        templateStyle: 'original',
+        typography: {
+          ...s.typography,
+          textColorMode: defaultTemplate.textColorMode,
+          headingAccent: null,
+        },
+      })),
+
+    setTemplateScope: (sc) =>
+      set((s) => ({ style: { ...s.style, templateScope: sc } })),
+
+    applyTemplate: () =>
+      set((state) => {
+        const { template, templateScope } = state.style;
+        const slides = state.slides.map((sl, i) => {
+          if (templateScope === 'all' || i === state.activeIndex) {
+            return {
+              ...sl,
+              overrides: { ...sl.overrides, template },
+            };
+          }
+          return sl;
+        });
+        return { slides };
+      }),
+
+    setHeadingAccent: (hex) =>
+      set((s) => ({ typography: { ...s.typography, headingAccent: hex } })),
+
+    setTextColorMode: (mode) =>
+      set((s) => {
+        const slides = s.slides.map((sl, i) => {
+          if (s.style.templateScope === 'all' || i === s.activeIndex) {
+            return {
+              ...sl,
+              overrides: {
+                ...sl.overrides,
+                template: { ...(sl.overrides?.template || {}), textColorMode: mode },
+              },
+            };
+          }
+          return sl;
+        });
+
         return {
+          slides,
+          typography: { ...s.typography, textColorMode: mode },
+          style: {
+            ...s.style,
+            template: { ...s.style.template, textColorMode: mode, preset: 'custom' },
+          },
+        };
+      }),
+
+    setCollageSlot: (slideIndex, slot, photoId) =>
+      set((state) => {
+        const slide = state.slides[slideIndex];
+        if (!slide) return {};
+        const collage = normalizeCollage(slide.collage50);
+        const prevSlot = collage[slot];
+        const nextSlot: CollageSlot = photoId
+          ? {
+              photoId,
+              transform:
+                prevSlot.photoId === photoId
+                  ? { ...prevSlot.transform }
+                  : createDefaultTransform(),
+            }
+          : { photoId: undefined, transform: createDefaultTransform() };
+
+        const changed =
+          prevSlot.photoId !== nextSlot.photoId ||
+          prevSlot.transform.scale !== nextSlot.transform.scale ||
+          prevSlot.transform.offsetX !== nextSlot.transform.offsetX ||
+          prevSlot.transform.offsetY !== nextSlot.transform.offsetY ||
+          slide.template !== 'collage-50';
+
+        if (!changed) return {};
+
+        const nextCollage: Collage50 = { ...collage, [slot]: nextSlot };
+        const slides = [...state.slides];
+        slides[slideIndex] = {
           ...slide,
           template: 'collage-50',
-          collage50: collage,
+          collage50: nextCollage,
           image: undefined,
           photoId: undefined,
         };
-      });
-      return changed ? { slides } : {};
-    }),
+        return { slides };
+      }),
 
-  autoFillCollage: (photoIds) =>
-    set((state) => {
-      if (photoIds.length === 0) return {};
-      const maxSlides = Math.min(state.slides.length, 10);
-      if (maxSlides === 0) return {};
-      let changed = false;
-      const queue = photoIds.slice(0, maxSlides * 2);
-      const slides = state.slides.map((slide, index) => {
-        if (index >= maxSlides) return slide;
+    swapCollage: (slideIndex) =>
+      set((state) => {
+        const slide = state.slides[slideIndex];
+        if (!slide) return {};
         const collage = normalizeCollage(slide.collage50);
-        const topId = queue[index * 2];
-        const bottomId = queue[index * 2 + 1];
-        const nextTop: CollageSlot = topId
-          ? {
-              photoId: topId,
-              transform:
-                collage.top.photoId === topId
-                  ? { ...collage.top.transform }
-                  : createDefaultTransform(),
-            }
-          : createDefaultCollageSlot();
-        const nextBottom: CollageSlot = bottomId
-          ? {
-              photoId: bottomId,
-              transform:
-                collage.bottom.photoId === bottomId
-                  ? { ...collage.bottom.transform }
-                  : createDefaultTransform(),
-            }
-          : createDefaultCollageSlot();
-        const sameTop =
-          collage.top.photoId === nextTop.photoId &&
-          collage.top.transform.scale === nextTop.transform.scale &&
-          collage.top.transform.offsetX === nextTop.transform.offsetX &&
-          collage.top.transform.offsetY === nextTop.transform.offsetY;
-        const sameBottom =
-          collage.bottom.photoId === nextBottom.photoId &&
-          collage.bottom.transform.scale === nextBottom.transform.scale &&
-          collage.bottom.transform.offsetX === nextBottom.transform.offsetX &&
-          collage.bottom.transform.offsetY === nextBottom.transform.offsetY;
-        if (sameTop && sameBottom && slide.template === 'collage-50') {
-          return slide;
-        }
-        changed = true;
-        return {
+        const slotsEqual =
+          collage.top.photoId === collage.bottom.photoId &&
+          collage.top.transform.scale === collage.bottom.transform.scale &&
+          collage.top.transform.offsetX === collage.bottom.transform.offsetX &&
+          collage.top.transform.offsetY === collage.bottom.transform.offsetY;
+        if (slotsEqual) return {};
+        const nextCollage: Collage50 = {
+          ...collage,
+          top: { photoId: collage.bottom.photoId, transform: { ...collage.bottom.transform } },
+          bottom: { photoId: collage.top.photoId, transform: { ...collage.top.transform } },
+        };
+        const slides = [...state.slides];
+        slides[slideIndex] = {
           ...slide,
           template: 'collage-50',
-          collage50: { ...collage, top: nextTop, bottom: nextBottom },
+          collage50: nextCollage,
           image: undefined,
           photoId: undefined,
         };
-      });
-      return changed ? { slides } : {};
-    }),
+        return { slides };
+      }),
 
-}));
+    setTransform: (slideIndex, slot, transform) =>
+      set((state) => {
+        const slide = state.slides[slideIndex];
+        if (!slide) return {};
+        if (slot === 'single') {
+          const single = normalizeSingle(slide.single);
+          const nextTransform: PhotoTransform = {
+            scale: transform.scale ?? single.transform.scale,
+            offsetX: transform.offsetX ?? single.transform.offsetX,
+            offsetY: transform.offsetY ?? single.transform.offsetY,
+          };
+          const changed =
+            nextTransform.scale !== single.transform.scale ||
+            nextTransform.offsetX !== single.transform.offsetX ||
+            nextTransform.offsetY !== single.transform.offsetY;
+          if (!changed) return {};
+          const slides = [...state.slides];
+          slides[slideIndex] = {
+            ...slide,
+            single: { transform: nextTransform },
+          };
+          return { slides };
+        }
+
+        if (slot !== 'top' && slot !== 'bottom') {
+          return {};
+        }
+
+        const collage = normalizeCollage(slide.collage50);
+        const currentSlot = collage[slot];
+        const nextTransform: PhotoTransform = {
+          scale: transform.scale ?? currentSlot.transform.scale,
+          offsetX: transform.offsetX ?? currentSlot.transform.offsetX,
+          offsetY: transform.offsetY ?? currentSlot.transform.offsetY,
+        };
+        const changed =
+          nextTransform.scale !== currentSlot.transform.scale ||
+          nextTransform.offsetX !== currentSlot.transform.offsetX ||
+          nextTransform.offsetY !== currentSlot.transform.offsetY;
+        if (!changed) return {};
+        const slides = [...state.slides];
+        slides[slideIndex] = {
+          ...slide,
+          template: 'collage-50',
+          collage50: { ...collage, [slot]: { ...currentSlot, transform: nextTransform } },
+          image: undefined,
+          photoId: undefined,
+        };
+        return { slides };
+      }),
+
+
+    applyCollageTemplateToAll: () =>
+      set((state) => {
+        let changed = false;
+        const slides = state.slides.map((slide) => {
+          const collage = normalizeCollage(slide.collage50);
+          const sameTemplate = slide.template === 'collage-50';
+          const sameTop =
+            slide.collage50?.top?.photoId === collage.top.photoId &&
+            slide.collage50?.top?.transform?.scale === collage.top.transform.scale &&
+            slide.collage50?.top?.transform?.offsetX === collage.top.transform.offsetX &&
+            slide.collage50?.top?.transform?.offsetY === collage.top.transform.offsetY;
+          const sameBottom =
+            slide.collage50?.bottom?.photoId === collage.bottom.photoId &&
+            slide.collage50?.bottom?.transform?.scale === collage.bottom.transform.scale &&
+            slide.collage50?.bottom?.transform?.offsetX === collage.bottom.transform.offsetX &&
+            slide.collage50?.bottom?.transform?.offsetY === collage.bottom.transform.offsetY;
+          const sameDivider =
+            slide.collage50?.dividerPx === collage.dividerPx &&
+            slide.collage50?.dividerColor === collage.dividerColor &&
+            slide.collage50?.dividerOpacity === collage.dividerOpacity;
+          if (sameTemplate && sameTop && sameBottom && sameDivider) {
+            return slide;
+          }
+          changed = true;
+          return {
+            ...slide,
+            template: 'collage-50',
+            collage50: collage,
+            image: undefined,
+            photoId: undefined,
+          };
+        });
+        return changed ? { slides } : {};
+      }),
+
+    autoFillCollage: (photoIds) =>
+      set((state) => {
+        if (photoIds.length === 0) return {};
+        const maxSlides = Math.min(state.slides.length, 10);
+        if (maxSlides === 0) return {};
+        let changed = false;
+        const queue = photoIds.slice(0, maxSlides * 2);
+        const slides = state.slides.map((slide, index) => {
+          if (index >= maxSlides) return slide;
+          const collage = normalizeCollage(slide.collage50);
+          const topId = queue[index * 2];
+          const bottomId = queue[index * 2 + 1];
+          const nextTop: CollageSlot = topId
+            ? {
+                photoId: topId,
+                transform:
+                  collage.top.photoId === topId
+                    ? { ...collage.top.transform }
+                    : createDefaultTransform(),
+              }
+            : createDefaultCollageSlot();
+          const nextBottom: CollageSlot = bottomId
+            ? {
+                photoId: bottomId,
+                transform:
+                  collage.bottom.photoId === bottomId
+                    ? { ...collage.bottom.transform }
+                    : createDefaultTransform(),
+              }
+            : createDefaultCollageSlot();
+          const sameTop =
+            collage.top.photoId === nextTop.photoId &&
+            collage.top.transform.scale === nextTop.transform.scale &&
+            collage.top.transform.offsetX === nextTop.transform.offsetX &&
+            collage.top.transform.offsetY === nextTop.transform.offsetY;
+          const sameBottom =
+            collage.bottom.photoId === nextBottom.photoId &&
+            collage.bottom.transform.scale === nextBottom.transform.scale &&
+            collage.bottom.transform.offsetX === nextBottom.transform.offsetX &&
+            collage.bottom.transform.offsetY === nextBottom.transform.offsetY;
+          if (sameTop && sameBottom && slide.template === 'collage-50') {
+            return slide;
+          }
+          changed = true;
+          return {
+            ...slide,
+            template: 'collage-50',
+            collage50: { ...collage, top: nextTop, bottom: nextBottom },
+            image: undefined,
+            photoId: undefined,
+          };
+        });
+        return changed ? { slides } : {};
+      }),
+
+    }),
+    {
+      name: 'carousel-state-v1',
+      version: 1,
+      storage: carouselStorage(),
+      partialize: (state) => ({
+        slides: state.slides,
+        activeIndex: state.activeIndex,
+        activeSheet: state.activeSheet,
+        text: state.text,
+        templateStyle: state.templateStyle,
+        typography: state.typography,
+        style: state.style,
+      }),
+      merge: (persistedState, currentState) => {
+        const data = persistedState as Partial<State>;
+        const slides = data.slides?.map((slide) => ({
+          ...slide,
+          single: normalizeSingle(slide.single),
+          collage50: slide.collage50 ? normalizeCollage(slide.collage50) : undefined,
+        }));
+        return {
+          ...currentState,
+          ...data,
+          slides: slides ?? currentState.slides,
+        };
+      },
+    },
+  ),
+);
 
 const uid = () => crypto.randomUUID();
 

@@ -69,8 +69,7 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
     if (ref) return ref;
     return slide.image;
   }, [photos, slide.image, slide.photoId]);
-  const setCollageTransform = useCarouselStore((s) => s.setCollageTransform);
-  const setSingleTransform = useCarouselStore((s) => s.setSingleTransform);
+  const setTransform = useCarouselStore((s) => s.setTransform);
   const swapCollage = useCarouselStore((s) => s.swapCollage);
   const crop = useUIStore((s) => s.crop);
   const setCrop = useUIStore((s) => s.setCrop);
@@ -81,6 +80,7 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
   const [menuOpen, setMenuOpen] = useState(false);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const initialTransformRef = useRef<{ slot: CropSlot; transform: PhotoTransform } | null>(null);
 
   const closeCrop = useCallback(() => {
     setCrop({ active: false, slot: null, slideId: null });
@@ -153,21 +153,53 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
     }
   }, [clearCropHold, cropping]);
 
+  useEffect(() => {
+    if (!cropping) {
+      initialTransformRef.current = null;
+      return;
+    }
+    if (!cropSlot || initialTransformRef.current) return;
+    if (cropSlot === 'single') {
+      initialTransformRef.current = { slot: 'single', transform: { ...singleConfig.transform } };
+      return;
+    }
+    if (!isCollage) return;
+    const source = cropSlot === 'top' ? collage.top.transform : collage.bottom.transform;
+    initialTransformRef.current = { slot: cropSlot, transform: { ...source } };
+  }, [
+    collage.bottom.transform,
+    collage.top.transform,
+    cropSlot,
+    cropping,
+    isCollage,
+    singleConfig.transform,
+  ]);
+
   const handleCropSave = useCallback(
     (slot: CropSlot, next: PhotoTransform) => {
-      if (slot === 'single') {
-        setSingleTransform(slideIndex, next);
-      } else if (slot === 'top' || slot === 'bottom') {
-        setCollageTransform(slideIndex, slot, next);
-      }
+      setTransform(slideIndex, slot, next);
+      initialTransformRef.current = null;
       closeCrop();
+      haptic('success');
     },
-    [closeCrop, setCollageTransform, setSingleTransform, slideIndex],
+    [closeCrop, setTransform, slideIndex],
   );
 
   const handleCropCancel = useCallback(() => {
+    const previous = initialTransformRef.current;
+    if (previous) {
+      setTransform(slideIndex, previous.slot, previous.transform);
+    }
+    initialTransformRef.current = null;
     closeCrop();
-  }, [closeCrop]);
+  }, [closeCrop, setTransform, slideIndex]);
+
+  const handleCropChange = useCallback(
+    (slot: CropSlot, next: PhotoTransform) => {
+      setTransform(slideIndex, slot, next);
+    },
+    [setTransform, slideIndex],
+  );
 
   const handleSlotPointerDown = useCallback(
     (slot: 'top' | 'bottom') => (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -699,6 +731,7 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
               transform={cropTransform}
               onCancel={handleCropCancel}
               onSave={handleCropSave}
+              onChange={handleCropChange}
             />
           )}
         </div>
