@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type SyntheticEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type SyntheticEvent } from 'react';
 import type { CropSlot, PhotoTransform } from '@/state/store';
 import { clampValue, useCropGestures, type CropTransform } from '@/utils/cropGestures';
+import { placeImage } from '@/utils/placeImage';
 
 const MAX_RELATIVE_SCALE = 3;
 const MIN_RELATIVE_SCALE = 1;
@@ -8,7 +9,7 @@ const AUTO_ZOOM_EPSILON = 0.02;
 const MIN_SCALE_DELTA = 1e-4;
 const OFFSET_THRESHOLD_PX = 0.5;
 
-type Box = { x: number; y: number; width: number; height: number };
+type Box = { x: number; y: number; w: number; h: number };
 
 type Props = {
   slot: CropSlot;
@@ -44,15 +45,15 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
       }
       const drawWidth = imageSize.width * scale;
       const drawHeight = imageSize.height * scale;
-      const maxOffsetX = Math.max(0, (drawWidth - box.width) / 2);
-      const maxOffsetY = Math.max(0, (drawHeight - box.height) / 2);
+      const maxOffsetX = Math.max(0, (drawWidth - box.w) / 2);
+      const maxOffsetY = Math.max(0, (drawHeight - box.h) / 2);
       return {
         scale,
         offsetX: clampValue(value.offsetX, -maxOffsetX, maxOffsetX),
         offsetY: clampValue(value.offsetY, -maxOffsetY, maxOffsetY),
       };
     },
-    [box.height, box.width, imageSize],
+    [box.h, box.w, imageSize],
   );
 
   const toRelativeTransform = useCallback(
@@ -118,8 +119,8 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
     const effectiveScale = safeBase * scale;
     const drawWidth = imageSize.width * effectiveScale;
     const drawHeight = imageSize.height * effectiveScale;
-    const maxOffsetX = Math.max(0, (drawWidth - box.width) / 2);
-    const maxOffsetY = Math.max(0, (drawHeight - box.height) / 2);
+    const maxOffsetX = Math.max(0, (drawWidth - box.w) / 2);
+    const maxOffsetY = Math.max(0, (drawHeight - box.h) / 2);
 
     const next: PhotoTransform = {
       scale,
@@ -134,7 +135,7 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
     ) {
       applyRelativeTransform(next);
     }
-  }, [applyRelativeTransform, box.height, box.width, imageSize]);
+  }, [applyRelativeTransform, box.h, box.w, imageSize]);
 
   const cancelPendingSave = useCallback(() => {
     if (pendingSaveRef.current !== null) {
@@ -153,14 +154,14 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
     }, 200);
   }, [cancelPendingSave, computePayload, normalizeBeforeSave, onChange, slot]);
 
-  const frameStyle = useMemo(
+  const frameStyle = useMemo<CSSProperties>(
     () => ({
-      left: `${box.x}px`,
-      top: `${box.y}px`,
-      width: `${box.width}px`,
-      height: `${box.height}px`,
+      '--box-left': `${box.x}px`,
+      '--box-top': `${box.y}px`,
+      '--box-width': `${box.w}px`,
+      '--box-height': `${box.h}px`,
     }),
-    [box.height, box.width, box.x, box.y],
+    [box.h, box.w, box.x, box.y],
   );
 
   useEffect(() => {
@@ -218,15 +219,15 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
 
   useEffect(() => {
     if (!imageSize) return;
-    const baseScale = Math.max(box.width / imageSize.width, box.height / imageSize.height) || 1;
-    baseScaleRef.current = baseScale;
+    const placement = placeImage({ x: 0, y: 0, w: box.w, h: box.h }, imageSize.width, imageSize.height);
+    baseScaleRef.current = placement.scale0 || 1;
     const img = imageRef.current;
     if (img) {
       img.style.position = 'absolute';
-      img.style.left = `${(box.width - imageSize.width) / 2}px`;
-      img.style.top = `${(box.height - imageSize.height) / 2}px`;
-      img.style.width = `${imageSize.width}px`;
-      img.style.height = `${imageSize.height}px`;
+      img.style.left = `${placement.left}px`;
+      img.style.top = `${placement.top}px`;
+      img.style.width = `${placement.width}px`;
+      img.style.height = `${placement.height}px`;
       img.style.transformOrigin = 'center center';
       img.style.willChange = 'transform';
     }
@@ -237,8 +238,8 @@ export function CropOverlay({ slot, box, photoSrc, transform, onCancel, onSave, 
     });
     cancelPendingSave();
   }, [
-    box.height,
-    box.width,
+    box.h,
+    box.w,
     cancelPendingSave,
     applyRelativeTransform,
     imageSize,

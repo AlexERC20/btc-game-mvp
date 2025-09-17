@@ -16,8 +16,9 @@ import {
   CheckIcon,
   SwapIcon,
 } from '@/ui/icons';
+import { BASE_FRAME } from '@/features/render/constants';
 import { resolvePhotoSource } from '@/utils/photos';
-import { computeCollageBoxes } from '@/utils/collage';
+import { getCollageBoxes } from '@/utils/getCollageBoxes';
 import { CollageSlotImage } from '@/components/collage/CollageSlotImage';
 import '@/styles/photos-sheet.css';
 
@@ -37,7 +38,7 @@ const impact = (style: 'light' | 'medium' = 'light') => {
 
 type SlotThumbProps = {
   label: string;
-  box: { width: number; height: number };
+  box: { w: number; h: number };
   src?: string;
   transform: { scale: number; offsetX: number; offsetY: number };
   badge?: string;
@@ -62,10 +63,10 @@ function SlotThumb({ label, box, src, transform, badge, active, onSelect }: Slot
     return () => {};
   }, []);
 
-  const scale = frameWidth > 0 ? frameWidth / box.width : 1;
+  const scale = frameWidth > 0 ? frameWidth / box.w : 1;
   const scaledBox = useMemo(
-    () => ({ width: box.width * scale, height: box.height * scale }),
-    [box.height, box.width, scale],
+    () => ({ x: 0, y: 0, w: box.w * scale, h: box.h * scale }),
+    [box.h, box.w, scale],
   );
   const scaledTransform = useMemo(
     () => ({
@@ -82,7 +83,7 @@ function SlotThumb({ label, box, src, transform, badge, active, onSelect }: Slot
         ref={frameRef}
         type="button"
         className="slot-thumb__button"
-        style={{ aspectRatio: `${box.width} / ${box.height}` }}
+        style={{ aspectRatio: `${box.w} / ${box.h}` }}
         onClick={onSelect}
       >
         <div className="slot-thumb__surface">
@@ -139,7 +140,15 @@ export default function PhotosSheet() {
     () => normalizeCollage(activeSlide?.collage50),
     [activeSlide?.collage50],
   );
-  const collageBoxes = useMemo(() => computeCollageBoxes(collage.dividerPx), [collage.dividerPx]);
+  const collageBoxes = useMemo(() => {
+    const safeDivider = Math.min(Math.max(0, collage.dividerPx), BASE_FRAME.height);
+    const boxes = getCollageBoxes(BASE_FRAME.width, BASE_FRAME.height, safeDivider);
+    return {
+      top: boxes.top,
+      bottom: boxes.bot,
+      divider: { y: boxes.top.h, height: safeDivider },
+    };
+  }, [collage.dividerPx]);
 
   const topPreview = useMemo(
     () => (isCollage ? resolvePhotoSource(collage.top.photoId, items) : undefined),
@@ -429,7 +438,7 @@ export default function PhotosSheet() {
                   <div className="collage-slots">
                     <SlotThumb
                       label="Верхний слот"
-                      box={{ width: collageBoxes.top.width, height: collageBoxes.top.height }}
+                      box={{ w: collageBoxes.top.w, h: collageBoxes.top.h }}
                       src={topPreview}
                       transform={collage.top.transform}
                       badge={topBadgeLabel}
@@ -447,7 +456,7 @@ export default function PhotosSheet() {
                     </button>
                     <SlotThumb
                       label="Нижний слот"
-                      box={{ width: collageBoxes.bottom.width, height: collageBoxes.bottom.height }}
+                      box={{ w: collageBoxes.bottom.w, h: collageBoxes.bottom.h }}
                       src={bottomPreview}
                       transform={collage.bottom.transform}
                       badge={bottomBadgeLabel}

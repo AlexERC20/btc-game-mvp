@@ -24,7 +24,7 @@ import { composeTextLines } from '@/utils/textLayout';
 import { resolveBlockPosition, resolveBlockWidth } from '@/utils/layoutGeometry';
 import { resolvePhotoSource } from '@/utils/photos';
 import { applyOpacityToColor } from '@/utils/color';
-import { computeCollageBoxes } from '@/utils/collage';
+import { getCollageBoxes } from '@/utils/getCollageBoxes';
 import { CollageSlotImage } from '@/components/collage/CollageSlotImage';
 import { MoreIcon } from '@/ui/icons';
 import { haptic } from '@/utils/haptics';
@@ -60,10 +60,15 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
     }),
     [collage.bottom.photoId, collage.top.photoId, isCollage, photos],
   );
-  const collageBoxes = useMemo(
-    () => computeCollageBoxes(collage.dividerPx),
-    [collage.dividerPx],
-  );
+  const collageBoxes = useMemo(() => {
+    const safeDivider = Math.min(Math.max(0, collage.dividerPx), BASE_FRAME.height);
+    const boxes = getCollageBoxes(BASE_FRAME.width, BASE_FRAME.height, safeDivider);
+    return {
+      top: boxes.top,
+      bottom: boxes.bot,
+      divider: { y: boxes.top.h, height: safeDivider },
+    };
+  }, [collage.dividerPx]);
   const singleImage = useMemo(() => {
     const ref = resolvePhotoSource(slide.photoId, photos);
     if (ref) return ref;
@@ -445,11 +450,11 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
   const cropBox = useMemo(() => {
     if (!cropping || !cropSlot) return undefined;
     if (cropSlot === 'single') {
-      return { x: 0, y: 0, width: BASE_FRAME.width, height: BASE_FRAME.height };
+      return { x: 0, y: 0, w: BASE_FRAME.width, h: BASE_FRAME.height };
     }
     if (!isCollage) return undefined;
     const target = cropSlot === 'top' ? collageBoxes.top : collageBoxes.bottom;
-    return { x: target.x, y: target.y, width: target.width, height: target.height };
+    return { x: target.x, y: target.y, w: target.w, h: target.h };
   }, [collageBoxes.bottom, collageBoxes.top, cropSlot, cropping, isCollage]);
 
   const cropTransform = useMemo(() => {
@@ -531,17 +536,17 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
                   top: 0,
                   left: 0,
                   width: '100%',
-                  height: collageBoxes.top.height,
+                  height: collageBoxes.top.h,
                 }}
                 onPointerDown={handleSlotPointerDown('top')}
                 onPointerUp={handleSlotPointerEnd}
                 onPointerLeave={handleSlotPointerEnd}
                 onPointerCancel={handleSlotPointerEnd}
               >
-                {collageImages.top && collageBoxes.top.height > 0 ? (
+                {collageImages.top && collageBoxes.top.h > 0 ? (
                   <CollageSlotImage
                     src={collageImages.top}
-                    box={{ width: collageBoxes.top.width, height: collageBoxes.top.height }}
+                    box={{ x: 0, y: 0, w: collageBoxes.top.w, h: collageBoxes.top.h }}
                     transform={collage.top.transform}
                     className="collage-slot__image"
                     hidden={isCroppingTop}
@@ -556,17 +561,17 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
                   top: collageBoxes.bottom.y,
                   left: 0,
                   width: '100%',
-                  height: collageBoxes.bottom.height,
+                  height: collageBoxes.bottom.h,
                 }}
                 onPointerDown={handleSlotPointerDown('bottom')}
                 onPointerUp={handleSlotPointerEnd}
                 onPointerLeave={handleSlotPointerEnd}
                 onPointerCancel={handleSlotPointerEnd}
               >
-                {collageImages.bottom && collageBoxes.bottom.height > 0 ? (
+                {collageImages.bottom && collageBoxes.bottom.h > 0 ? (
                   <CollageSlotImage
                     src={collageImages.bottom}
-                    box={{ width: collageBoxes.bottom.width, height: collageBoxes.bottom.height }}
+                    box={{ x: 0, y: 0, w: collageBoxes.bottom.w, h: collageBoxes.bottom.h }}
                     transform={collage.bottom.transform}
                     className="collage-slot__image"
                     hidden={isCroppingBottom}
@@ -592,7 +597,7 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
             <div className="single-slot">
               <CollageSlotImage
                 src={singleImage}
-                box={{ width: BASE_FRAME.width, height: BASE_FRAME.height }}
+                box={{ x: 0, y: 0, w: BASE_FRAME.width, h: BASE_FRAME.height }}
                 transform={singleConfig.transform}
                 className="single-slot__image"
                 hidden={isCroppingSingle}
