@@ -201,19 +201,23 @@ export type NicknameLayout = {
   opacity: number;
 };
 
-export type LayoutConfig = {
-  vertical: 'top' | 'middle' | 'bottom';
-  vOffset: number;
-  horizontal: 'left' | 'center' | 'right';
-  useSafeArea: boolean;
+export type TextLayout = {
+  vAlign: 'top' | 'middle' | 'bottom';
+  hAlign: 'left' | 'center' | 'right';
+  safeArea: boolean;
   blockWidth: number;
   padding: number;
   maxLines: number;
   overflow: 'wrap' | 'fade';
+  lineHeight: number;
+};
+
+export type LayoutConfig = {
+  text: TextLayout;
+  vOffset: number;
   paragraphGap: number;
   cornerRadius: number;
   fontSize: number;
-  lineHeight: number;
   nickname: NicknameLayout;
   textShadow: 0 | 1 | 2 | 3;
   gradientIntensity: number;
@@ -221,23 +225,26 @@ export type LayoutConfig = {
 
 export type LayoutState = LayoutConfig & {
   set<K extends keyof LayoutConfig>(key: K, val: LayoutConfig[K]): void;
+  setText<K extends keyof TextLayout>(key: K, val: TextLayout[K]): void;
   setNickname<K extends keyof NicknameLayout>(key: K, val: NicknameLayout[K]): void;
   reset(): void;
 };
 
 const DEFAULT_LAYOUT: LayoutConfig = {
-  vertical: 'bottom',
+  text: {
+    vAlign: 'bottom',
+    hAlign: 'left',
+    safeArea: true,
+    blockWidth: 0,
+    padding: 96,
+    maxLines: 8,
+    overflow: 'wrap',
+    lineHeight: 1.3,
+  },
   vOffset: 0,
-  horizontal: 'left',
-  useSafeArea: false,
-  blockWidth: 0,
-  padding: 96,
-  maxLines: 8,
-  overflow: 'wrap',
   paragraphGap: 24,
   cornerRadius: 48,
   fontSize: 28,
-  lineHeight: 1.3,
   nickname: {
     position: 'left',
     offset: 32,
@@ -258,12 +265,15 @@ export const useLayoutStore = create<LayoutState>()(
     (set) => ({
       ...DEFAULT_LAYOUT,
       set: (key, val) => {
-        if (key === 'nickname') {
-          set({ nickname: val as NicknameLayout });
-          return;
-        }
         set({ [key]: val } as Partial<LayoutState>);
       },
+      setText: (key, val) =>
+        set((state) => ({
+          text: {
+            ...state.text,
+            [key]: val,
+          },
+        })),
       setNickname: (key, val) =>
         set((state) => ({
           nickname: {
@@ -274,36 +284,107 @@ export const useLayoutStore = create<LayoutState>()(
       reset: () =>
         set({
           ...DEFAULT_LAYOUT,
+          text: { ...DEFAULT_LAYOUT.text },
           nickname: { ...DEFAULT_LAYOUT.nickname },
         }),
     }),
     {
       name: 'layout-settings',
-      version: 1,
+      version: 2,
       storage: layoutStorage(),
       partialize: (state) => ({
-        vertical: state.vertical,
+        text: state.text,
         vOffset: state.vOffset,
-        horizontal: state.horizontal,
-        useSafeArea: state.useSafeArea,
-        blockWidth: state.blockWidth,
-        padding: state.padding,
-        maxLines: state.maxLines,
-        overflow: state.overflow,
         paragraphGap: state.paragraphGap,
         cornerRadius: state.cornerRadius,
         fontSize: state.fontSize,
-        lineHeight: state.lineHeight,
         nickname: state.nickname,
         textShadow: state.textShadow,
         gradientIntensity: state.gradientIntensity,
       }),
+      migrate: (persistedState, version) => {
+        if (!persistedState) return persistedState as LayoutConfig;
+        const base = {
+          ...DEFAULT_LAYOUT,
+          text: { ...DEFAULT_LAYOUT.text },
+          nickname: { ...DEFAULT_LAYOUT.nickname },
+        };
+        if (version >= 2) {
+          const next = persistedState as Partial<LayoutConfig>;
+          return {
+            ...base,
+            ...next,
+            text: {
+              ...base.text,
+              ...(next.text ?? {}),
+              hAlign: (next.text?.hAlign ?? base.text.hAlign) as TextLayout['hAlign'],
+            },
+            nickname: {
+              ...base.nickname,
+              ...(next.nickname ?? {}),
+            },
+          } as LayoutConfig;
+        }
+
+        const legacy = persistedState as Partial<Record<string, unknown>>;
+        const text: TextLayout = {
+          vAlign: (legacy.vertical as TextLayout['vAlign']) ?? base.text.vAlign,
+          hAlign: (legacy.horizontal as TextLayout['hAlign']) ?? base.text.hAlign,
+          safeArea: Boolean(
+            legacy.useSafeArea === undefined ? base.text.safeArea : legacy.useSafeArea,
+          ),
+          blockWidth: Number(
+            legacy.blockWidth === undefined ? base.text.blockWidth : legacy.blockWidth,
+          ),
+          padding: Number(
+            legacy.padding === undefined ? base.text.padding : legacy.padding,
+          ),
+          maxLines: Number(
+            legacy.maxLines === undefined ? base.text.maxLines : legacy.maxLines,
+          ),
+          overflow: (legacy.overflow as TextLayout['overflow']) ?? base.text.overflow,
+          lineHeight: Number(
+            legacy.lineHeight === undefined ? base.text.lineHeight : legacy.lineHeight,
+          ),
+        };
+        if (!text.hAlign) text.hAlign = 'left';
+
+        const migrated: LayoutConfig = {
+          ...base,
+          text,
+          vOffset: Number(
+            legacy.vOffset === undefined ? base.vOffset : legacy.vOffset,
+          ),
+          paragraphGap: Number(
+            legacy.paragraphGap === undefined ? base.paragraphGap : legacy.paragraphGap,
+          ),
+          cornerRadius: Number(
+            legacy.cornerRadius === undefined ? base.cornerRadius : legacy.cornerRadius,
+          ),
+          fontSize: Number(
+            legacy.fontSize === undefined ? base.fontSize : legacy.fontSize,
+          ),
+          nickname: {
+            ...base.nickname,
+            ...(legacy.nickname as Partial<NicknameLayout> | undefined),
+          },
+          textShadow: (legacy.textShadow as LayoutConfig['textShadow']) ?? base.textShadow,
+          gradientIntensity:
+            Number(
+              legacy.gradientIntensity === undefined
+                ? base.gradientIntensity
+                : legacy.gradientIntensity,
+            ) ?? base.gradientIntensity,
+        };
+
+        return migrated;
+      },
     },
   ),
 );
 
 export function layoutSnapshot(): LayoutConfig {
-  const { set, setNickname, reset, ...values } = useLayoutStore.getState();
+  const { set, setText, setNickname, reset, ...values } = useLayoutStore.getState();
   return values;
 }
 

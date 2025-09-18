@@ -88,7 +88,30 @@ function mergeTemplate(base: TemplateConfig, override?: TemplateConfig): Templat
 }
 
 function mergeLayout(base: LayoutConfig, override?: Partial<LayoutConfig>): LayoutConfig {
-  return override ? { ...base, ...override } : { ...base };
+  if (!override) {
+    return {
+      ...base,
+      text: { ...base.text },
+      nickname: { ...base.nickname },
+    };
+  }
+
+  const merged = {
+    ...base,
+    ...override,
+    text: {
+      ...base.text,
+      ...(override.text ?? {}),
+    },
+    nickname: {
+      ...base.nickname,
+      ...(override.nickname ?? {}),
+    },
+  };
+
+  if (!merged.text.hAlign) merged.text.hAlign = 'left';
+
+  return merged;
 }
 
 export function resolveSlideDesign(params: {

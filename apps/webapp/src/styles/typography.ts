@@ -50,7 +50,7 @@ function normalizeLineHeight(value: number): number {
 
 function computeTitleSize(layout: LayoutConfig): { fontSize: number; lineHeight: number } {
   const bodyFontSize = normalizeFontSize(layout.fontSize);
-  const bodyLineHeight = normalizeLineHeight(layout.lineHeight);
+  const bodyLineHeight = normalizeLineHeight(layout.text.lineHeight);
   const fontSize = Number((bodyFontSize * TITLE_FONT_SCALE).toFixed(3));
   const lineHeight = Number((bodyLineHeight * TITLE_LINE_SCALE).toFixed(3));
   return { fontSize, lineHeight };
@@ -58,7 +58,7 @@ function computeTitleSize(layout: LayoutConfig): { fontSize: number; lineHeight:
 
 function computeBodySize(layout: LayoutConfig): { fontSize: number; lineHeight: number } {
   const fontSize = Number(normalizeFontSize(layout.fontSize).toFixed(3));
-  const lineHeight = Number(normalizeLineHeight(layout.lineHeight).toFixed(3));
+  const lineHeight = Number(normalizeLineHeight(layout.text.lineHeight).toFixed(3));
   return { fontSize, lineHeight };
 }
 

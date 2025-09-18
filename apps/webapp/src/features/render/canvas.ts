@@ -10,12 +10,12 @@ import {
 import { resolveSlideDesign, Theme } from '@/styles/theme';
 import { Typography, typographyToCanvasFont } from '@/styles/typography';
 import { splitEditorialText } from '@/utils/text';
-import { composeTextLines } from '@/utils/textLayout';
-import { resolveBlockPosition, resolveBlockWidth } from '@/utils/layoutGeometry';
+import { composeTextLines, measureWithLetterSpacing } from '@/utils/textLayout';
 import { resolvePhotoFromStore } from '@/utils/photos';
 import { getCollageBoxes } from '@/utils/getCollageBoxes';
 import { placeImage } from '@/utils/placeImage';
 import { applyOpacityToColor } from '@/utils/color';
+import { getTextRect } from '@/utils/textRect';
 
 export const CANVAS_W = BASE_FRAME.width;
 export const CANVAS_H = BASE_FRAME.height;
@@ -103,6 +103,32 @@ function drawLine(
   }
 }
 
+function computeAlignedX(
+  areaLeft: number,
+  areaWidth: number,
+  lineWidth: number,
+  align: LayoutConfig['text']['hAlign'],
+) {
+  const width = Math.max(0, areaWidth);
+  const anchorBase = areaLeft + width;
+  switch (align) {
+    case 'center': {
+      const anchor = areaLeft + width / 2;
+      const start = anchor - lineWidth / 2;
+      return { anchor, start };
+    }
+    case 'right': {
+      const anchor = anchorBase;
+      const start = anchor - lineWidth;
+      return { anchor, start };
+    }
+    default: {
+      const anchor = areaLeft;
+      return { anchor, start: anchor };
+    }
+  }
+}
+
 async function ensureFontsLoaded(typography: Typography) {
   if (typeof document === 'undefined' || !document.fonts) return;
   const toLoad = new Set<string>([
@@ -137,11 +163,15 @@ function drawOverlay(
 
   const containerWidth = CANVAS_W;
   const containerHeight = CANVAS_H;
-  const { blockWidth, textWidth } = resolveBlockWidth(containerWidth, layout);
+  const margin = layout.text.safeArea ? 24 : 0;
+  const maxBlockWidth = Math.max(0, containerWidth - margin * 2);
+  const rawBlockWidth = layout.text.blockWidth > 0 ? layout.text.blockWidth : maxBlockWidth;
+  const blockWidth = Math.max(0, Math.min(rawBlockWidth, maxBlockWidth));
+  const innerWidth = Math.max(0, blockWidth - layout.text.padding * 2);
 
   const composition = composeTextLines({
     ctx,
-    maxWidth: textWidth,
+    maxWidth: innerWidth,
     title,
     body,
     typography,
@@ -150,25 +180,23 @@ function drawOverlay(
       body: theme.textColor,
     },
     paragraphGap: layout.paragraphGap,
-    overflow: layout.overflow,
-    maxLines: layout.maxLines,
+    overflow: layout.text.overflow,
+    maxLines: layout.text.maxLines,
   });
 
-  const blockHeight = composition.contentHeight + layout.padding * 2;
-  const blockPosition = resolveBlockPosition(
-    containerWidth,
-    containerHeight,
-    layout,
-    blockWidth,
+  const blockHeight = composition.contentHeight + layout.text.padding * 2;
+  const rect = getTextRect(containerWidth, containerHeight, layout.text, {
     blockHeight,
-  );
-
-  const textX = blockPosition.x + layout.padding;
-  const textY = blockPosition.y + layout.padding;
+    vOffset: layout.vOffset,
+  });
+  const textArea = {
+    left: rect.x + layout.text.padding,
+    top: rect.y + layout.text.padding,
+    width: Math.max(0, rect.w - layout.text.padding * 2),
+  };
 
   if (composition.lines.length) {
     ctx.save();
-    ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     if (theme.shadow) {
       ctx.shadowColor = theme.shadow.color;
@@ -182,13 +210,26 @@ function drawOverlay(
       ctx.shadowOffsetY = 0;
     }
 
-    let cursorY = textY;
+    let cursorY = textArea.top;
     for (const line of composition.lines) {
       cursorY += line.gapBefore;
       const baselineY = cursorY + line.metrics.baselineOffset;
       ctx.font = typographyToCanvasFont(line.style);
       ctx.fillStyle = line.color;
-      drawLine(ctx, line.text, textX, baselineY, line.letterSpacing);
+      const lineWidth = measureWithLetterSpacing(ctx, line.text, line.letterSpacing);
+      const { anchor, start } = computeAlignedX(
+        textArea.left,
+        textArea.width,
+        lineWidth,
+        layout.text.hAlign,
+      );
+      if (line.letterSpacing) {
+        ctx.textAlign = 'left';
+        drawLine(ctx, line.text, start, baselineY, line.letterSpacing);
+      } else {
+        ctx.textAlign = layout.text.hAlign;
+        ctx.fillText(line.text, anchor, baselineY);
+      }
       cursorY += line.metrics.lineHeight;
     }
 
@@ -196,16 +237,16 @@ function drawOverlay(
 
     if (composition.fadeMaskStart !== undefined) {
       const textHeight = composition.contentHeight;
-      const fadeStart = textY + textHeight * composition.fadeMaskStart;
+      const fadeStart = textArea.top + textHeight * composition.fadeMaskStart;
       const fadeHeight = textHeight * (1 - composition.fadeMaskStart);
-      if (fadeHeight > 0 && textWidth > 0) {
+      if (fadeHeight > 0 && textArea.width > 0) {
         ctx.save();
         ctx.globalCompositeOperation = 'destination-out';
         const gradient = ctx.createLinearGradient(0, fadeStart, 0, fadeStart + fadeHeight);
         gradient.addColorStop(0, 'rgba(0,0,0,0)');
         gradient.addColorStop(1, 'rgba(0,0,0,1)');
         ctx.fillStyle = gradient;
-        ctx.fillRect(textX, fadeStart, textWidth, fadeHeight);
+        ctx.fillRect(textArea.left, fadeStart, textArea.width, fadeHeight);
         ctx.restore();
       }
     }
@@ -219,8 +260,8 @@ function drawOverlay(
       theme,
       layout,
       {
-        x: blockPosition.x,
-        y: blockPosition.y,
+        x: rect.x,
+        y: rect.y,
         width: blockWidth,
         height: blockHeight,
       },

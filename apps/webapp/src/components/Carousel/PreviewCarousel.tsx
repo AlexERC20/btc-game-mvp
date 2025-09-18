@@ -9,18 +9,11 @@ export function PreviewCarousel({ slides }: { slides: Slide[] }) {
   const typographySettings = useCarouselStore((s) => s.typography);
   const activeIndex = useCarouselStore((s) => s.activeIndex);
   const layout = useLayoutSelector((state) => ({
-    vertical: state.vertical,
+    text: state.text,
     vOffset: state.vOffset,
-    horizontal: state.horizontal,
-    useSafeArea: state.useSafeArea,
-    blockWidth: state.blockWidth,
-    padding: state.padding,
-    maxLines: state.maxLines,
-    overflow: state.overflow,
     paragraphGap: state.paragraphGap,
     cornerRadius: state.cornerRadius,
     fontSize: state.fontSize,
-    lineHeight: state.lineHeight,
     nickname: state.nickname,
     textShadow: state.textShadow,
     gradientIntensity: state.gradientIntensity,
@@ -48,7 +41,7 @@ export function PreviewCarousel({ slides }: { slides: Slide[] }) {
               baseLayout: layout,
               typographySettings,
             })}
-            safeAreaEnabled={layout.useSafeArea}
+            safeAreaEnabled={layout.text.safeArea}
             slideIndex={i}
           />
         </div>

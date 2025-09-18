@@ -7,11 +7,13 @@ import {
   useLayoutStore,
 } from '@/state/store';
 import { debounce } from '@/utils/debounce';
+import { SegmentGroup } from '@/ui/Segment';
+import { haptic } from '@/utils/haptics';
 import '@/styles/photos-sheet.css';
 
-const VERTICAL_OPTIONS: LayoutConfig['vertical'][] = ['top', 'middle', 'bottom'];
-const HORIZONTAL_OPTIONS: LayoutConfig['horizontal'][] = ['left', 'center', 'right'];
-const OVERFLOW_OPTIONS: LayoutConfig['overflow'][] = ['wrap', 'fade'];
+const VERTICAL_OPTIONS: LayoutConfig['text']['vAlign'][] = ['top', 'middle', 'bottom'];
+const HORIZONTAL_OPTIONS: LayoutConfig['text']['hAlign'][] = ['left', 'center', 'right'];
+const OVERFLOW_OPTIONS: LayoutConfig['text']['overflow'][] = ['wrap', 'fade'];
 const NICKNAME_SIZES: LayoutConfig['nickname']['size'][] = ['S', 'M', 'L'];
 const TEXT_SHADOW_OPTIONS: LayoutConfig['textShadow'][] = [0, 1, 2, 3];
 
@@ -21,33 +23,29 @@ function formatPx(value: number) {
 
 export default function LayoutSheet() {
   const layout = useLayoutSelector((state) => ({
-    vertical: state.vertical,
+    text: state.text,
     vOffset: state.vOffset,
-    horizontal: state.horizontal,
-    useSafeArea: state.useSafeArea,
-    blockWidth: state.blockWidth,
-    padding: state.padding,
-    maxLines: state.maxLines,
-    overflow: state.overflow,
     paragraphGap: state.paragraphGap,
     cornerRadius: state.cornerRadius,
     fontSize: state.fontSize,
-    lineHeight: state.lineHeight,
     nickname: state.nickname,
     textShadow: state.textShadow,
     gradientIntensity: state.gradientIntensity,
   }));
   const set = useLayoutStore((state) => state.set);
+  const setText = useLayoutStore((state) => state.setText);
   const setNickname = useLayoutStore((state) => state.setNickname);
   const reset = useLayoutStore((state) => state.reset);
   const close = useCarouselStore((s) => s.closeSheet);
   const showNickname = useCarouselStore((s) => s.style.template.showNickname);
 
   const setDebounced = useMemo(() => debounce(set, 16), [set]);
+  const setTextDebounced = useMemo(() => debounce(setText, 16), [setText]);
   const setNicknameDebounced = useMemo(() => debounce(setNickname, 16), [setNickname]);
 
-  const blockWidthLabel = layout.blockWidth <= 0 ? 'Auto' : formatPx(layout.blockWidth);
-  const paddingLabel = formatPx(layout.padding);
+  const blockWidthLabel =
+    layout.text.blockWidth <= 0 ? 'Auto' : formatPx(layout.text.blockWidth);
+  const paddingLabel = formatPx(layout.text.padding);
   const paragraphGapLabel = formatPx(layout.paragraphGap);
   const cornerRadiusLabel = formatPx(layout.cornerRadius);
   const vOffsetLabel = layout.vOffset === 0 ? '0' : formatPx(layout.vOffset);
@@ -64,18 +62,14 @@ export default function LayoutSheet() {
       <div className="layout-sheet">
         <div className="section">
           <div>Vertical</div>
-          {VERTICAL_OPTIONS.map((value) => (
-            <label key={value}>
-              <input
-                type="radio"
-                name="layoutVertical"
-                value={value}
-                checked={layout.vertical === value}
-                onChange={() => set('vertical', value)}
-              />
-              {value.charAt(0).toUpperCase() + value.slice(1)}
-            </label>
-          ))}
+          <SegmentGroup
+            value={layout.text.vAlign}
+            onChange={(value) => setText('vAlign', value)}
+            items={VERTICAL_OPTIONS.map((value) => ({
+              value,
+              label: value.charAt(0).toUpperCase() + value.slice(1),
+            }))}
+          />
           <label>
             Vertical offset
             <input
@@ -89,26 +83,20 @@ export default function LayoutSheet() {
             <small>{vOffsetLabel}</small>
           </label>
           <div>Horizontal</div>
-          {HORIZONTAL_OPTIONS.map((value) => (
-            <label key={value}>
-              <input
-                type="radio"
-                name="layoutHorizontal"
-                value={value}
-                checked={layout.horizontal === value}
-                onChange={() => set('horizontal', value)}
-              />
-              {value.charAt(0).toUpperCase() + value.slice(1)}
-            </label>
-          ))}
-          <label>
-            <input
-              type="checkbox"
-              checked={layout.useSafeArea}
-              onChange={(event) => set('useSafeArea', event.target.checked)}
-            />
-            Safe area guides
-          </label>
+          <SegmentGroup
+            value={layout.text.hAlign}
+            onChange={(value) => setText('hAlign', value)}
+            items={HORIZONTAL_OPTIONS.map((value) => ({
+              value,
+              label: value.charAt(0).toUpperCase() + value.slice(1),
+            }))}
+          />
+          <div>Safe area</div>
+          <SegmentGroup
+            value={layout.text.safeArea ? 'on' : 'off'}
+            onChange={(value) => setText('safeArea', value === 'on')}
+            items={[{ value: 'on', label: 'Safe' }, { value: 'off', label: 'Edge' }]}
+          />
         </div>
 
         <div className="section">
@@ -119,8 +107,8 @@ export default function LayoutSheet() {
               min={0}
               max={1080}
               step={10}
-              value={layout.blockWidth}
-              onChange={(event) => setDebounced('blockWidth', Number(event.target.value))}
+              value={layout.text.blockWidth}
+              onChange={(event) => setTextDebounced('blockWidth', Number(event.target.value))}
             />
             <small>{blockWidthLabel}</small>
           </label>
@@ -131,8 +119,8 @@ export default function LayoutSheet() {
               min={0}
               max={240}
               step={4}
-              value={layout.padding}
-              onChange={(event) => setDebounced('padding', Number(event.target.value))}
+              value={layout.text.padding}
+              onChange={(event) => setTextDebounced('padding', Number(event.target.value))}
             />
             <small>{paddingLabel}</small>
           </label>
@@ -170,10 +158,10 @@ export default function LayoutSheet() {
               min={1}
               max={1.8}
               step={0.05}
-              value={layout.lineHeight}
-              onChange={(event) => setDebounced('lineHeight', Number(event.target.value))}
+              value={layout.text.lineHeight}
+              onChange={(event) => setTextDebounced('lineHeight', Number(event.target.value))}
             />
-            <small>{layout.lineHeight.toFixed(2)}</small>
+            <small>{layout.text.lineHeight.toFixed(2)}</small>
           </label>
           <label>
             Paragraph gap
@@ -193,24 +181,22 @@ export default function LayoutSheet() {
               type="number"
               min={0}
               max={20}
-              value={layout.maxLines}
-              onChange={(event) => set('maxLines', Number(event.target.value))}
+              value={layout.text.maxLines}
+              onChange={(event) => setText('maxLines', Number(event.target.value))}
             />
-            <small>{layout.maxLines <= 0 ? 'Unlimited' : `${layout.maxLines} lines`}</small>
+            <small>
+              {layout.text.maxLines <= 0 ? 'Unlimited' : `${layout.text.maxLines} lines`}
+            </small>
           </label>
           <div>Overflow</div>
-          {OVERFLOW_OPTIONS.map((value) => (
-            <label key={value}>
-              <input
-                type="radio"
-                name="layoutOverflow"
-                value={value}
-                checked={layout.overflow === value}
-                onChange={() => set('overflow', value)}
-              />
-              {value === 'wrap' ? 'Wrap' : 'Fade'}
-            </label>
-          ))}
+          <SegmentGroup
+            value={layout.text.overflow}
+            onChange={(value) => setText('overflow', value)}
+            items={OVERFLOW_OPTIONS.map((value) => ({
+              value,
+              label: value === 'wrap' ? 'Wrap' : 'Fade',
+            }))}
+          />
         </div>
 
         <div className="section" aria-disabled={!showNickname}>
@@ -239,9 +225,7 @@ export default function LayoutSheet() {
               max={240}
               step={4}
               value={layout.nickname.offset}
-              onChange={(event) =>
-                setNicknameDebounced('offset', Number(event.target.value))
-              }
+              onChange={(event) => setNicknameDebounced('offset', Number(event.target.value))}
               disabled={!showNickname}
             />
             <small>{nicknameOffsetLabel}</small>
@@ -310,10 +294,24 @@ export default function LayoutSheet() {
         </div>
       </div>
       <div className="sheet__footer">
-        <button className="btn" onClick={reset} type="button">
+        <button
+          className="btn"
+          onClick={() => {
+            haptic();
+            reset();
+          }}
+          type="button"
+        >
           Reset layout
         </button>
-        <button className="btn-soft" onClick={onDone} type="button">
+        <button
+          className="btn-soft"
+          onClick={() => {
+            haptic();
+            onDone();
+          }}
+          type="button"
+        >
           Done
         </button>
       </div>
