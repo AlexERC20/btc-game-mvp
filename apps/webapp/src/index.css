@@ -94,6 +94,35 @@ a, button, [role="button"], .btn-soft { touch-action: manipulation; }
   border-color: var(--outline);
 }
 
+/* New segment control */
+.seg{
+  display:flex;
+  gap:8px;
+  background:#1c1c1e;
+  padding:4px;
+  border-radius:12px;
+}
+.seg-btn{
+  min-width:44px;
+  height:36px;
+  padding:0 12px;
+  border-radius:10px;
+  background:transparent;
+  color:#cfd2d6;
+  font-weight:600;
+  border:1px solid transparent;
+  transition:background .15s ease, color .15s ease, border-color .15s ease;
+}
+.seg-btn.is-active{
+  background:#2a2a2d;
+  color:#fff;
+  border-color:#3a3a3e;
+  box-shadow:0 0 0 1px #3a3a3e inset;
+}
+.seg-btn:active{
+  transform:translateY(1px);
+}
+
 /* Slider row */
 .slider-row{
   display:grid; grid-template-columns: 1fr auto; align-items:center; gap: 10px;

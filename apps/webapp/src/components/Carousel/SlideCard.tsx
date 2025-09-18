@@ -21,13 +21,13 @@ import {
 import type { SlideDesign } from '@/styles/theme';
 import { splitEditorialText } from '@/utils/text';
 import { composeTextLines } from '@/utils/textLayout';
-import { resolveBlockPosition, resolveBlockWidth } from '@/utils/layoutGeometry';
 import { resolvePhotoSource } from '@/utils/photos';
 import { applyOpacityToColor } from '@/utils/color';
 import { getCollageBoxes } from '@/utils/getCollageBoxes';
 import { CollageSlotImage } from '@/components/collage/CollageSlotImage';
 import { MoreIcon } from '@/ui/icons';
 import { haptic } from '@/utils/haptics';
+import { getTextRect } from '@/utils/textRect';
 import { CropOverlay } from './CropOverlay';
 
 type MenuItem = { key: string; label: string; action: () => void; disabled?: boolean };
@@ -39,8 +39,7 @@ type Props = {
   slideIndex: number;
 };
 
-const SAFE_AREA_INSET_X = 96;
-const SAFE_AREA_INSET_Y = 120;
+const SAFE_AREA_MARGIN = 24;
 const NICKNAME_FONT_SIZE = { S: 18, M: 22, L: 28 } as const;
 
 function formatGradientHeight(heightPct: number) {
@@ -232,21 +231,32 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
   }, []);
 
   const composition = useMemo(() => {
+    const margin = layout.text.safeArea ? SAFE_AREA_MARGIN : 0;
+    const maxBlockWidth = Math.max(0, BASE_FRAME.width - margin * 2);
+    const rawBlockWidth = layout.text.blockWidth > 0 ? layout.text.blockWidth : maxBlockWidth;
+    const blockWidth = Math.max(0, Math.min(rawBlockWidth, maxBlockWidth));
+    const innerWidth = Math.max(0, blockWidth - layout.text.padding * 2);
+
     if (!measurementContext) {
+      const fallbackHeight = Math.max(0, BASE_FRAME.height - margin * 2);
+      const rect = getTextRect(BASE_FRAME.width, BASE_FRAME.height, layout.text, {
+        blockHeight: fallbackHeight,
+        vOffset: layout.vOffset,
+      });
       return {
         block: {
-          position: { x: layout.padding, y: layout.padding },
-          width: BASE_FRAME.width - layout.padding * 2,
-          height: BASE_FRAME.height - layout.padding * 2,
+          position: { x: rect.x, y: rect.y },
+          width: rect.w,
+          height: fallbackHeight,
         },
         text: { lines: [], contentHeight: 0, truncated: false, fadeMaskStart: undefined },
+        innerWidth,
       };
     }
 
-    const { blockWidth, textWidth } = resolveBlockWidth(BASE_FRAME.width, layout);
     const text = composeTextLines({
       ctx: measurementContext,
-      maxWidth: textWidth,
+      maxWidth: innerWidth,
       title,
       body,
       typography,
@@ -255,22 +265,34 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
         body: theme.textColor,
       },
       paragraphGap: layout.paragraphGap,
-      overflow: layout.overflow,
-      maxLines: layout.maxLines,
+      overflow: layout.text.overflow,
+      maxLines: layout.text.maxLines,
     });
-    const blockHeight = text.contentHeight + layout.padding * 2;
-    const position = resolveBlockPosition(
-      BASE_FRAME.width,
-      BASE_FRAME.height,
-      layout,
-      blockWidth,
+    const blockHeight = text.contentHeight + layout.text.padding * 2;
+    const rect = getTextRect(BASE_FRAME.width, BASE_FRAME.height, layout.text, {
       blockHeight,
-    );
+      vOffset: layout.vOffset,
+    });
     return {
-      block: { position, width: blockWidth, height: blockHeight },
+      block: {
+        position: { x: rect.x, y: rect.y },
+        width: rect.w,
+        height: blockHeight,
+      },
       text,
+      innerWidth,
     };
-  }, [measurementContext, layout, typography, theme, title, body]);
+  }, [
+    measurementContext,
+    layout.text,
+    layout.vOffset,
+    layout.paragraphGap,
+    theme.titleColor,
+    theme.textColor,
+    title,
+    body,
+    typography,
+  ]);
 
   const textShadow = useMemo(() => {
     const shadow = theme.shadow;
@@ -288,11 +310,11 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
   }, [composition.text.fadeMaskStart]);
 
   const safeAreaStyle = useMemo(() => {
-    const width = Math.max(0, BASE_FRAME.width - SAFE_AREA_INSET_X * 2);
-    const height = Math.max(0, BASE_FRAME.height - SAFE_AREA_INSET_Y * 2);
+    const width = Math.max(0, BASE_FRAME.width - SAFE_AREA_MARGIN * 2);
+    const height = Math.max(0, BASE_FRAME.height - SAFE_AREA_MARGIN * 2);
     return {
-      left: SAFE_AREA_INSET_X,
-      top: SAFE_AREA_INSET_Y,
+      left: SAFE_AREA_MARGIN,
+      top: SAFE_AREA_MARGIN,
       width,
       height,
     };
@@ -600,10 +622,11 @@ export function SlideCard({ slide, design, safeAreaEnabled, slideIndex }: Props)
                     top: composition.block.position.y,
                     width: composition.block.width,
                     height: composition.block.height,
-                    padding: layout.padding,
+                    padding: layout.text.padding,
                     boxSizing: 'border-box',
                     pointerEvents: 'none',
                     overflow: 'hidden',
+                    textAlign: layout.text.hAlign as 'left' | 'center' | 'right',
                   }}
                 >
                   <div
