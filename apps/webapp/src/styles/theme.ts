@@ -4,7 +4,9 @@ import type {
   TemplateConfig,
   TypographySettings,
 } from '@/state/store';
-import { getBaseTextColor, getHeadingColor } from '@/state/store';
+import { getBaseTextColor, getHeadingColor, useFontStore } from '@/state/store';
+import type { FontId } from '@/features/fonts/fonts';
+import { getFontStack } from '@/features/fonts/fonts';
 import { createTypography, Typography } from './typography';
 
 export type Theme = {
@@ -119,10 +121,12 @@ export function resolveSlideDesign(params: {
   baseTemplate: TemplateConfig;
   baseLayout: LayoutConfig;
   typographySettings: TypographySettings;
+  fontId?: FontId;
 }): SlideDesign {
   const template = mergeTemplate(params.baseTemplate, params.slide.overrides?.template);
   const layout = mergeLayout(params.baseLayout, params.slide.overrides?.layout);
-  const typography = createTypography(template, layout);
+  const activeFontId = params.fontId ?? useFontStore.getState().fontId;
+  const typography = createTypography(template, layout, getFontStack(activeFontId));
   const theme = createTheme(params.slide, template, layout, params.typographySettings);
 
   return { template, layout, typography, theme };

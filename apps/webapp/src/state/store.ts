@@ -1,5 +1,6 @@
 import { create, type StoreApi } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
+import type { FontId } from '@/features/fonts/fonts';
 import { getExportSlides } from '@/utils/getExportSlides';
 
 export type PhotoId = string;
@@ -193,6 +194,26 @@ const createNoopStorage = (): Storage =>
   } as Storage);
 
 const uid = () => crypto.randomUUID();
+
+type FontState = {
+  fontId: FontId;
+  setFont: (id: FontId) => void;
+};
+
+export const useFontStore = create<FontState>()(
+  persist(
+    (set) => ({
+      fontId: 'inter',
+      setFont: (id) => set({ fontId: id }),
+    }),
+    {
+      name: 'carousel.font',
+      storage: createJSONStorage<FontState>(() =>
+        typeof window !== 'undefined' ? window.localStorage : createNoopStorage(),
+      ),
+    },
+  ),
+);
 
 export type NicknameLayout = {
   position: 'left' | 'center' | 'right';

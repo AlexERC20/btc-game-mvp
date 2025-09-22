@@ -1,5 +1,6 @@
 import { useCarouselStore } from '@/state/store';
 import Sheet from '../Sheet/Sheet';
+import { FontPicker } from '../FontPicker';
 import '@/styles/text-sheet.css';
 
 export default function TextSheet() {
@@ -40,6 +41,14 @@ export default function TextSheet() {
             onChange={(e) => setTextField({ bulkText: e.target.value })}
           />
         </label>
+
+        <div className="sheet-group">
+          <div className="sheet-label">Font</div>
+          <FontPicker />
+          <p className="font-preview">
+            The quick brown fox — 0123456789
+          </p>
+        </div>
       </div>
       <div className="sheet__footer">
         <button className="btn-soft" onClick={onDone}>Done</button>

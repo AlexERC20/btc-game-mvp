@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Slide, useCarouselStore, useLayoutSelector } from '@/state/store';
+import { Slide, useCarouselStore, useLayoutSelector, useFontStore } from '@/state/store';
 import { resolveSlideDesign } from '@/styles/theme';
 import { SlideCard } from './SlideCard';
 import { getExportSlides } from '@/utils/getExportSlides';
@@ -8,6 +8,7 @@ export function PreviewCarousel({ slides }: { slides: Slide[] }) {
   const baseTemplate = useCarouselStore((s) => s.style.template);
   const typographySettings = useCarouselStore((s) => s.typography);
   const activeIndex = useCarouselStore((s) => s.activeIndex);
+  const fontId = useFontStore((s) => s.fontId);
   const layout = useLayoutSelector((state) => ({
     text: state.text,
     vOffset: state.vOffset,
@@ -40,6 +41,7 @@ export function PreviewCarousel({ slides }: { slides: Slide[] }) {
               baseTemplate,
               baseLayout: layout,
               typographySettings,
+              fontId,
             })}
             safeAreaEnabled={layout.text.safeArea}
             slideIndex={i}

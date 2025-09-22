@@ -8,6 +8,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/bodoni-moda": "^5.0.0",
+    "@fontsource/dancing-script": "^5.0.0",
+    "@fontsource/dm-sans": "^5.0.0",
+    "@fontsource/inter": "^5.0.0",
+    "@fontsource/lora": "^5.0.0",
+    "@fontsource/montserrat": "^5.0.0",
+    "@fontsource/playfair-display": "^5.0.0",
+    "@fontsource/poppins": "^5.0.0",
+    "@fontsource/raleway": "^5.0.0",
+    "@fontsource/roboto": "^5.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "zustand": "^4.5.2",
