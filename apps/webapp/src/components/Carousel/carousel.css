@@ -28,6 +28,7 @@
   flex: 0 0 calc(100% - var(--peek)*2);  /* почти на весь экран */
   scroll-snap-align: center;             /* центрируем каждый */
   display: grid;                         /* чтобы внутрянка не схлопывалась */
+  font-family: var(--app-font-family);
 }
 
 /* Кадр Instagram 4:5 */
@@ -135,7 +136,7 @@
 }
 
 .overlay.editorial .title{
-  font-family: var(--font-inter, var(--font-system));
+  font-family: inherit;
   font-weight: 700;
   font-size: 48px;
   line-height: 1.15;
@@ -146,7 +147,7 @@
 
 .overlay.editorial .body{
   margin-top: 6px;
-  font-family: var(--font-inter, var(--font-system));
+  font-family: inherit;
   font-weight: 400;
   font-size: 28px;
   line-height: 1.25;

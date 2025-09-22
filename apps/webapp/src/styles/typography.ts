@@ -62,8 +62,12 @@ function computeBodySize(layout: LayoutConfig): { fontSize: number; lineHeight: 
   return { fontSize, lineHeight };
 }
 
-export function createTypography(template: TemplateConfig, layout: LayoutConfig): Typography {
-  const family = getFontFamily(template.font);
+export function createTypography(
+  template: TemplateConfig,
+  layout: LayoutConfig,
+  fontFamilyOverride?: string,
+): Typography {
+  const family = fontFamilyOverride ?? getFontFamily(template.font);
   const titleSize = computeTitleSize(layout);
   const bodySize = computeBodySize(layout);
 

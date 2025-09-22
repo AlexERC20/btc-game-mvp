@@ -6,6 +6,31 @@
 }
 .text-sheet .textarea{ resize:vertical; min-height:140px; }
 
+.text-sheet .sheet-group{
+  margin:16px 12px;
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.04);
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+
+.text-sheet .sheet-label{
+  font-size:13px;
+  font-weight:600;
+  letter-spacing:0.01em;
+  opacity:.75;
+}
+
+.text-sheet .font-preview{
+  margin:0;
+  font-family: var(--app-font-family);
+  opacity:.75;
+  font-size:12px;
+}
+
 .btn-soft{
   position:relative; z-index:1;
   display:inline-flex; align-items:center; gap:8px;
