@@ -1,6 +1,7 @@
 import { useCarouselStore } from '@/state/store';
 import Sheet from '../Sheet/Sheet';
 import { FontPicker } from '../FontPicker';
+import { haptic } from '@/utils/haptics';
 import '@/styles/text-sheet.css';
 
 export default function TextSheet() {
@@ -13,6 +14,12 @@ export default function TextSheet() {
   const onDone = () => {
     applyTextToSlides();
     close();
+  };
+
+  const onClear = () => {
+    if (!bulkText) return;
+    haptic('light');
+    setTextField({ bulkText: '' });
   };
 
   return (
@@ -51,6 +58,14 @@ export default function TextSheet() {
         </div>
       </div>
       <div className="sheet__footer">
+        <button
+          className="btn-soft"
+          onClick={onClear}
+          type="button"
+          disabled={!bulkText}
+        >
+          Очистить
+        </button>
         <button className="btn-soft" onClick={onDone}>Done</button>
       </div>
     </Sheet>
